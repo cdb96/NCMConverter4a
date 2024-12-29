@@ -1,12 +1,8 @@
 package com.cdb96.ncmconverter4a;
 
-import android.os.Build;
-
 import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
-import java.io.FileOutputStream;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
