@@ -21,7 +21,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import android.provider.MediaStore
 import android.widget.Toast
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.io.OutputStream
@@ -67,10 +73,10 @@ fun solveShareFile(uri: Uri,context: Context,multiple:Boolean):Boolean
 {
     try {
         val inputStream = context.contentResolver.openInputStream(uri)
-        val result = NCMConverter.convert(inputStream)
-        val fileName = getMusicInfoData(result.StringArrayValue, "musicName")
-        val musicData = result.byteArrayValue
-        writeMusic(fileName, musicData, context,result.StringArrayValue)
+        val result = NCMConverter.convert(inputStream,true)
+        val fileName = getMusicInfoData(result.musicInfoStringArrayValue, "musicName")
+        val musicData = result.musicDataByteArray
+        writeMusic(fileName, musicData, context,result.musicInfoStringArrayValue)
         if (!multiple) {
             Toast.makeText(context, ("转换完成！存储于Music文件夹 "), Toast.LENGTH_SHORT).show()
         }
@@ -94,15 +100,20 @@ fun writeMusic(
     musicInfo:ArrayList<String>
 )
 {
-    val musicName = "$fileName.mp3"
+    var musicName = "null"
     val values = ContentValues().apply {
+        if (data[0].toInt() == 0x66 ){
+            musicName = "$fileName.flac"
+            put(MediaStore.Audio.Media.MIME_TYPE, "audio/flac")
+        }else if (data[0].toInt() == 0x49){
+            musicName = "$fileName.mp3"
+            put(MediaStore.Audio.Media.MIME_TYPE, "audio/mpeg")
+        }
         put(MediaStore.Audio.Media.DISPLAY_NAME, musicName)
-        put(MediaStore.Audio.Media.MIME_TYPE, "audio/mpeg")
         put(MediaStore.Audio.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/NCMConverter4A")
     }
     val uri:Uri? = context.contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,values)
     val oStream: OutputStream? = uri?.let { context.contentResolver.openOutputStream(it) }
-    //oStream?.write(header)
     oStream?.write(data)
     oStream?.close()
 }
@@ -112,6 +123,7 @@ fun writeMusic(
 fun MainFrame() {
     val (convertResult,setConvertResult) = remember { mutableStateOf<String?>("null") }
     val (musicName,setMusicName) = remember { mutableStateOf("尚未选择文件") }
+    var rawWriteMode by remember { mutableStateOf(false) }
     val context = LocalContext.current
     // 注册活动结果回调
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -120,11 +132,11 @@ fun MainFrame() {
             uri?.let {
                 try {
                     val inputStream = context.contentResolver.openInputStream(it)
-                    val result = NCMConverter.convert(inputStream)
-                    val fileName = getMusicInfoData(result.StringArrayValue,"musicName")
-                    val musicData = result.byteArrayValue
+                    val result = NCMConverter.convert(inputStream,rawWriteMode)
+                    val fileName = getMusicInfoData(result.musicInfoStringArrayValue,"musicName")
+                    val musicData = result.musicDataByteArray
                     setMusicName(fileName)
-                    writeMusic(fileName,musicData,context,result.StringArrayValue)
+                    writeMusic(fileName,musicData,context,result.musicInfoStringArrayValue)
                     setConvertResult("True")
                 } catch (e:Exception){
                     setConvertResult("False")
@@ -172,6 +184,27 @@ fun MainFrame() {
                         modifier = Modifier.padding(24.dp),
                         textAlign = TextAlign.Center,
                     )
+                    Box (contentAlignment = Alignment.Center){
+                        Text("原始写入模式", Modifier.padding(24.dp))
+                        Switch(
+                            modifier = Modifier.padding(padding),
+                            checked = rawWriteMode,
+                            onCheckedChange = {
+                                rawWriteMode = it
+                            },
+                            thumbContent = if (rawWriteMode) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Filled.Check,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(SwitchDefaults.IconSize),
+                                    )
+                                }
+                            } else {
+                                null
+                            }
+                        )
+                    }
                 }
             }
         }
