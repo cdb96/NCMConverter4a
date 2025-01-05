@@ -13,10 +13,11 @@ class ID3HeaderGen
         ID3Header.write(defaultHeader);
     }
 
-    public byte[] outputHeader() {
+    public byte[] outputHeader() throws IOException {
         byte[] sizeBytes = LengthUtils.toSyncSafeIntegerBytes(ID3Header.size());
         byte[] ID3HeaderBytes = ID3Header.toByteArray();
         System.arraycopy(sizeBytes,0,ID3HeaderBytes,6,4);
+        ID3Header.reset();
         return ID3HeaderBytes;
     }
 
