@@ -13,7 +13,7 @@ class ID3HeaderGen
         ID3Header.write(defaultHeader);
     }
 
-    public byte[] outputHeader() throws IOException {
+    public byte[] outputHeader() {
         byte[] sizeBytes = LengthUtils.toSyncSafeIntegerBytes(ID3Header.size());
         byte[] ID3HeaderBytes = ID3Header.toByteArray();
         System.arraycopy(sizeBytes,0,ID3HeaderBytes,6,4);
@@ -53,7 +53,7 @@ class ID3HeaderGen
 }
 class FLACHeaderGen
 {
-    public static byte[] pictureBlockGen(byte[] coverData) throws IOException {
+    public static byte[] pictureBlockGen(byte[] coverData) {
         byte[] mimeTypeBytes = "image/jpeg".getBytes(StandardCharsets.UTF_8);
         byte[] descriptionBytes = "NCMC4A".getBytes(StandardCharsets.UTF_8);
 
