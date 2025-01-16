@@ -5,7 +5,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
 
 class ID3HeaderGen
 {
@@ -19,6 +18,7 @@ class ID3HeaderGen
         byte[] sizeBytes = LengthUtils.toSyncSafeIntegerBytes(ID3Header.size());
         byte[] ID3HeaderBytes = ID3Header.toByteArray();
         System.arraycopy(sizeBytes,0,ID3HeaderBytes,6,4);
+        ID3Header.reset();
         return ID3HeaderBytes;
     }
 
@@ -120,7 +120,7 @@ class ID3HeaderGen
 
 class FLACHeaderGen
 {
-    public static byte[] pictureBlockGen(byte[] coverData) throws IOException {
+    public static byte[] pictureBlockGen(byte[] coverData) {
         byte[] mimeTypeBytes = "image/jpeg".getBytes(UTF_8);
         byte[] descriptionBytes = "NCMC4A".getBytes(UTF_8);
 
@@ -152,7 +152,7 @@ class FLACHeaderGen
         pictureBlock.get(result);
         return result;
     }
-    public static byte[] vorbisCommentBlockGen(String title, String artist,String album, byte[] vendorBytes) throws Exception {
+    public static byte[] vorbisCommentBlockGen(String title, String artist,String album, byte[] vendorBytes) {
         byte[] titleBytes = ("TITLE=" + title).getBytes(UTF_8);
         byte[] artistBytes = ("ARTIST=" + artist).getBytes(UTF_8);
         byte[] albumBytes = ("ALBUM=" + album).getBytes(UTF_8);
