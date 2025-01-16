@@ -48,16 +48,16 @@ class LengthUtils {
     }
 
     public static int findVorbisComment(byte[] flacBytes) throws Exception {
-        byte[] blockSize = new byte[3];
-        System.arraycopy(flacBytes,5,blockSize,0,3);
-        int StreamInfoSize = getBigEndianInteger3bytes(blockSize);
-
-        System.arraycopy(flacBytes,5 + StreamInfoSize + 4 ,blockSize,0,3);
-        int seekTableSize = getBigEndianInteger3bytes(blockSize);
-        return ( 5 + seekTableSize + 4 + StreamInfoSize + 4 );
+        int pivot = 4; //跳过FLAC
+        while ( (flacBytes[pivot] & 0x04) == 0 ) {
+            byte[] blockSizeBytes = new byte[3];
+            System.arraycopy(flacBytes,pivot + 1,blockSizeBytes,0,3);
+            pivot += getBigEndianInteger3bytes(blockSizeBytes) + 4;
+        }
+        return pivot;
     }
 
-    public static int findLastMetaData(byte[] flacBytes) throws  Exception {
+    public static int findLastBlock(byte[] flacBytes) throws  Exception {
         int pivot = 4; //跳过FLAC
         while ( (flacBytes[pivot] & 0x80) == 0 ) {
             byte[] blockSizeBytes = new byte[3];
