@@ -177,7 +177,7 @@ class NCMConverter {
     }
 
     private static String combineArtistsString(String artistsString) {
-        String[] artistsStringArray = artistsString.replace("[","").replace("]","").replace("\"","").split(",");
+        String[] artistsStringArray = artistsString.replaceAll("[\\[\\]\"]","").split(",");
         StringBuilder combinedArtistsString = new StringBuilder();
         for (int i = 0; i < artistsStringArray.length; i += 2){
             combinedArtistsString.append(artistsStringArray[i]).append("/");
