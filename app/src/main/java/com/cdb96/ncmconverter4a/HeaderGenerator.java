@@ -124,27 +124,27 @@ class FLACHeaderGen
         byte[] mimeTypeBytes = "image/jpeg".getBytes(UTF_8);
         byte[] descriptionBytes = "NCMC4A".getBytes(UTF_8);
 
-        int blockSize = 4 + mimeTypeBytes.length + 4 + descriptionBytes.length + 4 + 4 + 4 + 4 + 4 + coverData.length;
-        ByteBuffer pictureBlock = ByteBuffer.allocate(blockSize + 8);
-        byte[] blockSizeBytes = LengthUtils.toBigEndianInteger3Bytes( blockSize + 4);
+        int blockSize = 4 + 4 + mimeTypeBytes.length + 4 + descriptionBytes.length + 4 + 4 + 4 + 4 + 4 + coverData.length;
+        ByteBuffer pictureBlock = ByteBuffer.allocate(blockSize + 4); //块的大小加上块头的大小
+        byte[] blockSizeBytes = LengthUtils.toBigEndianInteger3Bytes( blockSize );
         pictureBlock.order(ByteOrder.BIG_ENDIAN);
 
         pictureBlock.put( (byte) (0x06) );  // 插入块类型6(PICTURE:0x06,最后一个块:0x86)
         pictureBlock.put(blockSizeBytes); // 插入块长度字节
-        pictureBlock.putInt(3); // 插入图片类型(封面:3)
 
-        pictureBlock.putInt(mimeTypeBytes.length);
+        pictureBlock.putInt(3); // 插入图片类型(封面:3) 第一个4
+        pictureBlock.putInt(mimeTypeBytes.length); // 第二个4
         pictureBlock.put(mimeTypeBytes); // MIME类型
 
-        pictureBlock.putInt(descriptionBytes.length);
+        pictureBlock.putInt(descriptionBytes.length); // 第三个4
         pictureBlock.put(descriptionBytes); // 描述
 
-        pictureBlock.putInt(0); // 宽度
-        pictureBlock.putInt(0); // 高度
-        pictureBlock.putInt(0); // 颜色深度
-        pictureBlock.putInt(0); // 索引颜色数
+        pictureBlock.putInt(0); // 宽度 第四个4
+        pictureBlock.putInt(0); // 高度 第五个4
+        pictureBlock.putInt(0); // 颜色深度 第六个4
+        pictureBlock.putInt(0); // 索引颜色数 第七个4
 
-        pictureBlock.putInt(coverData.length); // 封面长度
+        pictureBlock.putInt(coverData.length); // 封面长度 第八个4
         pictureBlock.put(coverData); // 封面数据
 
         byte[] result = new byte[pictureBlock.position()];

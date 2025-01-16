@@ -162,7 +162,7 @@ class NCMConverter {
                 byte[] vorbisCommentBlock = FLACHeaderGen.vorbisCommentBlockGen(musicName,musicArtist,musicAlbum,vendorBytes);
                 musicDataByte.write(vorbisCommentBlock);
 
-                int vorbisCommentEnd = vorbisCommentSize + vorbisCommentBegin + 4;
+                int vorbisCommentEnd = vorbisCommentSize + vorbisCommentBegin + 4; //加上块头的4个字节
                 int pictureBlockBegin = LengthUtils.findLastBlock(fileData);
                 musicDataByte.write(fileData,vorbisCommentEnd, pictureBlockBegin - vorbisCommentEnd);
                 byte[] pictureBlock = FLACHeaderGen.pictureBlockGen(coverData);
