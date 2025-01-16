@@ -73,10 +73,10 @@ fun solveShareFile(uri: Uri,context: Context,multiple:Boolean):Boolean
 {
     try {
         val inputStream = context.contentResolver.openInputStream(uri)
-        val result = NCMConverter.convert(inputStream,true)
+        val result = NCMConverter.convert(inputStream,false)
         val fileName = getMusicInfoData(result.musicInfoStringArrayValue, "musicName")
         val musicData = result.musicDataByteArray
-        writeMusic(fileName, musicData, context,result.musicInfoStringArrayValue)
+        writeMusic(fileName, musicData, context)
         if (!multiple) {
             Toast.makeText(context, ("转换完成！存储于Music文件夹 "), Toast.LENGTH_SHORT).show()
         }
@@ -97,7 +97,6 @@ fun writeMusic(
     fileName:String,
     data:ByteArray,
     context:Context,
-    musicInfo:ArrayList<String>
 )
 {
     var musicName = "null"
@@ -136,7 +135,7 @@ fun MainFrame() {
                     val fileName = getMusicInfoData(result.musicInfoStringArrayValue,"musicName")
                     val musicData = result.musicDataByteArray
                     setMusicName(fileName)
-                    writeMusic(fileName,musicData,context,result.musicInfoStringArrayValue)
+                    writeMusic(fileName,musicData,context)
                     setConvertResult("True")
                 } catch (e:Exception){
                     setConvertResult("False")
