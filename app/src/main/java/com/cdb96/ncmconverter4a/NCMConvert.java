@@ -33,14 +33,18 @@ class NCMConverter {
         byte[] bytes = new byte[4];
         fileStream.read(bytes, 0, 4);
         int keyLength = LengthUtils.getLittleEndianInteger(bytes);
-        bytes = new byte[keyLength];
-        fileStream.read(bytes,0,keyLength);
+        if (keyLength < 1024) { //防止因导入错误的文件而崩溃
+            bytes = new byte[keyLength];
+        } else {
+            throw new Exception();
+        }
+        fileStream.read(bytes, 0, keyLength);
         for (int i = 0; i < keyLength; i++) {
             bytes[i] ^= 0x64;
         }
-        bytes = decrypt(CoreKey,bytes);
+        bytes = decrypt(CoreKey, bytes);
         byte[] key = new byte[bytes.length - 17];
-        System.arraycopy(bytes,17,key,0,key.length);
+        System.arraycopy(bytes, 17, key, 0, key.length);
         return key;
     }
 

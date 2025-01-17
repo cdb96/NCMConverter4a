@@ -5,31 +5,32 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.provider.MediaStore
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import android.provider.MediaStore
-import android.widget.Toast
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.documentfile.provider.DocumentFile
 import java.io.OutputStream
 
 class MainActivity : ComponentActivity() {
@@ -42,7 +43,7 @@ class MainActivity : ComponentActivity() {
         if (Intent.ACTION_SEND == action &&  type != null) {
             val uri:Uri? = intent.getParcelableExtra(Intent.EXTRA_STREAM)
             if (uri != null) {
-                solveShareFile(uri,this,false)
+                solveFile(uri,this,false)
             }
         }
         if (Intent.ACTION_SEND_MULTIPLE == action && type != null) {
@@ -50,7 +51,7 @@ class MainActivity : ComponentActivity() {
             if (uris != null) {
                 var count = 0
                 for (uri in uris){
-                    if ( solveShareFile(uri,this,true) ) {
+                    if ( solveFile(uri,this,true) ) {
                         count++
                     }
                     else{
@@ -61,7 +62,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         if (Intent.ACTION_VIEW == action && data != null) {
-            solveShareFile(data,this,false)
+            solveFile(data,this,false)
         }
         setContent {
             MainFrame()
@@ -69,14 +70,38 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-fun solveShareFile(uri: Uri,context: Context,multiple:Boolean):Boolean
+fun getFileNameFromUri(uri: Uri,context: Context): String? {
+    val documentFile: DocumentFile? = DocumentFile.fromSingleUri(context, uri)
+    if (documentFile != null) {
+        return documentFile.name
+    }
+    return null
+}
+
+fun solveFile(uri: Uri, context: Context, multiple:Boolean):Boolean
 {
     try {
-        val inputStream = context.contentResolver.openInputStream(uri)
-        val result = NCMConverter.convert(inputStream,false)
-        val fileName = getMusicInfoData(result.musicInfoStringArrayValue, "musicName")
-        val musicData = result.musicDataByteArray
-        writeMusic(fileName, musicData, context)
+        var inputStream = context.contentResolver.openInputStream(uri)
+
+        if (!KGMConverter.KGMDetect(inputStream)) {
+            inputStream = context.contentResolver.openInputStream(uri)
+            val result = NCMConverter.convert(inputStream,false)
+            val fileName = getMusicInfoData(result.musicInfoStringArrayValue, "musicName")
+            val musicData = result.musicDataByteArray
+            writeMusic(fileName, musicData, context)
+        }
+        else{
+            val musicData = KGMConverter.decrypt(inputStream)
+            val regex = Regex("(.kgm)|(.flac)")
+            var fileName = getFileNameFromUri(uri,context)
+            if (fileName != null) {
+                fileName = fileName.replace(regex,"")
+            }
+            if (fileName != null) {
+                writeMusic(fileName,musicData,context)
+            }
+        }
+
         if (!multiple) {
             Toast.makeText(context, ("转换完成！存储于Music文件夹 "), Toast.LENGTH_SHORT).show()
         }
@@ -130,12 +155,8 @@ fun MainFrame() {
         onResult = { uri: Uri? ->
             uri?.let {
                 try {
-                    val inputStream = context.contentResolver.openInputStream(it)
-                    val result = NCMConverter.convert(inputStream,rawWriteMode)
-                    val fileName = getMusicInfoData(result.musicInfoStringArrayValue,"musicName")
-                    val musicData = result.musicDataByteArray
-                    setMusicName(fileName)
-                    writeMusic(fileName,musicData,context)
+                    solveFile(uri,context,false)
+                    getFileNameFromUri(uri,context)?.let { it1 -> setMusicName(it1) }
                     setConvertResult("True")
                 } catch (e:Exception){
                     setConvertResult("False")
@@ -159,7 +180,7 @@ fun MainFrame() {
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { filePickerLauncher.launch("application/*") }
+                onClick = { filePickerLauncher.launch("*/*") }
             ) {
                 Icon ( Icons.Default.Add, contentDescription = "Add" )
             }
@@ -175,11 +196,12 @@ fun MainFrame() {
                         .fillMaxWidth()
                 ) {
                     Text(
-                        text = if (convertResult == "False") "转换失败" else if(convertResult == "True") "转换成功，生成文件位于Music文件夹" else "请选择文件！可以从右下方按钮选择,或者从文件管理器选择ncm文件打开",
+                        text = if (convertResult == "False") "转换失败" else if(convertResult == "True") "已读取文件!" else "请选择文件！可以从右下方按钮选择,或者从文件管理器选择ncm文件打开",
                         modifier = Modifier.padding(24.dp),
                         textAlign = TextAlign.Center,
                     )
-                    Text(text = "歌曲名:${musicName}",
+                    Text(
+                        text = "文件名:${musicName}",
                         modifier = Modifier.padding(24.dp),
                         textAlign = TextAlign.Center,
                     )
