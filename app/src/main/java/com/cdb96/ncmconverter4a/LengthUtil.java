@@ -60,10 +60,28 @@ class LengthUtils {
     public static int findLastBlock(byte[] flacBytes) throws  Exception {
         int pivot = 4; //跳过FLAC
         while ( (flacBytes[pivot] & 0x80) == 0 ) {
-            byte[] blockSizeBytes = new byte[3];
-            System.arraycopy(flacBytes,pivot + 1,blockSizeBytes,0,3);
-            pivot += getBigEndianInteger3bytes(blockSizeBytes) + 4;
+            int blockSize = ((flacBytes[pivot + 1] & 0xFF) << 16
+                    | (flacBytes[pivot + 2] & 0xFF) << 8
+                    | (flacBytes[pivot + 3] & 0xFF));
+            pivot += blockSize + 4;
         }
         return pivot;
+    }
+
+    public static boolean hasLastBlock(byte[] flacBytes) throws Exception{
+        int pivot = 4;
+        while ( (flacBytes[pivot] & 0x80) == 0 ) {
+            int blockSize = ((flacBytes[pivot + 1] & 0xFF) << 16
+                    | (flacBytes[pivot + 2] & 0xFF) << 8
+                    | (flacBytes[pivot + 3] & 0xFF));
+            pivot += blockSize + 4;
+            if (pivot >= flacBytes.length) {
+                return false;
+            }
+        }
+        int lastBlockSize = ((flacBytes[pivot + 1] & 0xFF) << 16
+                | (flacBytes[pivot + 2] & 0xFF) << 8
+                | (flacBytes[pivot + 3] & 0xFF));
+        return pivot + lastBlockSize + 4 < flacBytes.length;
     }
 }

@@ -2,19 +2,24 @@ package com.cdb96.ncmconverter4a;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
+
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
-import java.nio.ByteBuffer;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.nio.channels.FileChannel;
 import java.util.Base64;
-import java.io.ByteArrayOutputStream;
 
 class ConvertResult {
-    byte[] musicDataByteArray;
+    byte[] RC4key;
+    byte[] coverData;
     ArrayList<String> musicInfoStringArrayValue;
-    ConvertResult(byte[] musicDataByteArray, ArrayList<String> musicInfoStringArrayValue) {
-        this.musicDataByteArray = musicDataByteArray;
+    boolean rawWriteMode;
+    ConvertResult(byte[] RC4key,byte[] coverData,boolean rawWriteMode, ArrayList<String> musicInfoStringArrayValue) {
+        this.RC4key = RC4key;
+        this.coverData = coverData;
+        this.rawWriteMode = rawWriteMode;
         this.musicInfoStringArrayValue = musicInfoStringArrayValue;
     }
 }
@@ -125,71 +130,92 @@ class NCMConverter {
 
         return image1Data;
     }
-    private static byte[] outputMusic(InputStream fileStream, byte[] RC4Key,byte[] coverData,boolean rawWriteMode,ArrayList<String> musicInfo) throws Exception {
-        //读取并开始解密
-        int fileLength = fileStream.available();
-        byte[] sbox = RC4Jni.ksa(RC4Key);
-        byte[] fileData = new byte[fileLength];
-        fileStream.read(fileData,0,fileLength);
-        RC4Jni.prgaDecrypt(sbox,fileData);
 
-        //下一步进行ID3帧头与FLAC帧头修改
+    public static byte[] expandByteArray(byte[] original, int newSize) {
+        byte[] newArray = new byte[original.length + newSize];
+        System.arraycopy(original, 0, newArray, 0, original.length);
+        return newArray;
+    }
+    public static void modifyHeader(InputStream fileStream, OutputStream fileOutputStream, byte[] sBox, ArrayList<String> musicInfo, byte[] coverData) throws Exception {
+        //PRE_LENGTH请设置为缓冲区大小的倍数
+        int PRE_LENGTH = 8 * 1024 * 1024;
+        byte[] preFetchHeader = new byte[PRE_LENGTH];
+        fileStream.read(preFetchHeader, 0, PRE_LENGTH);
+        RC4Jni.prgaDecrypt(sBox, preFetchHeader);
+
         String musicName = musicInfo.get( musicInfo.indexOf("musicName") + 1);
         String musicArtist = musicInfo.get( musicInfo.indexOf("artist") + 1);
         String musicAlbum = musicInfo.get( musicInfo.indexOf("album") + 1);
         musicArtist = combineArtistsString(musicArtist);
 
-        if (!rawWriteMode) {
-            if (fileData[0] == 0x49) {
-                byte[] ID3LengthBytes = new byte[4];
-                System.arraycopy(fileData,6,ID3LengthBytes,0,4);
-                int ID3Length = LengthUtils.getSyncSafeInteger(ID3LengthBytes);
+        if (preFetchHeader[0] == 0x49) {
+            byte[] ID3LengthBytes = new byte[4];
+            System.arraycopy(preFetchHeader, 6, ID3LengthBytes, 0, 4);
+            int ID3Length = LengthUtils.getSyncSafeInteger(ID3LengthBytes);
 
-                ID3HeaderGen ID3Header = new ID3HeaderGen();
-                ID3Header.initDefaultTagHeader();
-                ID3Header.addTIT2(musicName);
-                ID3Header.addTPE1(musicArtist);
-                ID3Header.addTALB(musicAlbum);
-                ID3Header.addCover(coverData);
-
-                byte[] ID3newHeader = ID3Header.outputHeader();
-                ByteBuffer musicDataByte = ByteBuffer.allocate(fileLength + ID3newHeader.length - ID3Length);
-                System.out.println(musicDataByte.capacity());
-                musicDataByte.put(ID3newHeader);
-                musicDataByte.put(fileData, ID3Length, fileLength - ID3Length);
-                return musicDataByte.array();
-            } else if (fileData[0] == 0x66) {
-                byte[] blockSizeBytes = new byte[3];
-                int vorbisCommentBegin = LengthUtils.findVorbisComment(fileData);
-                System.arraycopy(fileData,vorbisCommentBegin + 1, blockSizeBytes,0,3);
-
-                byte[] vendorLengthBytes = new byte[4];
-                System.arraycopy(fileData,vorbisCommentBegin + 4, vendorLengthBytes,0,4);
-                int vendorLength = LengthUtils.getLittleEndianInteger(vendorLengthBytes);
-                byte[] vendorBytes = new byte[vendorLength];
-                System.arraycopy(fileData,vorbisCommentBegin + 8, vendorBytes,0,vendorLength);
-                int vorbisCommentSize = LengthUtils.getBigEndianInteger3bytes(blockSizeBytes);
-                byte[] vorbisCommentBlock = FLACHeaderGen.vorbisCommentBlockGen(musicName,musicArtist,musicAlbum,vendorBytes);
-
-                int vorbisCommentEnd = vorbisCommentSize + vorbisCommentBegin + 4; //加上块头的4个字节
-                int pictureBlockBegin = LengthUtils.findLastBlock(fileData);
-                byte[] pictureBlock = FLACHeaderGen.pictureBlockGen(coverData);
-
-                ByteBuffer musicDataByte = ByteBuffer.allocate(fileLength + pictureBlock.length + vorbisCommentBlock.length - 4 - vorbisCommentSize);
-                System.out.println(musicDataByte.capacity());
-                musicDataByte.put(fileData,0,vorbisCommentBegin);
-                musicDataByte.put(vorbisCommentBlock);
-                musicDataByte.put(fileData,vorbisCommentEnd,pictureBlockBegin - vorbisCommentEnd);
-                musicDataByte.put(pictureBlock);
-                musicDataByte.put(fileData,pictureBlockBegin,fileLength - pictureBlockBegin);
-                return musicDataByte.array();
+            if (ID3Length > PRE_LENGTH) {
+                int expandSizeFactor = (ID3Length + PRE_LENGTH - 1) / PRE_LENGTH;
+                int expandSize = expandSizeFactor * PRE_LENGTH;
+                preFetchHeader  = expandByteArray(preFetchHeader, expandSize);
+                byte[] temp = new byte[expandSize - PRE_LENGTH];
+                System.arraycopy(temp, 0, preFetchHeader, PRE_LENGTH, expandSize - PRE_LENGTH);
             }
-        } else {
-            ByteBuffer musicDataByte = ByteBuffer.allocate(fileLength);
-            musicDataByte.put(fileData);
-            return musicDataByte.array();
+
+
+            ID3HeaderGen ID3Header = new ID3HeaderGen();
+            ID3Header.initDefaultTagHeader();
+            ID3Header.addTIT2(musicName);
+            ID3Header.addTPE1(musicArtist);
+            ID3Header.addTALB(musicAlbum);
+            ID3Header.addCover(coverData);
+
+            byte[] mp3Header = ID3Header.outputHeader();
+            fileOutputStream.write(mp3Header);
+            fileOutputStream.write(preFetchHeader,0, preFetchHeader.length - ID3Length);
+
+        } else if (preFetchHeader[0] == 0x66) {
+            while (!LengthUtils.hasLastBlock(preFetchHeader)) {
+                byte[] temp = new byte[PRE_LENGTH];
+                fileStream.read(temp, 0, PRE_LENGTH);
+                RC4Jni.prgaDecrypt(sBox,temp);
+                preFetchHeader = expandByteArray(preFetchHeader, PRE_LENGTH);
+                System.arraycopy(temp, 0, preFetchHeader, preFetchHeader.length - PRE_LENGTH, temp.length);
+            };
+
+            byte[] blockSizeBytes = new byte[3];
+            int vorbisCommentBegin = LengthUtils.findVorbisComment(preFetchHeader);
+            fileOutputStream.write(preFetchHeader,0,vorbisCommentBegin);
+            System.arraycopy(preFetchHeader,vorbisCommentBegin + 1, blockSizeBytes,0,3);
+
+            byte[] vendorLengthBytes = new byte[4];
+            System.arraycopy(preFetchHeader,vorbisCommentBegin + 4, vendorLengthBytes,0,4);
+            int vendorLength = LengthUtils.getLittleEndianInteger(vendorLengthBytes);
+            byte[] vendorBytes = new byte[vendorLength];
+            System.arraycopy(preFetchHeader,vorbisCommentBegin + 8, vendorBytes,0,vendorLength);
+            int vorbisCommentSize = LengthUtils.getBigEndianInteger3bytes(blockSizeBytes);
+            byte[] vorbisCommentBlock = FLACHeaderGen.vorbisCommentBlockGen(musicName,musicArtist,musicAlbum,vendorBytes);
+            fileOutputStream.write(vorbisCommentBlock);
+
+            int vorbisCommentEnd = vorbisCommentSize + vorbisCommentBegin + 4; //加上块头的4个字节
+            int pictureBlockBegin = LengthUtils.findLastBlock(preFetchHeader);
+            fileOutputStream.write(preFetchHeader,vorbisCommentEnd, pictureBlockBegin - vorbisCommentEnd);
+            byte[] pictureBlock = FLACHeaderGen.pictureBlockGen(coverData);
+
+            fileOutputStream.write(pictureBlock);
+            fileOutputStream.write(preFetchHeader,pictureBlockBegin,preFetchHeader.length - pictureBlockBegin);
         }
-        return null;
+    }
+    public static void outputMusic(OutputStream outputFileStream,InputStream fileStream, byte[] RC4Key, byte[] coverData, boolean rawWriteMode, ArrayList<String> musicInfo) throws Exception {
+        byte[] sbox = RC4Jni.ksa(RC4Key);
+        byte[] buffer = new byte[8 * 1024 * 1024];
+        if (rawWriteMode) {
+            modifyHeader(fileStream, outputFileStream, sbox, musicInfo, coverData);
+        }
+        int bytesRead;
+        while ((bytesRead = fileStream.read(buffer)) != -1) {
+            RC4Jni.prgaDecrypt(sbox, buffer);
+            outputFileStream.write(buffer, 0, bytesRead);
+        }
     }
 
     private static String combineArtistsString(String artistsString) {
@@ -208,7 +234,6 @@ class NCMConverter {
 
         String metaData = new String(metaBytes, StandardCharsets.UTF_8);
         ArrayList<String> musicInfo = parseMetaData(metaData);
-        byte[] musicData = outputMusic(fileStream,RC4Key,coverData,rawWriteMode,musicInfo);
-        return new ConvertResult(musicData,musicInfo);
+        return new ConvertResult(RC4Key,coverData,rawWriteMode,musicInfo);
     }
 }

@@ -91,8 +91,10 @@ fun solveFile(uri: Uri, context: Context, multiple:Boolean):Boolean
             inputStream = context.contentResolver.openInputStream(uri)
             val result = NCMConverter.convert(inputStream,false)
             val fileName = getMusicInfoData(result.musicInfoStringArrayValue, "musicName")
-            val musicData = result.musicDataByteArray
-            writeMusic(fileName, musicData, context)
+            val format = getMusicInfoData(result.musicInfoStringArrayValue,"format")
+            val outputStream = ncmGetOutputStream(format,context,fileName)
+            NCMConverter.outputMusic(outputStream,inputStream,result.RC4key,result.coverData,result.rawWriteMode,result.musicInfoStringArrayValue)
+            outputStream?.close()
         }
         else{
             val musicData = KGMConverter.decrypt(inputStream)
@@ -116,6 +118,24 @@ fun solveFile(uri: Uri, context: Context, multiple:Boolean):Boolean
         }
         return false
     }
+}
+
+fun ncmGetOutputStream(format: String,context: Context,fileName: String): OutputStream? {
+    var musicName = "null"
+    val values = ContentValues().apply {
+        if (format == "flac" ) {
+            musicName = "$fileName.flac"
+            put(MediaStore.Audio.Media.MIME_TYPE, "audio/flac")
+        }else if ( format == "mp3" ){
+            musicName = "$fileName.mp3"
+            put(MediaStore.Audio.Media.MIME_TYPE, "audio/mpeg")
+        }
+        put(MediaStore.Audio.Media.DISPLAY_NAME, musicName)
+        put(MediaStore.Audio.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/NCMConverter4A")
+    }
+    val uri:Uri? = context.contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,values)
+    val oStream: OutputStream? = uri?.let { context.contentResolver.openOutputStream(it) }
+    return oStream;
 }
 
 fun getMusicInfoData(arrayList: ArrayList<String>,key:String): String {
