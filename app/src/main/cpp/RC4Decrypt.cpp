@@ -33,7 +33,7 @@ Java_com_cdb96_ncmconverter4a_RC4Jni_prgaDecrypt(JNIEnv* env, jclass, jbyteArray
     auto* sBoxBytes = reinterpret_cast<uint8_t*>( env->GetByteArrayElements(sBox, nullptr) );
     jsize cipherDataLength = env ->GetArrayLength(cipherData);
 
-    for (int i = 1,j = 1; i < cipherDataLength; i++) {
+    for (int i = 1,j = 1; i < cipherDataLength + 1; i++) {
         j = i & 0xff;
         cipherDataBytes[i-1] ^= sBoxBytes[ (sBoxBytes[j] + sBoxBytes [ ( sBoxBytes[j] + j ) & 0xff ] ) & 0xff ];
     }
