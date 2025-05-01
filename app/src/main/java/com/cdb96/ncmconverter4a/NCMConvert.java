@@ -3,8 +3,10 @@ package com.cdb96.ncmconverter4a;
 import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.nio.channels.FileChannel;
 import java.util.Base64;
 import java.io.ByteArrayOutputStream;
 
@@ -124,13 +126,14 @@ class NCMConverter {
         return image1Data;
     }
     private static byte[] outputMusic(InputStream fileStream, byte[] RC4Key,byte[] coverData,boolean rawWriteMode,ArrayList<String> musicInfo) throws Exception {
+        //读取并开始解密
         int fileLength = fileStream.available();
-        byte[] sbox = RC4Util.ksa(RC4Key);
+        byte[] sbox = RC4Jni.ksa(RC4Key);
         byte[] fileData = new byte[fileLength];
-        ByteArrayOutputStream musicDataByte = new ByteArrayOutputStream();
-        fileStream.read(fileData, 0, fileLength);
-        RC4Util.prgaDecrypt(sbox, fileData);
+        fileStream.read(fileData,0,fileLength);
+        RC4Jni.prgaDecrypt(sbox,fileData);
 
+        //下一步进行ID3帧头与FLAC帧头修改
         String musicName = musicInfo.get( musicInfo.indexOf("musicName") + 1);
         String musicArtist = musicInfo.get( musicInfo.indexOf("artist") + 1);
         String musicAlbum = musicInfo.get( musicInfo.indexOf("album") + 1);
@@ -149,12 +152,15 @@ class NCMConverter {
                 ID3Header.addTALB(musicAlbum);
                 ID3Header.addCover(coverData);
 
-                musicDataByte.write( ID3Header.outputHeader() );
-                musicDataByte.write(fileData, ID3Length, fileLength - ID3Length);
+                byte[] ID3newHeader = ID3Header.outputHeader();
+                ByteBuffer musicDataByte = ByteBuffer.allocate(fileLength + ID3newHeader.length - ID3Length);
+                System.out.println(musicDataByte.capacity());
+                musicDataByte.put(ID3newHeader);
+                musicDataByte.put(fileData, ID3Length, fileLength - ID3Length);
+                return musicDataByte.array();
             } else if (fileData[0] == 0x66) {
                 byte[] blockSizeBytes = new byte[3];
                 int vorbisCommentBegin = LengthUtils.findVorbisComment(fileData);
-                musicDataByte.write(fileData,0,vorbisCommentBegin);
                 System.arraycopy(fileData,vorbisCommentBegin + 1, blockSizeBytes,0,3);
 
                 byte[] vendorLengthBytes = new byte[4];
@@ -164,20 +170,26 @@ class NCMConverter {
                 System.arraycopy(fileData,vorbisCommentBegin + 8, vendorBytes,0,vendorLength);
                 int vorbisCommentSize = LengthUtils.getBigEndianInteger3bytes(blockSizeBytes);
                 byte[] vorbisCommentBlock = FLACHeaderGen.vorbisCommentBlockGen(musicName,musicArtist,musicAlbum,vendorBytes);
-                musicDataByte.write(vorbisCommentBlock);
 
                 int vorbisCommentEnd = vorbisCommentSize + vorbisCommentBegin + 4; //加上块头的4个字节
                 int pictureBlockBegin = LengthUtils.findLastBlock(fileData);
-                musicDataByte.write(fileData,vorbisCommentEnd, pictureBlockBegin - vorbisCommentEnd);
                 byte[] pictureBlock = FLACHeaderGen.pictureBlockGen(coverData);
 
-                musicDataByte.write(pictureBlock);
-                musicDataByte.write(fileData, pictureBlockBegin, fileLength - pictureBlockBegin);
+                ByteBuffer musicDataByte = ByteBuffer.allocate(fileLength + pictureBlock.length + vorbisCommentBlock.length - 4 - vorbisCommentSize);
+                System.out.println(musicDataByte.capacity());
+                musicDataByte.put(fileData,0,vorbisCommentBegin);
+                musicDataByte.put(vorbisCommentBlock);
+                musicDataByte.put(fileData,vorbisCommentEnd,pictureBlockBegin - vorbisCommentEnd);
+                musicDataByte.put(pictureBlock);
+                musicDataByte.put(fileData,pictureBlockBegin,fileLength - pictureBlockBegin);
+                return musicDataByte.array();
             }
         } else {
-            musicDataByte.write(fileData);
+            ByteBuffer musicDataByte = ByteBuffer.allocate(fileLength);
+            musicDataByte.put(fileData);
+            return musicDataByte.array();
         }
-        return musicDataByte.toByteArray();
+        return null;
     }
 
     private static String combineArtistsString(String artistsString) {
