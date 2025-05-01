@@ -208,7 +208,7 @@ class NCMConverter {
     public static void outputMusic(OutputStream outputFileStream,InputStream fileStream, byte[] RC4Key, byte[] coverData, boolean rawWriteMode, ArrayList<String> musicInfo) throws Exception {
         byte[] sbox = RC4Jni.ksa(RC4Key);
         byte[] buffer = new byte[8 * 1024 * 1024];
-        if (rawWriteMode) {
+        if (!rawWriteMode) {
             modifyHeader(fileStream, outputFileStream, sbox, musicInfo, coverData);
         }
         int bytesRead;
