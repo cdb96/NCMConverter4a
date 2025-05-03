@@ -1,5 +1,7 @@
 package com.cdb96.ncmconverter4a;
 
+import android.util.Log;
+
 import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
 
@@ -212,12 +214,20 @@ class NCMConverter {
             modifyHeader(fileStream, outputFileStream, sbox, musicInfo, coverData);
         }
         int bytesRead;
+        long totalTime = 0;
+        long trueTotalTime = System.nanoTime();
         while ((bytesRead = fileStream.read(buffer)) != -1) {
+            long startTime = System.nanoTime();
             RC4Jni.prgaDecrypt(sbox, buffer);
+            long duration = System.nanoTime() - startTime;
+            totalTime += duration;
+            Log.d("Performance", "耗时: " + duration / 1_000_000 + "ms");
             outputFileStream.write(buffer, 0, bytesRead);
         }
+        long trueDuration = System.nanoTime() - trueTotalTime;
+        Log.d("Performance", "耗时: " + totalTime / 1_000_000 + "ms");
+        Log.d("Performance", "耗时: " + trueDuration / 1_000_000 + "ms");
     }
-
     private static String combineArtistsString(String artistsString) {
         String[] artistsStringArray = artistsString.replaceAll("[\\[\\]\"]","").split(",");
         StringBuilder combinedArtistsString = new StringBuilder();

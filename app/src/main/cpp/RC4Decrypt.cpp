@@ -1,8 +1,9 @@
 #include <jni.h>
 #include <cstdint>
 #include <vector>
+#include <arm_neon.h>
 
-constexpr size_t S_BOX_SIZE = 256;
+uint8_t keyStreamBytes[256];
 extern "C"
 JNIEXPORT jbyteArray JNICALL
 Java_com_cdb96_ncmconverter4a_RC4Jni_ksa(JNIEnv* env, jclass, jbyteArray key) {
@@ -20,6 +21,10 @@ Java_com_cdb96_ncmconverter4a_RC4Jni_ksa(JNIEnv* env, jclass, jbyteArray key) {
         std::swap(sBox[i], sBox[j]);
     }
 
+    for (int k = 0; k < 256; ++k) {
+        keyStreamBytes[k] = sBox[ (sBox[k] + sBox [ ( sBox[k] + k ) & 0xff ] ) & 0xff ];
+    }
+
     jbyteArray result = env->NewByteArray(256);
     env->SetByteArrayRegion(result, 0, 256, reinterpret_cast<const jbyte*>(sBox));
     env->ReleaseByteArrayElements(key, reinterpret_cast<jbyte*>(keyBytes), 0);
@@ -33,9 +38,9 @@ Java_com_cdb96_ncmconverter4a_RC4Jni_prgaDecrypt(JNIEnv* env, jclass, jbyteArray
     auto* sBoxBytes = reinterpret_cast<uint8_t*>( env->GetByteArrayElements(sBox, nullptr) );
     jsize cipherDataLength = env ->GetArrayLength(cipherData);
 
-    for (int i = 1,j = 1; i < cipherDataLength + 1; i++) {
-        j = i & 0xff;
-        cipherDataBytes[i-1] ^= sBoxBytes[ (sBoxBytes[j] + sBoxBytes [ ( sBoxBytes[j] + j ) & 0xff ] ) & 0xff ];
+    for (int i = 1; i < cipherDataLength + 1; i++) {
+        int j = i & 0xff;
+        cipherDataBytes[i-1] ^= keyStreamBytes[j];
     }
 
     auto decryptedResult = env->NewByteArray(cipherDataLength);

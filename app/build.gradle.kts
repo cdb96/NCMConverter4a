@@ -16,9 +16,13 @@ android {
         versionName = "2.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
         externalNativeBuild {
             cmake {
                 cppFlags += "-O3"
+                arguments("-DANDROID_ARM_NEON=TRUE")
                 targets("RC4Decrypt")
             }
         }
