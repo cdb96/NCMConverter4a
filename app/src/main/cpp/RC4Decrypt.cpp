@@ -40,11 +40,18 @@ Java_com_cdb96_ncmconverter4a_RC4Jni_prgaDecrypt(JNIEnv* env, jclass, jbyteArray
     jsize cipherDataLength = env ->GetArrayLength(cipherData);
 
     int i = 0;
-    for (;i + 16 <= cipherDataLength + 1; i += 16){
-        uint8x16_t keyStreamChunk = vld1q_u8(keyStreamBytes + ( i & 0xff));
-        uint8x16_t cipherDataBytesChunk = vld1q_u8(cipherDataBytes + i);
-        uint8x16_t decryptedChunk = veorq_u8(cipherDataBytesChunk,keyStreamChunk);
-        vst1q_u8(cipherDataBytes + i, decryptedChunk);
+    for (;i + 64 <= cipherDataLength; i += 64){
+        int k = i & 0xff;
+        uint8x16x4_t cipherDataBytesChunk = vld1q_u8_x4(cipherDataBytes + i);
+        uint8x16_t key0 = vld1q_u8(keyStreamBytes + k);
+        uint8x16_t key1 = vld1q_u8(keyStreamBytes + k + 16);
+        uint8x16_t key2 = vld1q_u8(keyStreamBytes + k + 32);
+        uint8x16_t key3 = vld1q_u8(keyStreamBytes + k + 48);
+        cipherDataBytesChunk.val[0] = veorq_u8(cipherDataBytesChunk.val[0], key0);
+        cipherDataBytesChunk.val[1] = veorq_u8(cipherDataBytesChunk.val[1], key1);
+        cipherDataBytesChunk.val[2] = veorq_u8(cipherDataBytesChunk.val[2], key2);
+        cipherDataBytesChunk.val[3] = veorq_u8(cipherDataBytesChunk.val[3], key3);
+        vst1q_u8_x4(cipherDataBytes + i, cipherDataBytesChunk);
     }
 
     for (; i < cipherDataLength; i++) {
