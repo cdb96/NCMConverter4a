@@ -24,7 +24,7 @@ Java_com_cdb96_ncmconverter4a_RC4Jni_ksa(JNIEnv* env, jclass, jbyteArray key) {
     for (int k = 0; k < 256; ++k) {
         keyStreamBytes[k] = sBox[ (sBox[k] + sBox [ ( sBox[k] + k ) & 0xff ] ) & 0xff ];
     }
-    //下面的代码进行到i = 1 + 16*15n的时候会出现数组越界，迫不得已只能这么搞了
+    //下面的代码进行到i = 256*n - 15的时候会出现数组越界，迫不得已只能这么搞了
     keyStreamBytes[256] = sBox[ (sBox[0] + sBox [ ( sBox[0] + 0 ) & 0xff ] ) & 0xff ];
 
     jbyteArray result = env->NewByteArray(256);
