@@ -11,10 +11,6 @@ cmake_minimum_required(VERSION 3.22.1)
 # with ${CMAKE_PROJECT_NAME} (both CMake variables are in-sync within the top level
 # build script scope).
 project("RC4Decrypt")
-if(ANDROID_ABI STREQUAL "armeabi-v7a")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DFORCE_NEON -mfloat-abi=hard -mfpu=neon")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DFORCE_NEON -mfloat-abi=hard -mfpu=neon")
-endif ()
 
 # Creates and names a library, sets it as either STATIC
 # or SHARED, and provides the relative paths to its source code.
