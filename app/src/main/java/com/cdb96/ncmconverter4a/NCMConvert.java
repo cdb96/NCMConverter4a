@@ -138,11 +138,9 @@ class NCMConverter {
         System.arraycopy(original, 0, newArray, 0, original.length);
         return newArray;
     }
-    public static void modifyHeader(InputStream fileStream, OutputStream fileOutputStream, byte[] sBox, ArrayList<String> musicInfo, byte[] coverData) throws Exception {
-        //PRE_LENGTH请设置为缓冲区大小的倍数
-        int PRE_LENGTH = 8 * 1024 * 1024;
-        byte[] preFetchHeader = new byte[PRE_LENGTH];
-        fileStream.read(preFetchHeader, 0, PRE_LENGTH);
+    public static void modifyHeader(InputStream fileStream, OutputStream fileOutputStream, byte[] sBox, ArrayList<String> musicInfo, byte[] coverData,int bufferSize) throws Exception {
+        byte[] preFetchHeader = new byte[bufferSize];
+        fileStream.read(preFetchHeader, 0, bufferSize);
         RC4Jni.prgaDecrypt(sBox, preFetchHeader);
 
         String musicName = musicInfo.get( musicInfo.indexOf("musicName") + 1);
@@ -155,12 +153,12 @@ class NCMConverter {
             System.arraycopy(preFetchHeader, 6, ID3LengthBytes, 0, 4);
             int ID3Length = LengthUtils.getSyncSafeInteger(ID3LengthBytes);
 
-            if (ID3Length > PRE_LENGTH) {
-                int expandSizeFactor = (ID3Length + PRE_LENGTH - 1) / PRE_LENGTH;
-                int expandSize = expandSizeFactor * PRE_LENGTH;
+            if (ID3Length > bufferSize) {
+                int expandSizeFactor = (ID3Length + bufferSize - 1) / bufferSize;
+                int expandSize = expandSizeFactor * bufferSize;
                 preFetchHeader  = expandByteArray(preFetchHeader, expandSize);
-                byte[] temp = new byte[expandSize - PRE_LENGTH];
-                System.arraycopy(temp, 0, preFetchHeader, PRE_LENGTH, expandSize - PRE_LENGTH);
+                byte[] temp = new byte[expandSize - bufferSize];
+                System.arraycopy(temp, 0, preFetchHeader, bufferSize, expandSize - bufferSize);
             }
 
 
@@ -177,11 +175,11 @@ class NCMConverter {
 
         } else if (preFetchHeader[0] == 0x66) {
             while (!LengthUtils.hasLastBlock(preFetchHeader)) {
-                byte[] temp = new byte[PRE_LENGTH];
-                fileStream.read(temp, 0, PRE_LENGTH);
+                byte[] temp = new byte[bufferSize];
+                fileStream.read(temp, 0, bufferSize);
                 RC4Jni.prgaDecrypt(sBox,temp);
-                preFetchHeader = expandByteArray(preFetchHeader, PRE_LENGTH);
-                System.arraycopy(temp, 0, preFetchHeader, preFetchHeader.length - PRE_LENGTH, temp.length);
+                preFetchHeader = expandByteArray(preFetchHeader, bufferSize);
+                System.arraycopy(temp, 0, preFetchHeader, preFetchHeader.length - bufferSize, temp.length);
             };
 
             byte[] blockSizeBytes = new byte[3];
@@ -208,10 +206,14 @@ class NCMConverter {
         }
     }
     public static void outputMusic(OutputStream outputFileStream,InputStream fileStream, byte[] RC4Key, byte[] coverData, boolean rawWriteMode, ArrayList<String> musicInfo) throws Exception {
+        int bufferSize = 8 * 1024 * 1024;
+        if (fileStream.available() < bufferSize) {
+            bufferSize = fileStream.available();
+        }
         byte[] sbox = RC4Jni.ksa(RC4Key);
-        byte[] buffer = new byte[8 * 1024 * 1024];
+        byte[] buffer = new byte[bufferSize];
         if (!rawWriteMode) {
-            modifyHeader(fileStream, outputFileStream, sbox, musicInfo, coverData);
+            modifyHeader(fileStream, outputFileStream, sbox, musicInfo, coverData,bufferSize);
         }
         int bytesRead;
         long totalTime = 0;
