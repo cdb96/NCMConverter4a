@@ -33,7 +33,7 @@ Java_com_cdb96_ncmconverter4a_RC4Jni_ksa(JNIEnv* env, jclass, jbyteArray key) {
     return result;
 }
 extern "C"
-JNIEXPORT jbyteArray JNICALL
+JNIEXPORT void JNICALL
 Java_com_cdb96_ncmconverter4a_RC4Jni_prgaDecrypt(JNIEnv* env, jclass, jbyteArray sBox, jbyteArray cipherData) {
     auto* cipherDataBytes = reinterpret_cast<uint8_t*>( env->GetByteArrayElements(cipherData, nullptr) );
     auto* sBoxBytes = reinterpret_cast<uint8_t*>( env->GetByteArrayElements(sBox, nullptr) );
@@ -43,14 +43,11 @@ Java_com_cdb96_ncmconverter4a_RC4Jni_prgaDecrypt(JNIEnv* env, jclass, jbyteArray
     for (;i + 64 <= cipherDataLength; i += 64){
         int k = i & 0xff;
         uint8x16x4_t cipherDataBytesChunk = vld1q_u8_x4(cipherDataBytes + i);
-        uint8x16_t key0 = vld1q_u8(keyStreamBytes + k);
-        uint8x16_t key1 = vld1q_u8(keyStreamBytes + k + 16);
-        uint8x16_t key2 = vld1q_u8(keyStreamBytes + k + 32);
-        uint8x16_t key3 = vld1q_u8(keyStreamBytes + k + 48);
-        cipherDataBytesChunk.val[0] = veorq_u8(cipherDataBytesChunk.val[0], key0);
-        cipherDataBytesChunk.val[1] = veorq_u8(cipherDataBytesChunk.val[1], key1);
-        cipherDataBytesChunk.val[2] = veorq_u8(cipherDataBytesChunk.val[2], key2);
-        cipherDataBytesChunk.val[3] = veorq_u8(cipherDataBytesChunk.val[3], key3);
+        uint8x16x4_t key = vld1q_u8_x4(keyStreamBytes + k);
+        cipherDataBytesChunk.val[0] = veorq_u8(cipherDataBytesChunk.val[0], key.val[0]);
+        cipherDataBytesChunk.val[1] = veorq_u8(cipherDataBytesChunk.val[1], key.val[1]);
+        cipherDataBytesChunk.val[2] = veorq_u8(cipherDataBytesChunk.val[2], key.val[2]);
+        cipherDataBytesChunk.val[3] = veorq_u8(cipherDataBytesChunk.val[3], key.val[3]);
         vst1q_u8_x4(cipherDataBytes + i, cipherDataBytesChunk);
     }
 
@@ -59,11 +56,6 @@ Java_com_cdb96_ncmconverter4a_RC4Jni_prgaDecrypt(JNIEnv* env, jclass, jbyteArray
         cipherDataBytes[i] ^= keyStreamBytes[j];
     }
 
-    auto decryptedResult = env->NewByteArray(cipherDataLength);
-    env ->SetByteArrayRegion( decryptedResult,0,cipherDataLength,reinterpret_cast<const jbyte*>(cipherDataBytes) );
-
     env->ReleaseByteArrayElements(sBox, reinterpret_cast<jbyte*>(sBoxBytes), 0);
     env->ReleaseByteArrayElements(cipherData, reinterpret_cast<jbyte*>(cipherDataBytes), 0);
-
-    return decryptedResult;
 }
