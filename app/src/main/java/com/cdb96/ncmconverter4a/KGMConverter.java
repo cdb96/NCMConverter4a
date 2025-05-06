@@ -1,9 +1,12 @@
 package com.cdb96.ncmconverter4a;
 
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.Arrays;
+import java.util.Objects;
 
 public class KGMConverter {
+    static byte[] ownKeyBytes = new byte[17];
     final static byte[] table1 = {(byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00,
             (byte)0x00, (byte)0x01, (byte)0x21, (byte)0x01, (byte)0x61, (byte)0x01, (byte)0x21, (byte)0x01, (byte)0xe1, (byte)0x01, (byte)0x21, (byte)0x01, (byte)0x61, (byte)0x01, (byte)0x21, (byte)0x01,
             (byte)0xd2, (byte)0x23, (byte)0x02, (byte)0x02, (byte)0x42, (byte)0x42, (byte)0x02, (byte)0x02, (byte)0xc2, (byte)0xc2, (byte)0x02, (byte)0x02, (byte)0x42, (byte)0x42, (byte)0x02, (byte)0x02,
@@ -75,30 +78,58 @@ public class KGMConverter {
         }
     }
 
-    public static byte[] decrypt(InputStream inputStream) throws Exception {
+    public static int decrypt(byte[] ownKeyBytes,byte[] cipherDataBytes,int offset) {
+        int i = offset;
+        for (int j = 0; i < cipherDataBytes.length; ++i,++j) {
+            int med8 = ownKeyBytes[i % 17] ^ cipherDataBytes[j];
+            med8 ^= (med8 & 0xf) << 4;
+
+            int msk8 = getMask(i);
+            msk8 ^= (msk8 & 0xf) << 4;
+            cipherDataBytes[j] = (byte) (med8 ^ msk8);
+        }
+        return i;
+    }
+    public static void write(InputStream inputStream, OutputStream outputStream,String format,int offset) throws Exception {
+        int bufferSize = 8 * 1024 * 1024;
+        if (bufferSize < inputStream.available()) {
+            bufferSize = inputStream.available();
+        }
+        byte[] buffer = new byte[bufferSize];
+        if (Objects.equals(format, "flac")){
+            outputStream.write(0x66);
+        } else if (Objects.equals(format,"mp3")) {
+            outputStream.write(0x49);
+        }
+        int pos = offset;
+        while (inputStream.read(buffer) != -1) {
+            pos += decrypt(ownKeyBytes,buffer,pos);
+            outputStream.write(buffer);
+        }
+    }
+
+    public static String detectFormat(InputStream inputStream) throws Exception {
         byte[] headerLengthBytes = new byte[4];
-        byte[] ownKeyBytes = new byte[17];
 
         inputStream.read(headerLengthBytes, 0, 4);
         inputStream.skip(8);
         inputStream.read(ownKeyBytes, 0, 17);
         ownKeyBytes[16] = 0;
+
         int headerLength = LengthUtils.getLittleEndianInteger(headerLengthBytes);
         inputStream.skip(headerLength - 17 - 8 - 4 - 16);
-        byte[] musicDataBytes = new byte[inputStream.available()];
-        inputStream.read(musicDataBytes, 0, musicDataBytes.length);
 
-        for (int i = 0; i < musicDataBytes.length; ++i) {
-            int med8 = ownKeyBytes[i % 17] ^ musicDataBytes[i];
-            med8 ^= (med8 & 0xf) << 4;
-
-            int msk8 = getMask(i);
-            msk8 ^= (msk8 & 0xf) << 4;
-            musicDataBytes[i] = (byte) (med8 ^ msk8);
+        byte[] formatIdentifier = new byte[1];
+        inputStream.read(formatIdentifier, 0, 1);
+        decrypt(ownKeyBytes, formatIdentifier,0);
+        if (formatIdentifier[0] == 0x66) {
+            return "flac";
+        } else if (formatIdentifier[0] == 0x49) {
+            return "mp3";
         }
-
-        return musicDataBytes;
+        return "";
     }
+
 
     public static int getMask(int pos){
         int offset = pos >> 4;

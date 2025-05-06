@@ -47,7 +47,7 @@ class MainActivity : ComponentActivity() {
         if (Intent.ACTION_SEND == action &&  type != null) {
             val uri:Uri? = intent.getParcelableExtra(Intent.EXTRA_STREAM)
             if (uri != null) {
-                solveFile(uri,this,false)
+                solveFile(uri,this,false,false)
             }
         }
         if (Intent.ACTION_SEND_MULTIPLE == action && type != null) {
@@ -55,7 +55,7 @@ class MainActivity : ComponentActivity() {
             if (uris != null) {
                 var count = 0
                 for (uri in uris){
-                    if ( solveFile(uri,this,true) ) {
+                    if ( solveFile(uri,this,true,false) ) {
                         count++
                     }
                     else{
@@ -66,7 +66,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         if (Intent.ACTION_VIEW == action && data != null) {
-            solveFile(data,this,false)
+            solveFile(data,this,false,false)
         }
         setContent {
             MainFrame()
@@ -82,7 +82,7 @@ fun getFileNameFromUri(uri: Uri,context: Context): String? {
     return null
 }
 
-fun solveFile(uri: Uri, context: Context, multiple:Boolean):Boolean
+fun solveFile(uri: Uri, context: Context, multiple:Boolean,rawWriteMode: Boolean):Boolean
 {
     try {
         var inputStream = context.contentResolver.openInputStream(uri)
@@ -92,19 +92,19 @@ fun solveFile(uri: Uri, context: Context, multiple:Boolean):Boolean
             val result = NCMConverter.convert(inputStream,false)
             val fileName = getMusicInfoData(result.musicInfoStringArrayValue, "musicName")
             val format = getMusicInfoData(result.musicInfoStringArrayValue,"format")
-            val outputStream = ncmGetOutputStream(format,context,fileName)
-            NCMConverter.outputMusic(outputStream,inputStream,result.RC4key,result.coverData,result.rawWriteMode,result.musicInfoStringArrayValue)
+            val outputStream = getOutputStream(format,context,fileName)
+            NCMConverter.outputMusic(outputStream,inputStream,result.RC4key,result.coverData,rawWriteMode,result.musicInfoStringArrayValue)
             outputStream?.close()
         }
         else{
-            val musicData = KGMConverter.decrypt(inputStream)
+            val musicFormat = KGMConverter.detectFormat(inputStream)
             val regex = Regex("(.kgm)|(.flac)")
             var fileName = getFileNameFromUri(uri,context)
             if (fileName != null) {
                 fileName = fileName.replace(regex,"")
-            }
-            if (fileName != null) {
-                writeMusic(fileName,musicData,context)
+                val outputStream = getOutputStream(musicFormat,context,fileName)
+                //加上先前读取的1字节
+                KGMConverter.write(inputStream,outputStream,musicFormat,1)
             }
         }
 
@@ -120,7 +120,7 @@ fun solveFile(uri: Uri, context: Context, multiple:Boolean):Boolean
     }
 }
 
-fun ncmGetOutputStream(format: String,context: Context,fileName: String): OutputStream? {
+fun getOutputStream(format: String,context: Context,fileName: String): OutputStream? {
     var musicName = "null"
     val values = ContentValues().apply {
         if (format == "flac" ) {
@@ -142,30 +142,6 @@ fun getMusicInfoData(arrayList: ArrayList<String>,key:String): String {
     return arrayList[(arrayList.indexOf(key) + 1)]
 }
 
-fun writeMusic(
-    fileName:String,
-    data:ByteArray,
-    context:Context,
-)
-{
-    var musicName = "null"
-    val values = ContentValues().apply {
-        if (data[0].toInt() == 0x66 ){
-            musicName = "$fileName.flac"
-            put(MediaStore.Audio.Media.MIME_TYPE, "audio/flac")
-        }else if (data[0].toInt() == 0x49){
-            musicName = "$fileName.mp3"
-            put(MediaStore.Audio.Media.MIME_TYPE, "audio/mpeg")
-        }
-        put(MediaStore.Audio.Media.DISPLAY_NAME, musicName)
-        put(MediaStore.Audio.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/NCMConverter4A")
-    }
-    val uri:Uri? = context.contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,values)
-    val oStream: OutputStream? = uri?.let { context.contentResolver.openOutputStream(it) }
-    oStream?.write(data)
-    oStream?.close()
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainFrame() {
@@ -179,7 +155,7 @@ fun MainFrame() {
         onResult = { uri: Uri? ->
             uri?.let {
                 try {
-                    solveFile(uri,context,false)
+                    solveFile(uri,context,false,rawWriteMode)
                     getFileNameFromUri(uri,context)?.let { it1 -> setMusicName(it1) }
                     setConvertResult("True")
                 } catch (e:Exception){

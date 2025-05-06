@@ -21,7 +21,6 @@ class ConvertResult {
     ConvertResult(byte[] RC4key,byte[] coverData,boolean rawWriteMode, ArrayList<String> musicInfoStringArrayValue) {
         this.RC4key = RC4key;
         this.coverData = coverData;
-        this.rawWriteMode = rawWriteMode;
         this.musicInfoStringArrayValue = musicInfoStringArrayValue;
     }
 }
