@@ -13,14 +13,24 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -36,6 +46,7 @@ import androidx.documentfile.provider.DocumentFile
 import java.io.FileInputStream
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -145,35 +156,57 @@ fun getMusicInfoData(arrayList: ArrayList<String>,key:String): String {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainFrame() {
-    val (convertResult,setConvertResult) = remember { mutableStateOf<String?>("null") }
-    val (musicName,setMusicName) = remember { mutableStateOf("尚未选择文件") }
+    var convertResult by remember { mutableStateOf<String?>("null") }
+    var musicName by remember { mutableStateOf("尚未选择文件") }
     var rawWriteMode by remember { mutableStateOf(false) }
+    var conversionDurationMillis by remember { mutableStateOf<Long?>(null) } // 新增：存储耗时的状态
+
+    var isSettingsExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    // 注册活动结果回调
+
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
         onResult = { uri: Uri? ->
             uri?.let {
+                var startTime = 0L
                 try {
-                    solveFile(uri,context,false,rawWriteMode)
-                    getFileNameFromUri(uri,context)?.let { it1 -> setMusicName(it1) }
-                    setConvertResult("True")
-                } catch (e:Exception){
-                    setConvertResult("False")
+                    conversionDurationMillis = null
+                    startTime = System.currentTimeMillis()
+
+                    solveFile(uri, context, false, rawWriteMode)
+
+                    val duration = System.currentTimeMillis() - startTime
+                    conversionDurationMillis = duration // 记录耗时
+
+                    getFileNameFromUri(uri, context)?.let { fileName -> musicName = fileName }
+                    convertResult = "True"
+                } catch (e: Exception) {
+                    if (startTime > 0) { // 如果处理已开始，则记录到出错为止的耗时
+                        val duration = System.currentTimeMillis() - startTime
+                        conversionDurationMillis = duration
+                    } else {
+                        conversionDurationMillis = null // 处理未开始，无耗时
+                    }
+                    convertResult = "False"
                     e.printStackTrace()
                 }
             }
         }
     )
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("NCMConverter4A") },
-                colors = TopAppBarColors(
+                navigationIcon = {
+                    IconButton(onClick = { /* 通常用于打开抽屉菜单 */ }) {
+                        Icon(Icons.Filled.Menu, contentDescription = "菜单")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surface,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             )
@@ -182,52 +215,129 @@ fun MainFrame() {
             FloatingActionButton(
                 onClick = { filePickerLauncher.launch("*/*") }
             ) {
-                Icon ( Icons.Default.Add, contentDescription = "Add" )
+                Icon(Icons.Default.Add, contentDescription = "选择文件")
             }
-        },
-        content = { padding ->
-            Column {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                    ),
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                ),
+                modifier = Modifier
+                    .padding(top = 16.dp)
+                    .fillMaxWidth()
+            ) {
+                Column(
                     modifier = Modifier
-                        .padding(padding)
-                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = if (convertResult == "False") "转换失败" else if(convertResult == "True") "已读取文件!" else "请选择文件！可以从右下方按钮选择,或者从文件管理器选择ncm文件打开",
-                        modifier = Modifier.padding(24.dp),
+                        text = if (convertResult == "False") {
+                            "转换失败"
+                        } else if (convertResult == "True") {
+                            "已读取文件!"
+                        } else {
+                            "等待选择文件"
+                        },
+                        modifier = Modifier.padding(bottom = 16.dp),
                         textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyLarge
                     )
                     Text(
-                        text = "文件名:${musicName}",
-                        modifier = Modifier.padding(24.dp),
+                        text = "文件名: $musicName",
+                        modifier = Modifier.padding(bottom = 8.dp), // 调整间距为耗时信息留出空间
                         textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyMedium
                     )
-                    Box (contentAlignment = Alignment.Center){
-                        Text("原始写入模式", Modifier.padding(24.dp))
-                        Switch(
-                            modifier = Modifier.padding(padding),
-                            checked = rawWriteMode,
-                            onCheckedChange = {
-                                rawWriteMode = it
-                            },
-                            thumbContent = if (rawWriteMode) {
-                                {
-                                    Icon(
-                                        imageVector = Icons.Filled.Check,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(SwitchDefaults.IconSize),
-                                    )
-                                }
-                            } else {
-                                null
-                            }
+
+                    // 显示耗时信息
+                    if (conversionDurationMillis != null) {
+                        val seconds = conversionDurationMillis!! / 1000.0
+                        Text(
+                            // 使用 Locale.US 确保小数点是点，避免某些地区是逗号导致格式化问题
+                            text = String.format(Locale.US, "处理耗时: %.3f 秒", seconds),
+                            modifier = Modifier.padding(bottom = 16.dp), // 与设置区域的间距
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.bodySmall // 使用较小字体
                         )
+                    } else {
+                        // 如果没有耗时信息（例如初始状态），可以留一个占位间距，或者不显示
+                        // 这里为了对齐，当没有耗时的时候，也添加一个与上面Text等效的间距
+                        // 如果 conversionDurationMillis 为 null 且 musicName 不是初始值，
+                        // 可能意味着文件选择被取消或出错在计时开始前。
+                        // 简单起见，我们只在有耗时的时候显示它。
+                        // 如果希望在有文件名但无耗时（例如选取失败）时也保持布局，
+                        // 可以添加一个 Spacer(Modifier.height(MaterialTheme.typography.bodySmall.lineHeight.value.dp + 16.dp))
+                        // 但这里选择仅当有耗时才显示，因此上面对musicName的bottom padding已调整。
+                        // 若 musicName 和 conversionDurationMillis 都可能变化，且需要严格对齐，
+                        // 则需要更复杂的 Spacer 逻辑或固定高度。
+                        // 当前设计：只有当 conversionDurationMillis 非 null 时才显示耗时文本，
+                        // musicName 下方的 padding 减少，耗时文本自己带 padding。
+                        if (musicName != "尚未选择文件") { // 如果已选过文件但耗时为null(可能选取取消)
+                            Spacer(modifier = Modifier.height(MaterialTheme.typography.bodySmall.fontSize.value.dp + 16.dp)) // 估算一个高度占位
+                        } else {
+                            Spacer(modifier = Modifier.height(0.dp)) // 初始状态，musicName下方已有较大padding
+                        }
+                    }
+
+
+                    // "原始写入模式" 的折叠栏
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { isSettingsExpanded = !isSettingsExpanded }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                "兼容性设置",
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            Icon(
+                                imageVector = if (isSettingsExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                                contentDescription = if (isSettingsExpanded) "收起设置" else "展开设置"
+                            )
+                        }
+
+                        AnimatedVisibility(visible = isSettingsExpanded) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 8.dp, bottom = 8.dp, start = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("原始写入模式")
+                                Switch(
+                                    checked = rawWriteMode,
+                                    onCheckedChange = { rawWriteMode = it },
+                                    thumbContent = if (rawWriteMode) {
+                                        {
+                                            Icon(
+                                                imageVector = Icons.Filled.Check,
+                                                contentDescription = "原始写入模式已开启",
+                                                modifier = Modifier.size(SwitchDefaults.IconSize),
+                                            )
+                                        }
+                                    } else {
+                                        null
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
-    )
+    }
 }
