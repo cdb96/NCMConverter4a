@@ -34,13 +34,12 @@ Java_com_cdb96_ncmconverter4a_RC4Jni_ksa(JNIEnv* env, jclass, jbyteArray key) {
 }
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_cdb96_ncmconverter4a_RC4Jni_prgaDecrypt(JNIEnv* env, jclass, jbyteArray sBox, jbyteArray cipherData) {
+Java_com_cdb96_ncmconverter4a_RC4Jni_prgaDecrypt(JNIEnv* env, jclass, jbyteArray sBox, jbyteArray cipherData, jint bytesRead) {
     auto* cipherDataBytes = reinterpret_cast<uint8_t*>( env->GetByteArrayElements(cipherData, nullptr) );
     auto* sBoxBytes = reinterpret_cast<uint8_t*>( env->GetByteArrayElements(sBox, nullptr) );
-    jsize cipherDataLength = env ->GetArrayLength(cipherData);
 
     int i = 0;
-    for (;i + 64 <= cipherDataLength; i += 64){
+    for (;i + 64 <= bytesRead; i += 64){
         int k = i & 0xff;
         uint8x16x4_t cipherDataBytesChunk = vld1q_u8_x4(cipherDataBytes + i);
         uint8x16x4_t key = vld1q_u8_x4(keyStreamBytes + k);
@@ -51,7 +50,7 @@ Java_com_cdb96_ncmconverter4a_RC4Jni_prgaDecrypt(JNIEnv* env, jclass, jbyteArray
         vst1q_u8_x4(cipherDataBytes + i, cipherDataBytesChunk);
     }
 
-    for (; i < cipherDataLength; i++) {
+    for (; i < bytesRead; i++) {
         int j = i & 0xff;
         cipherDataBytes[i] ^= keyStreamBytes[j];
     }

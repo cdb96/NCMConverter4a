@@ -41,14 +41,14 @@ public class KGMConverter {
         }
     }
 
-    public static int decrypt(byte[] ownKeyBytes,byte[] cipherDataBytes,byte[] keyBytes,int offset) {
+    public static int decrypt(byte[] ownKeyBytes,byte[] cipherDataBytes,byte[] keyBytes,int offset,int bytesRead) {
         int i = offset;
         //简化取模运算
         int genMaskCounter = offset % 69632;
         int MaskV2Counter = offset % 272;
         int keyBytesIndexCounter = (offset >> 4) % 4352;
 
-        for (int j = 0; j < cipherDataBytes.length; ++i,++j) {
+        for (int j = 0; j < bytesRead; ++i,++j) {
             int med8 = ownKeyBytes[i % 17] ^ cipherDataBytes[j];
             med8 ^= (med8 & 0xf) << 4;
 
@@ -93,7 +93,7 @@ public class KGMConverter {
         genMask2(keyBytes, 0);
         int bytesRead;
         while ((bytesRead = inputStream.read(buffer)) != -1) {
-            pos = decrypt(ownKeyBytes, buffer, keyBytes, pos);
+            pos = decrypt(ownKeyBytes, buffer, keyBytes, pos, bytesRead);
             outputStream.write(buffer,0,bytesRead);
         }
     }

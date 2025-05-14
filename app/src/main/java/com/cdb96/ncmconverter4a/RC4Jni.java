@@ -5,5 +5,5 @@ public class RC4Jni {
     }
 
     public static native byte[] ksa(byte[] key);
-    public static native void prgaDecrypt(byte[] sBox, byte[] cipherData);
+    public static native void prgaDecrypt(byte[] sBox, byte[] cipherData, int bytesRead);
 }

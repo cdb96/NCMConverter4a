@@ -140,7 +140,7 @@ class NCMConverter {
     public static void modifyHeader(InputStream fileStream, OutputStream fileOutputStream, byte[] sBox, ArrayList<String> musicInfo, byte[] coverData,int bufferSize) throws Exception {
         byte[] preFetchHeader = new byte[bufferSize];
         fileStream.read(preFetchHeader, 0, bufferSize);
-        RC4Jni.prgaDecrypt(sBox, preFetchHeader);
+        RC4Jni.prgaDecrypt(sBox, preFetchHeader, preFetchHeader.length);
 
         String musicName = musicInfo.get( musicInfo.indexOf("musicName") + 1);
         String musicArtist = musicInfo.get( musicInfo.indexOf("artist") + 1);
@@ -176,7 +176,7 @@ class NCMConverter {
             while (!LengthUtils.hasLastBlock(preFetchHeader)) {
                 byte[] temp = new byte[bufferSize];
                 fileStream.read(temp, 0, bufferSize);
-                RC4Jni.prgaDecrypt(sBox,temp);
+                RC4Jni.prgaDecrypt(sBox,temp,temp.length);
                 preFetchHeader = expandByteArray(preFetchHeader, bufferSize);
                 System.arraycopy(temp, 0, preFetchHeader, preFetchHeader.length - bufferSize, temp.length);
             };
@@ -219,7 +219,7 @@ class NCMConverter {
         long trueTotalTime = System.nanoTime();
         while ((bytesRead = fileStream.read(buffer)) != -1) {
             long startTime = System.nanoTime();
-            RC4Jni.prgaDecrypt(sbox, buffer);
+            RC4Jni.prgaDecrypt(sbox, buffer, bytesRead);
             long duration = System.nanoTime() - startTime;
             totalTime += duration;
             Log.d("Performance", "耗时: " + duration / 1_000_000 + "ms");
