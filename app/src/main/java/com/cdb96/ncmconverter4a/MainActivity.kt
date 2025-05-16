@@ -116,6 +116,7 @@ fun solveFile(uri: Uri, context: Context, multiple:Boolean,rawWriteMode: Boolean
                 val outputStream = getOutputStream(musicFormat,context,fileName)
                 //加上先前读取的1字节
                 KGMConverter.write(inputStream,outputStream,musicFormat,1)
+                outputStream?.close()
             }
         }
 
@@ -198,11 +199,6 @@ fun MainFrame() {
         topBar = {
             TopAppBar(
                 title = { Text("NCMConverter4A") },
-                navigationIcon = {
-                    IconButton(onClick = { /* 通常用于打开抽屉菜单 */ }) {
-                        Icon(Icons.Filled.Menu, contentDescription = "菜单")
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,

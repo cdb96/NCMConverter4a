@@ -23,7 +23,7 @@ android {
             cmake {
                 cppFlags += "-O3"
                 arguments("-DANDROID_ARM_NEON=TRUE")
-                targets("RC4Decrypt")
+                targets("ncmc4a")
             }
         }
         proguardFiles()
@@ -55,7 +55,7 @@ android {
         }
     }
     ndkVersion = "29.0.13113456 rc1"
-    buildToolsVersion = "35.0.0"
+    buildToolsVersion = "36.0.0"
 }
 
 dependencies {

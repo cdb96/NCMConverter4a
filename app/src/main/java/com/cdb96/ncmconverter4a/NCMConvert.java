@@ -1,12 +1,9 @@
 package com.cdb96.ncmconverter4a;
 
+import com.cdb96.ncmconverter4a.JNIUtil.RC4Decrypt;
 import android.util.Log;
-
 import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
-
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -140,7 +137,7 @@ class NCMConverter {
     public static void modifyHeader(InputStream fileStream, OutputStream fileOutputStream, byte[] sBox, ArrayList<String> musicInfo, byte[] coverData,int bufferSize) throws Exception {
         byte[] preFetchHeader = new byte[bufferSize];
         fileStream.read(preFetchHeader, 0, bufferSize);
-        RC4Jni.prgaDecrypt(sBox, preFetchHeader, preFetchHeader.length);
+        RC4Decrypt.prgaDecrypt(sBox, preFetchHeader, preFetchHeader.length);
 
         String musicName = musicInfo.get( musicInfo.indexOf("musicName") + 1);
         String musicArtist = musicInfo.get( musicInfo.indexOf("artist") + 1);
@@ -176,7 +173,7 @@ class NCMConverter {
             while (!LengthUtils.hasLastBlock(preFetchHeader)) {
                 byte[] temp = new byte[bufferSize];
                 fileStream.read(temp, 0, bufferSize);
-                RC4Jni.prgaDecrypt(sBox,temp,temp.length);
+                RC4Decrypt.prgaDecrypt(sBox,temp,temp.length);
                 preFetchHeader = expandByteArray(preFetchHeader, bufferSize);
                 System.arraycopy(temp, 0, preFetchHeader, preFetchHeader.length - bufferSize, temp.length);
             };
@@ -209,7 +206,7 @@ class NCMConverter {
         if (fileStream.available() < bufferSize) {
             bufferSize = fileStream.available();
         }
-        byte[] sbox = RC4Jni.ksa(RC4Key);
+        byte[] sbox = RC4Decrypt.ksa(RC4Key);
         byte[] buffer = new byte[bufferSize];
         if (!rawWriteMode) {
             modifyHeader(fileStream, outputFileStream, sbox, musicInfo, coverData,bufferSize);
@@ -219,7 +216,7 @@ class NCMConverter {
         long trueTotalTime = System.nanoTime();
         while ((bytesRead = fileStream.read(buffer)) != -1) {
             long startTime = System.nanoTime();
-            RC4Jni.prgaDecrypt(sbox, buffer, bytesRead);
+            RC4Decrypt.prgaDecrypt(sbox, buffer, bytesRead);
             long duration = System.nanoTime() - startTime;
             totalTime += duration;
             Log.d("Performance", "耗时: " + duration / 1_000_000 + "ms");

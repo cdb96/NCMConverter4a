@@ -1,7 +1,7 @@
-package com.cdb96.ncmconverter4a;
-public class RC4Jni {
+package com.cdb96.ncmconverter4a.JNIUtil;
+public class RC4Decrypt {
     static {
-        System.loadLibrary("RC4Decrypt");
+        System.loadLibrary("ncmc4a");
     }
 
     public static native byte[] ksa(byte[] key);
