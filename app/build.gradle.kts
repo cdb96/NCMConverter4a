@@ -21,7 +21,6 @@ android {
         }
         externalNativeBuild {
             cmake {
-                cppFlags += "-O3"
                 arguments("-DANDROID_ARM_NEON=TRUE")
                 targets("ncmc4a")
             }
@@ -32,10 +31,16 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            externalNativeBuild {
+                cmake {
+                    cppFlags += "-O3"
+                }
+            }
         }
     }
     compileOptions {

@@ -22,22 +22,29 @@ public class KGMConverter {
         }
     }
 
-    public static void write(InputStream inputStream, OutputStream outputStream, String format, int initOffset) throws Exception {
+    public static void write(InputStream inputStream, OutputStream outputStream, String format) throws Exception {
         int bufferSize = 8 * 1024 * 1024;
         if (bufferSize > inputStream.available()) {
             bufferSize = inputStream.available();
         }
 
+        byte formatIdentifier = 0;
         byte[] buffer = new byte[bufferSize];
         if (Objects.equals(format, "flac")) {
-            outputStream.write(0x66);
+            formatIdentifier = 0x66;
         } else if (Objects.equals(format, "mp3")) {
-            outputStream.write(0x49);
+            formatIdentifier = 0x49;
         }
 
-        int pos = initOffset;
+        int pos = 0;
         KGMDecrypt.init(ownKeyBytes);
         int bytesRead;
+        //消除读取格式带来的1字节偏差,这个buffer[0]第一次是乱填的
+        buffer[0] = 0x25;
+        inputStream.read(buffer,1,bufferSize-1);
+        pos = KGMDecrypt.decrypt(buffer,pos,bufferSize);
+        buffer[0] = formatIdentifier;
+        outputStream.write(buffer, 0, bufferSize);
         while ((bytesRead = inputStream.read(buffer)) != -1) {
             pos = KGMDecrypt.decrypt(buffer, pos, bytesRead);
             outputStream.write(buffer, 0, bytesRead);

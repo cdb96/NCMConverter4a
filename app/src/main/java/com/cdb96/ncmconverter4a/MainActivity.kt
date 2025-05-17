@@ -114,8 +114,7 @@ fun solveFile(uri: Uri, context: Context, multiple:Boolean,rawWriteMode: Boolean
             if (fileName != null) {
                 fileName = fileName.replace(regex,"")
                 val outputStream = getOutputStream(musicFormat,context,fileName)
-                //加上先前读取的1字节
-                KGMConverter.write(inputStream,outputStream,musicFormat,1)
+                KGMConverter.write(inputStream,outputStream,musicFormat)
                 outputStream?.close()
             }
         }
