@@ -1,7 +1,12 @@
 #include <jni.h>
 #include <cstdint>
 #include <vector>
-#include <arm_neon.h>
+
+#if defined(__ARM_NEON__) || defined(__aarch64__)
+    #include <arm_neon.h>
+#else
+    #include "NEON_2_SSE.h"
+#endif
 
 const int PRE_COMPUTED_TABLE_SIZE = 4352;
 const int MASKV2_PRE_DEF_TABLE_SIZE = 272;
@@ -12,6 +17,7 @@ const uint8x16_t mask = vdupq_n_u8(0x0f);
 thread_local uint8_t keyBytes[PRE_COMPUTED_TABLE_SIZE];
 thread_local uint8_t ownKeyBytes[16 * 17];
 
+#if defined(__aarch64__)
 void genMask(int startPos) {
     for (int pos = 0; pos < PRE_COMPUTED_TABLE_SIZE * 16; pos += 16 * 64) {
         int i = startPos + pos;
@@ -32,6 +38,25 @@ void genMask(int startPos) {
         vst1q_u8_x4(keyBytes + storePos, tableDataChunk);
     }
 }
+#elif defined(__x86_64__)
+void genMask(int startPos) {
+    for (int pos = 0; pos < PRE_COMPUTED_TABLE_SIZE * 16; pos += 16 * 16) {
+        int i = startPos + pos;
+        i >>= 4;
+        //int med8 = PRE_COMPUTED_TABLE[i % PRE_COMPUTED_TABLE_SIZE];
+        uint8x16_t tableDataChunk = vld1q_u8(
+                PRE_COMPUTED_TABLE + (i % PRE_COMPUTED_TABLE_SIZE));
+        i >>= 8;
+        while (i >= 0x11) {
+            uint8x16_t xorData0 = vdupq_n_u8(PRE_COMPUTED_TABLE[i % 4352]);
+            tableDataChunk = veorq_u8(tableDataChunk,xorData0);
+            i >>= 8;
+        }
+        int storePos = pos >> 4;
+        vst1q_u8(keyBytes + storePos, tableDataChunk);
+    }
+}
+#endif
 
 extern "C"
 JNIEXPORT int JNICALL

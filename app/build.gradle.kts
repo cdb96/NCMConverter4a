@@ -13,14 +13,16 @@ android {
         minSdk = 28
         targetSdk = 36
         versionCode = 1
-        versionName = "3.0.0"
+        versionName = "3.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
+            abiFilters += "x86_64"
             abiFilters += "arm64-v8a"
         }
         externalNativeBuild {
             cmake {
+                cppFlags += "-Wno-gnu-inline-cpp-without-extern -Wno-deprecated-declarations"
                 arguments("-DANDROID_ARM_NEON=TRUE")
                 targets("ncmc4a")
             }
