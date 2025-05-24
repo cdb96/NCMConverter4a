@@ -202,7 +202,7 @@ class NCMConverter {
         }
     }
     public static void outputMusic(OutputStream outputFileStream,InputStream fileStream, byte[] RC4Key, byte[] coverData, boolean rawWriteMode, ArrayList<String> musicInfo) throws Exception {
-        int bufferSize = 8 * 1024 * 1024;
+        int bufferSize = 4 * 1024 * 1024;
         if (fileStream.available() < bufferSize) {
             bufferSize = fileStream.available();
         }
@@ -212,19 +212,13 @@ class NCMConverter {
             modifyHeader(fileStream, outputFileStream, sbox, musicInfo, coverData,bufferSize);
         }
         int bytesRead;
-        long totalTime = 0;
-        long trueTotalTime = System.nanoTime();
         while ((bytesRead = fileStream.read(buffer)) != -1) {
             long startTime = System.nanoTime();
             RC4Decrypt.prgaDecrypt(sbox, buffer, bytesRead);
             long duration = System.nanoTime() - startTime;
-            totalTime += duration;
             Log.d("Performance", "耗时: " + duration / 1_000_000 + "ms");
             outputFileStream.write(buffer, 0, bytesRead);
         }
-        long trueDuration = System.nanoTime() - trueTotalTime;
-        Log.d("Performance", "耗时: " + totalTime / 1_000_000 + "ms");
-        Log.d("Performance", "耗时: " + trueDuration / 1_000_000 + "ms");
     }
     private static String combineArtistsString(String artistsString) {
         String[] artistsStringArray = artistsString.replaceAll("[\\[\\]\"]","").split(",");

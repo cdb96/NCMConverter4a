@@ -8,7 +8,7 @@ import java.util.Objects;
 
 
 public class KGMConverter {
-    static byte[] ownKeyBytes = new byte[17];
+    private static final ThreadLocal<byte[]> ownKeyBytes = ThreadLocal.withInitial(() -> new byte[17]);
     public static boolean KGMDetect(InputStream inputStream) throws Exception {
         final byte[] KGMMagicHeader = {0x7c, (byte) 0xd5, 0x32, (byte) 0xeb, (byte) 0x86, 0x02, 0x7f, 0x4b, (byte) 0xa8, (byte) 0xaf, (byte) 0xa6, (byte) 0x8e, 0x0f, (byte) 0xff, (byte) 0x99, 0x14};
         byte[] fileHeader = new byte[16];
@@ -23,7 +23,7 @@ public class KGMConverter {
     }
 
     public static void write(InputStream inputStream, OutputStream outputStream, String format) throws Exception {
-        int bufferSize = 8 * 1024 * 1024;
+        int bufferSize = 4 * 1024 * 1024;
         if (bufferSize > inputStream.available()) {
             bufferSize = inputStream.available();
         }
@@ -37,7 +37,7 @@ public class KGMConverter {
         }
 
         int pos = 0;
-        KGMDecrypt.init(ownKeyBytes);
+        KGMDecrypt.init(ownKeyBytes.get());
         int bytesRead;
         //消除读取格式带来的1字节偏差,这个buffer[0]第一次是乱填的
         buffer[0] = 0x25;
@@ -56,8 +56,8 @@ public class KGMConverter {
 
         inputStream.read(headerLengthBytes, 0, 4);
         inputStream.skip(8);
-        inputStream.read(ownKeyBytes, 0, 17);
-        ownKeyBytes[16] = 0;
+        inputStream.read(ownKeyBytes.get(), 0, 17);
+        Objects.requireNonNull(ownKeyBytes.get())[16] = 0;
 
         int headerLength = LengthUtils.getLittleEndianInteger(headerLengthBytes);
         inputStream.skip(headerLength - 17 - 8 - 4 - 16);
@@ -66,7 +66,7 @@ public class KGMConverter {
         byte keyBytes = 0;
         byte MaskV2PreDef0 = (byte) 0xB8;
         inputStream.read(formatIdentifier, 0, 1);
-        int med8 = ownKeyBytes[0] ^ formatIdentifier[0];
+        int med8 = Objects.requireNonNull(ownKeyBytes.get())[0] ^ formatIdentifier[0];
         med8 ^= (med8 & 0xf) << 4;
         int msk8 = keyBytes ^ MaskV2PreDef0;
         msk8 ^= (msk8 & 0xf) << 4;

@@ -1,9 +1,9 @@
 package com.cdb96.ncmconverter4a
+
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
@@ -12,183 +12,373 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
-import java.io.FileInputStream
+import kotlinx.coroutines.*
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : ComponentActivity() {
+
+    private var threadCount by mutableStateOf(4) // 默认4个线程
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private var fileProcessingDispatcher = Dispatchers.IO.limitedParallelism(threadCount)
+
+    // 更新线程池的函数
+    private fun updateThreadPool(newThreadCount: Int) {
+        threadCount = newThreadCount
+        fileProcessingDispatcher = Dispatchers.IO.limitedParallelism(threadCount)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val intent = intent
-        val action = intent.action
-        val data = intent.data
-        val type = intent.type
-        if (Intent.ACTION_SEND == action &&  type != null) {
-            val uri:Uri? = intent.getParcelableExtra(Intent.EXTRA_STREAM)
-            if (uri != null) {
-                solveFile(uri,this,false,false)
+
+        handleIntent(intent)
+        setContent {
+            MainFrame(
+                threadCount = threadCount,
+                onThreadCountChange = ::updateThreadPool
+            )
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent) {
+        when (intent.action) {
+            Intent.ACTION_SEND -> handleSingleFile(intent)
+            Intent.ACTION_SEND_MULTIPLE -> handleMultipleFiles(intent)
+            Intent.ACTION_VIEW -> handleViewAction(intent)
+        }
+    }
+
+    private fun handleSingleFile(intent: Intent) {
+        val uri: Uri? = intent.getParcelableExtra(Intent.EXTRA_STREAM)
+        uri?.let {
+            CoroutineScope(Dispatchers.Main).launch {
+                val success = withContext(fileProcessingDispatcher) {
+                    solveFile(it, this@MainActivity, false)
+                }
+                showSingleFileResult(success)
             }
         }
-        if (Intent.ACTION_SEND_MULTIPLE == action && type != null) {
-            val uris:ArrayList<Uri>? = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
-            if (uris != null) {
-                var count = 0
-                for (uri in uris){
-                    if ( solveFile(uri,this,true,false) ) {
-                        count++
-                    }
-                    else{
-                        Toast.makeText(this, ("该文件转换失败！可能不是NCM文件"), Toast.LENGTH_SHORT).show()
+    }
+
+    private fun handleMultipleFiles(intent: Intent) {
+        val uris: ArrayList<Uri>? = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
+        uris?.let { processMultipleFilesParallel(it) }
+    }
+
+    private fun handleViewAction(intent: Intent) {
+        intent.data?.let { uri ->
+            CoroutineScope(Dispatchers.Main).launch {
+                val success = withContext(fileProcessingDispatcher) {
+                    solveFile(uri, this@MainActivity, false)
+                }
+                showSingleFileResult(success)
+            }
+        }
+    }
+
+    private fun processMultipleFilesParallel(uris: List<Uri>) {
+        CoroutineScope(Dispatchers.Main).launch {
+            val startTime = System.currentTimeMillis()
+            val successCount = AtomicInteger(0)
+            val failureCount = AtomicInteger(0)
+
+            try {
+                // 并行处理所有文件，使用统一的线程池
+                val jobs = uris.map { uri ->
+                    async(fileProcessingDispatcher) {
+                        try {
+                            val success = solveFile(uri, this@MainActivity, false)
+                            if (success) {
+                                successCount.incrementAndGet()
+                            } else {
+                                failureCount.incrementAndGet()
+                            }
+                            success
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            failureCount.incrementAndGet()
+                            false
+                        }
                     }
                 }
-                Toast.makeText(this, ("转换${count}个文件完成！存储于Music文件夹 "), Toast.LENGTH_SHORT).show()
+
+                // 等待所有任务完成
+                jobs.awaitAll()
+
+                val duration = System.currentTimeMillis() - startTime
+                val total = successCount.get()
+                val failed = failureCount.get()
+
+                showMultipleFilesResult(total, failed, duration)
+
+            } catch (e: Exception) {
+                Toast.makeText(
+                    this@MainActivity,
+                    "批量转换过程中发生错误: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
-        if (Intent.ACTION_VIEW == action && data != null) {
-            solveFile(data,this,false,false)
+    }
+
+    private fun showSingleFileResult(success: Boolean) {
+        val message = if (success) {
+            "转换完成！存储于Music文件夹"
+        } else {
+            "转换失败！可能不是NCM文件"
         }
-        setContent {
-            MainFrame()
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showMultipleFilesResult(successCount: Int, failureCount: Int, duration: Long) {
+        val message = buildString {
+            append("转换完成！")
+            if (successCount > 0) append("成功${successCount}个")
+            if (failureCount > 0) {
+                if (successCount > 0) append("，")
+                append("失败${failureCount}个")
+            }
+            append("\n耗时：${String.format(Locale.US, "%.2f", duration / 1000.0)}秒")
+            append("\n存储于Music文件夹")
+        }
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
+
+
+    // 将函数移到MainActivity类内部，使其可以访问fileProcessingDispatcher
+    internal fun processFilesWithUI(
+        uris: List<Uri>,
+        context: Context,
+        rawWriteMode: Boolean,
+        coroutineScope: CoroutineScope,
+        onProgress: (String, String, Long?) -> Unit,
+        onComplete: () -> Unit
+    ) {
+        coroutineScope.launch {
+            val startTime = System.currentTimeMillis()
+            val successCount = AtomicInteger(0)
+            val failureCount = AtomicInteger(0)
+            val fileNames = mutableListOf<String>()
+
+            try {
+                // 使用统一的线程池处理所有文件
+                val jobs = uris.map { uri ->
+                    async(fileProcessingDispatcher) {
+                        val fileName = uri.getFileName(context) ?: "未知文件"
+                        synchronized(fileNames) {
+                            fileNames.add(fileName)
+                        }
+
+                        val success = solveFile(uri, context, rawWriteMode)
+                        if (success) {
+                            successCount.incrementAndGet()
+                        } else {
+                            failureCount.incrementAndGet()
+                        }
+                        success
+                    }
+                }
+
+                jobs.awaitAll()
+
+                val duration = System.currentTimeMillis() - startTime
+                val result = "处理完成：成功${successCount.get()}个，失败${failureCount.get()}个"
+                val names = fileNames.joinToString(", ")
+
+                onProgress(result, names, duration)
+
+            } catch (_: Exception) {
+                onProgress("处理过程中发生错误", "错误", null)
+            } finally {
+                onComplete()
+            }
         }
     }
 }
 
-fun getFileNameFromUri(uri: Uri,context: Context): String? {
-    val documentFile: DocumentFile? = DocumentFile.fromSingleUri(context, uri)
-    if (documentFile != null) {
-        return documentFile.name
-    }
-    return null
+// 扩展函数：获取文件名
+private fun Uri.getFileName(context: Context): String? {
+    return DocumentFile.fromSingleUri(context, this)?.name
 }
 
-fun solveFile(uri: Uri, context: Context, multiple:Boolean,rawWriteMode: Boolean):Boolean
-{
+// 优化后的文件处理函数，移除冗余的withContext调用
+private suspend fun solveFile(
+    uri: Uri,
+    context: Context,
+    rawWriteMode: Boolean
+): Boolean {
     try {
-        var inputStream = context.contentResolver.openInputStream(uri)
-
-        if (!KGMConverter.KGMDetect(inputStream)) {
-            inputStream = context.contentResolver.openInputStream(uri)
-            val result = NCMConverter.convert(inputStream,false)
-            val fileName = getMusicInfoData(result.musicInfoStringArrayValue, "musicName")
-            val format = getMusicInfoData(result.musicInfoStringArrayValue,"format")
-            val outputStream = getOutputStream(format,context,fileName)
-            NCMConverter.outputMusic(outputStream,inputStream,result.RC4key,result.coverData,rawWriteMode,result.musicInfoStringArrayValue)
-            outputStream?.close()
-        }
-        else{
-            val musicFormat = KGMConverter.detectFormat(inputStream)
-            val regex = Regex("(.kgm)|(.flac)")
-            var fileName = getFileNameFromUri(uri,context)
-            if (fileName != null) {
-                fileName = fileName.replace(regex,"")
-                val outputStream = getOutputStream(musicFormat,context,fileName)
-                KGMConverter.write(inputStream,outputStream,musicFormat)
-                outputStream?.close()
+        // 先检测是否为 KGM 文件
+        context.contentResolver.openInputStream(uri)?.use { inputStream ->
+            val isKGM = KGMConverter.KGMDetect(inputStream)
+            if (isKGM) {
+                // 处理 KGM 文件
+                processKGMFile(uri, context, inputStream)
+            } else {
+                // 处理 NCM 文件
+                if (!processNCMFile(uri, context, rawWriteMode)) return false
             }
-        }
+        } == true
+    } catch (e: Exception) {
+        e.printStackTrace()
+        false
+    }
+    return true
+}
 
-        if (!multiple) {
-            Toast.makeText(context, ("转换完成！存储于Music文件夹 "), Toast.LENGTH_SHORT).show()
+private fun processNCMFile(
+    uri: Uri,
+    context: Context,
+    rawWriteMode: Boolean
+): Boolean {
+    try {
+        context.contentResolver.openInputStream(uri)?.use { inputStream ->
+
+            val result = NCMConverter.convert(inputStream, false)
+            val fileName = getMusicInfoData(result.musicInfoStringArrayValue, "musicName")
+            val format = getMusicInfoData(result.musicInfoStringArrayValue, "format")
+
+            getOutputStream(format, context, fileName)?.use { outputStream ->
+                NCMConverter.outputMusic(
+                    outputStream,
+                    inputStream,
+                    result.RC4key,
+                    result.coverData,
+                    rawWriteMode,
+                    result.musicInfoStringArrayValue
+                )
+            }
         }
         return true
-    } catch (_:Exception){
-        if (!multiple) {
-            Toast.makeText(context, ("转换失败！可能不是NCM文件"), Toast.LENGTH_SHORT).show()
-        }
+    } catch (e: Exception) {
+        e.printStackTrace()
         return false
     }
 }
 
-fun getOutputStream(format: String,context: Context,fileName: String): OutputStream? {
-    var musicName = "null"
-    val values = ContentValues().apply {
-        if (format == "flac" ) {
-            musicName = "$fileName.flac"
-            put(MediaStore.Audio.Media.MIME_TYPE, "audio/flac")
-        }else if ( format == "mp3" ){
-            musicName = "$fileName.mp3"
-            put(MediaStore.Audio.Media.MIME_TYPE, "audio/mpeg")
+private fun processKGMFile(
+    uri: Uri,
+    context: Context,
+    inputStream: InputStream
+): Boolean {
+    try {
+        // 获取音乐格式
+        val musicFormat = KGMConverter.detectFormat(inputStream)
+
+        if (musicFormat.isNullOrBlank()) {
+            return false
         }
-        put(MediaStore.Audio.Media.DISPLAY_NAME, musicName)
-        put(MediaStore.Audio.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/NCMConverter4A")
+
+        // 获取文件名并处理
+        val originalFileName = uri.getFileName(context) ?: return false
+        val fileName = originalFileName.replace(Regex("(.kgm)|(.flac)", RegexOption.IGNORE_CASE), "")
+
+
+        // 创建输出流并转换
+        getOutputStream(musicFormat, context, fileName)?.use { outputStream ->
+            KGMConverter.write(inputStream, outputStream, musicFormat)
+            return true
+        }
+
+        false
+
+    } catch (e: Exception) {
+        e.printStackTrace()
+        false
     }
-    val uri:Uri? = context.contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,values)
-    val oStream: OutputStream? = uri?.let { context.contentResolver.openOutputStream(it) }
-    return oStream;
+    return false
 }
 
-fun getMusicInfoData(arrayList: ArrayList<String>,key:String): String {
-    return arrayList[(arrayList.indexOf(key) + 1)]
+private fun getOutputStream(format: String, context: Context, fileName: String): OutputStream? {
+    val mimeType = when (format.lowercase()) {
+        "flac" -> "audio/flac"
+        "mp3" -> "audio/mpeg"
+        else -> "audio/mpeg"
+    }
+
+    val musicName = "$fileName.${format.lowercase()}"
+
+    val values = ContentValues().apply {
+        put(MediaStore.Audio.Media.DISPLAY_NAME, musicName)
+        put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
+        put(MediaStore.Audio.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/NCMConverter4A")
+    }
+
+    return context.contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
+        ?.let { context.contentResolver.openOutputStream(it) }
+}
+
+private fun getMusicInfoData(arrayList: ArrayList<String>, key: String): String {
+    return try {
+        val index = arrayList.indexOf(key)
+        if (index != -1 && index + 1 < arrayList.size) {
+            arrayList[index + 1]
+        } else {
+            "unknown"
+        }
+    } catch (_: Exception) {
+        "unknown"
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainFrame() {
-    var convertResult by remember { mutableStateOf<String?>("null") }
+fun MainFrame(
+    threadCount: Int,
+    onThreadCountChange: (Int) -> Unit
+) {
+    var convertResult by remember { mutableStateOf<String?>("尚未选择文件") }
     var musicName by remember { mutableStateOf("尚未选择文件") }
     var rawWriteMode by remember { mutableStateOf(false) }
-    var conversionDurationMillis by remember { mutableStateOf<Long?>(null) } // 新增：存储耗时的状态
-
+    var conversionDurationMillis by remember { mutableStateOf<Long?>(null) }
     var isSettingsExpanded by remember { mutableStateOf(false) }
+    var isProcessing by remember { mutableStateOf(false) }
+
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
-        onResult = { uri: Uri? ->
-            uri?.let {
-                var startTime = 0L
-                try {
-                    conversionDurationMillis = null
-                    startTime = System.currentTimeMillis()
-
-                    solveFile(uri, context, false, rawWriteMode)
-
-                    val duration = System.currentTimeMillis() - startTime
-                    conversionDurationMillis = duration // 记录耗时
-
-                    getFileNameFromUri(uri, context)?.let { fileName -> musicName = fileName }
-                    convertResult = "True"
-                } catch (e: Exception) {
-                    if (startTime > 0) { // 如果处理已开始，则记录到出错为止的耗时
-                        val duration = System.currentTimeMillis() - startTime
-                        conversionDurationMillis = duration
-                    } else {
-                        conversionDurationMillis = null // 处理未开始，无耗时
-                    }
-                    convertResult = "False"
-                    e.printStackTrace()
+        contract = ActivityResultContracts.GetMultipleContents(),
+        onResult = { uris: List<Uri>? ->
+            uris?.let { selectedUris ->
+                if (selectedUris.isNotEmpty()) {
+                    isProcessing = true
+                    // 这里调用MainActivity内部的processFilesWithUI函数
+                    (context as? MainActivity)?.processFilesWithUI(
+                        uris = selectedUris,
+                        context = context,
+                        rawWriteMode = rawWriteMode,
+                        coroutineScope = coroutineScope,
+                        onProgress = { result, names, duration ->
+                            convertResult = result
+                            musicName = names
+                            conversionDurationMillis = duration
+                        },
+                        onComplete = {
+                            isProcessing = false
+                        }
+                    )
                 }
             }
         }
@@ -201,16 +391,29 @@ fun MainFrame() {
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             )
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { filePickerLauncher.launch("*/*") }
+                onClick = {
+                    if (!isProcessing) {
+                        filePickerLauncher.launch("*/*")
+                    }
+                },
+                containerColor = if (isProcessing)
+                    MaterialTheme.colorScheme.surfaceVariant
+                else
+                    MaterialTheme.colorScheme.primaryContainer
             ) {
-                Icon(Icons.Default.Add, contentDescription = "选择文件")
+                if (isProcessing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(Icons.Default.Add, contentDescription = "选择文件")
+                }
             }
         }
     ) { innerPadding ->
@@ -220,116 +423,217 @@ fun MainFrame() {
                 .fillMaxSize()
                 .padding(horizontal = 16.dp)
         ) {
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                ),
+            StatusCard(
+                convertResult = convertResult,
+                musicName = musicName,
+                conversionDurationMillis = conversionDurationMillis,
+                isProcessing = isProcessing
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            SettingsCard(
+                isExpanded = isSettingsExpanded,
+                onExpandToggle = { isSettingsExpanded = !isSettingsExpanded },
+                rawWriteMode = rawWriteMode,
+                onRawWriteModeChange = { rawWriteMode = it },
+                threadCount = threadCount,
+                onThreadCountChange = onThreadCountChange,
+                enabled = !isProcessing
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatusCard(
+    convertResult: String?,
+    musicName: String,
+    conversionDurationMillis: Long?,
+    isProcessing: Boolean
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+        modifier = Modifier
+            .padding(top = 16.dp)
+            .fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (isProcessing) {
+                CircularProgressIndicator(modifier = Modifier.padding(bottom = 16.dp))
+            }
+
+            Text(
+                text = convertResult.orEmpty(),
+                modifier = Modifier.padding(bottom = 16.dp),
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodyLarge
+            )
+
+            Text(
+                text = "文件名: $musicName",
+                modifier = Modifier.padding(bottom = 8.dp),
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodyMedium
+            )
+
+            conversionDurationMillis?.let { duration ->
+                val seconds = duration / 1000.0
+                Text(
+                    text = String.format(Locale.US, "处理耗时: %.3f 秒", seconds),
+                    modifier = Modifier.padding(bottom = 16.dp),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsCard(
+    isExpanded: Boolean,
+    onExpandToggle: () -> Unit,
+    rawWriteMode: Boolean,
+    onRawWriteModeChange: (Boolean) -> Unit,
+    threadCount: Int,
+    onThreadCountChange: (Int) -> Unit,
+    enabled: Boolean
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
                 modifier = Modifier
-                    .padding(top = 16.dp)
                     .fillMaxWidth()
+                    .clickable(enabled = enabled) { onExpandToggle() }
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                Text(
+                    "兼容性设置",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (enabled)
+                        MaterialTheme.colorScheme.onSurface
+                    else
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                Icon(
+                    imageVector = if (isExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = if (isExpanded) "收起设置" else "展开设置",
+                    tint = if (enabled)
+                        MaterialTheme.colorScheme.onSurface
+                    else
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+
+            AnimatedVisibility(visible = isExpanded) {
                 Column(
                     modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, start = 8.dp)
                 ) {
-                    Text(
-                        text = if (convertResult == "False") {
-                            "转换失败"
-                        } else if (convertResult == "True") {
-                            "已读取文件!"
-                        } else {
-                            "等待选择文件"
-                        },
-                        modifier = Modifier.padding(bottom = 16.dp),
-                        textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                    Text(
-                        text = "文件名: $musicName",
-                        modifier = Modifier.padding(bottom = 8.dp), // 调整间距为耗时信息留出空间
-                        textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-
-                    // 显示耗时信息
-                    if (conversionDurationMillis != null) {
-                        val seconds = conversionDurationMillis!! / 1000.0
+                    // 原始写入模式设置
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
                         Text(
-                            // 使用 Locale.US 确保小数点是点，避免某些地区是逗号导致格式化问题
-                            text = String.format(Locale.US, "处理耗时: %.3f 秒", seconds),
-                            modifier = Modifier.padding(bottom = 16.dp), // 与设置区域的间距
-                            textAlign = TextAlign.Center,
-                            style = MaterialTheme.typography.bodySmall // 使用较小字体
+                            "原始写入模式",
+                            color = if (enabled)
+                                MaterialTheme.colorScheme.onSurface
+                            else
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
-                    } else {
-                        // 如果没有耗时信息（例如初始状态），可以留一个占位间距，或者不显示
-                        // 这里为了对齐，当没有耗时的时候，也添加一个与上面Text等效的间距
-                        // 如果 conversionDurationMillis 为 null 且 musicName 不是初始值，
-                        // 可能意味着文件选择被取消或出错在计时开始前。
-                        // 简单起见，我们只在有耗时的时候显示它。
-                        // 如果希望在有文件名但无耗时（例如选取失败）时也保持布局，
-                        // 可以添加一个 Spacer(Modifier.height(MaterialTheme.typography.bodySmall.lineHeight.value.dp + 16.dp))
-                        // 但这里选择仅当有耗时才显示，因此上面对musicName的bottom padding已调整。
-                        // 若 musicName 和 conversionDurationMillis 都可能变化，且需要严格对齐，
-                        // 则需要更复杂的 Spacer 逻辑或固定高度。
-                        // 当前设计：只有当 conversionDurationMillis 非 null 时才显示耗时文本，
-                        // musicName 下方的 padding 减少，耗时文本自己带 padding。
-                        if (musicName != "尚未选择文件") { // 如果已选过文件但耗时为null(可能选取取消)
-                            Spacer(modifier = Modifier.height(MaterialTheme.typography.bodySmall.fontSize.value.dp + 16.dp)) // 估算一个高度占位
-                        } else {
-                            Spacer(modifier = Modifier.height(0.dp)) // 初始状态，musicName下方已有较大padding
-                        }
+                        Switch(
+                            checked = rawWriteMode,
+                            onCheckedChange = onRawWriteModeChange,
+                            enabled = enabled,
+                            thumbContent = if (rawWriteMode) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Filled.Check,
+                                        contentDescription = "原始写入模式已开启",
+                                        modifier = Modifier.size(SwitchDefaults.IconSize),
+                                    )
+                                }
+                            } else null
+                        )
                     }
 
+                    // 线程数设置
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "并发线程数: $threadCount",
+                            color = if (enabled)
+                                MaterialTheme.colorScheme.onSurface
+                            else
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
 
-                    // "原始写入模式" 的折叠栏
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Slider(
+                            value = threadCount.toFloat(),
+                            onValueChange = { value ->
+                                onThreadCountChange(value.toInt())
+                            },
+                            valueRange = 1f..8f,
+                            steps = 6, // 1, 2, 3, 4, 5, 6, 7, 8
+                            enabled = enabled,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { isSettingsExpanded = !isSettingsExpanded }
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                                .padding(horizontal = 12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                "兼容性设置",
-                                style = MaterialTheme.typography.titleSmall
+                                text = "1",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (enabled)
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                else
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                             )
-                            Icon(
-                                imageVector = if (isSettingsExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                                contentDescription = if (isSettingsExpanded) "收起设置" else "展开设置"
+                            Text(
+                                text = "8",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (enabled)
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                else
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                             )
                         }
 
-                        AnimatedVisibility(visible = isSettingsExpanded) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 8.dp, bottom = 8.dp, start = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("原始写入模式")
-                                Switch(
-                                    checked = rawWriteMode,
-                                    onCheckedChange = { rawWriteMode = it },
-                                    thumbContent = if (rawWriteMode) {
-                                        {
-                                            Icon(
-                                                imageVector = Icons.Filled.Check,
-                                                contentDescription = "原始写入模式已开启",
-                                                modifier = Modifier.size(SwitchDefaults.IconSize),
-                                            )
-                                        }
-                                    } else {
-                                        null
-                                    }
-                                )
-                            }
-                        }
+                        Text(
+                            text = "请根据设备情况合理选择，推荐为4",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (enabled)
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            else
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
                     }
                 }
             }

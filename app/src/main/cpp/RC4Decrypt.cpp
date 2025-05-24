@@ -8,7 +8,7 @@
     #include "NEON_2_SSE.h"
 #endif
 
-uint8_t keyStreamBytes[256];
+thread_local uint8_t keyStreamBytes[256];
 extern "C"
 JNIEXPORT jbyteArray JNICALL
 Java_com_cdb96_ncmconverter4a_JNIUtil_RC4Decrypt_ksa(JNIEnv* env, jclass, jbyteArray key) {
