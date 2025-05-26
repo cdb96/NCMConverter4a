@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
     private var fileProcessingDispatcher = Dispatchers.IO.limitedParallelism(threadCount)
 
     // 更新线程池的函数
+    @OptIn(ExperimentalCoroutinesApi::class)
     private fun updateThreadPool(newThreadCount: Int) {
         threadCount = newThreadCount
         fileProcessingDispatcher = Dispatchers.IO.limitedParallelism(threadCount)
@@ -255,18 +256,18 @@ private fun processNCMFile(
     try {
         context.contentResolver.openInputStream(uri)?.use { inputStream ->
 
-            val result = NCMConverter.convert(inputStream, false)
-            val fileName = getMusicInfoData(result.musicInfoStringArrayValue, "musicName")
-            val format = getMusicInfoData(result.musicInfoStringArrayValue, "format")
+            val NCMFileInfo = NCMConverter.convert(inputStream, false)
+            val fileName = getMusicInfoData(NCMFileInfo.musicInfoStringArrayValue, "musicName")
+            val format = getMusicInfoData(NCMFileInfo.musicInfoStringArrayValue, "format")
 
             getOutputStream(format, context, fileName)?.use { outputStream ->
                 NCMConverter.outputMusic(
                     outputStream,
                     inputStream,
-                    result.RC4key,
-                    result.coverData,
+                    NCMFileInfo.RC4key,
+                    NCMFileInfo.coverData,
                     rawWriteMode,
-                    result.musicInfoStringArrayValue
+                    NCMFileInfo.musicInfoStringArrayValue
                 )
             }
         }

@@ -8,7 +8,7 @@ import java.nio.ByteOrder;
 
 class ID3HeaderGen
 {
-    private static final ByteArrayOutputStream ID3Header = new ByteArrayOutputStream();
+    private final ByteArrayOutputStream ID3Header = new ByteArrayOutputStream();
     public void initDefaultTagHeader() throws IOException {
         byte[] defaultHeader = {0x49,0x44,0x33,0x04,0x00,0x00,0x00,0x00,0x00,0x00} ;
         ID3Header.write(defaultHeader);
