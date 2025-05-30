@@ -12,7 +12,7 @@ class LengthUtils {
         return syncSafe;
     }
 
-    public static int getLittleEndianInteger(byte[] bytes) throws Exception
+    public static int getLittleEndianInteger(byte[] bytes)
     {
         ByteBuffer buffer = ByteBuffer.wrap(bytes);
         buffer.order(ByteOrder.LITTLE_ENDIAN);
@@ -20,14 +20,12 @@ class LengthUtils {
         return buffer.getInt();
     }
 
-    public static int getBigEndianInteger(byte[] bytes) throws  Exception
-    {
-        ByteBuffer buffer = ByteBuffer.wrap(bytes);
+    public static byte[] toBigEndianBytes(int value) {
+        ByteBuffer buffer = ByteBuffer.allocate(4);
         buffer.order(ByteOrder.BIG_ENDIAN);
-
-        return buffer.getInt();
+        buffer.putInt(value);
+        return buffer.array();
     }
-
     public static byte[] toBigEndianInteger3Bytes(int value)
     {
         byte[] bigEndianInteger3Bytes = new byte[3];
@@ -47,7 +45,7 @@ class LengthUtils {
         return ( (bytes[0] & 0x7f)<< 21 ) + ( (bytes[1] & 0x7f)<< 14 ) + ( (bytes[2] & 0x7f)<< 7 ) + (bytes[3] & 0x7f);
     }
 
-    public static int findVorbisComment(byte[] flacBytes) throws Exception {
+    public static int findVorbisComment(byte[] flacBytes) {
         int pivot = 4; //跳过FLAC
         while ( (flacBytes[pivot] & 0x04) == 0 ) {
             byte[] blockSizeBytes = new byte[3];
@@ -57,7 +55,7 @@ class LengthUtils {
         return pivot;
     }
 
-    public static int findLastBlock(byte[] flacBytes) throws  Exception {
+    public static int findLastBlock(byte[] flacBytes) {
         int pivot = 4; //跳过FLAC
         while ( (flacBytes[pivot] & 0x80) == 0 ) {
             int blockSize = ((flacBytes[pivot + 1] & 0xFF) << 16
@@ -68,7 +66,7 @@ class LengthUtils {
         return pivot;
     }
 
-    public static boolean hasLastBlock(byte[] flacBytes) throws Exception{
+    public static boolean hasLastBlock(byte[] flacBytes) {
         int pivot = 4;
         while ( (flacBytes[pivot] & 0x80) == 0 ) {
             int blockSize = ((flacBytes[pivot + 1] & 0xFF) << 16

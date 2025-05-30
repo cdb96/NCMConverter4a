@@ -9,12 +9,14 @@ import java.nio.ByteOrder;
 class ID3HeaderGen
 {
     private final ByteArrayOutputStream ID3Header = new ByteArrayOutputStream();
+
     public void initDefaultTagHeader() throws IOException {
-        byte[] defaultHeader = {0x49,0x44,0x33,0x04,0x00,0x00,0x00,0x00,0x00,0x00} ;
+        byte[] defaultHeader = {0x49,0x44,0x33,0x03,0x00,0x00,0x00,0x00,0x00,0x00} ;
         ID3Header.write(defaultHeader);
     }
 
     public byte[] outputHeader() {
+        // ID3v2.3 使用同步安全整数表示总大小
         byte[] sizeBytes = LengthUtils.toSyncSafeIntegerBytes(ID3Header.size());
         byte[] ID3HeaderBytes = ID3Header.toByteArray();
         System.arraycopy(sizeBytes,0,ID3HeaderBytes,6,4);
@@ -24,18 +26,19 @@ class ID3HeaderGen
 
     public void addCover(byte[] coverData) throws IOException {
         byte[] mimeTypeBytes = "image/jpeg".getBytes();
-        byte[] descriptionBytes = "NCMC4A".getBytes();
-        byte textEncoding = 0x00;
-        byte pictureType = 0x06;
+        byte[] descriptionBytes = "".getBytes();
+        byte textEncoding = 0x00; // ISO-8859-1
+        byte pictureType = 0x03;
 
         int frameSize = 1 + mimeTypeBytes.length + 1 + descriptionBytes.length + 1 + 1 + coverData.length;
-        byte[] frameSizeBytes;
-        frameSizeBytes = LengthUtils.toSyncSafeIntegerBytes(frameSize);
+        // ID3v2.3 帧大小使用普通32位整数，不是同步安全整数
+        byte[] frameSizeBytes = LengthUtils.toBigEndianBytes(frameSize);
+
         ByteBuffer frame = ByteBuffer.allocate(10 + frameSize);
         //header
         frame.order(ByteOrder.BIG_ENDIAN);
         frame.put("APIC".getBytes()); // 帧ID
-        frame.put( frameSizeBytes ); // 帧大小
+        frame.put(frameSizeBytes); // 帧大小 (普通整数)
         frame.putShort((short) 0);
 
         //body
@@ -49,57 +52,65 @@ class ID3HeaderGen
 
         ID3Header.write(frame.array());
     }
-    public void addTIT2(String title) throws Exception {
-        byte[] titleBytes = title.getBytes(UTF_8);
-        int frameSize = 1 + titleBytes.length;
-        byte[] frameSizeBytes;
 
-        frameSizeBytes = LengthUtils.toSyncSafeIntegerBytes(frameSize);
+    public void addTIT2(String title) throws Exception {
+        byte[] titleBytes = title.getBytes(UTF_16LE);
+        int frameSize = 1 + 2 + titleBytes.length; // BOM加2
+
+        // ID3v2.3 帧大小使用普通32位整数
+        byte[] frameSizeBytes = LengthUtils.toBigEndianBytes(frameSize);
+
         ByteBuffer frame = ByteBuffer.allocate(10 + frameSize);
         //header
         frame.order(ByteOrder.BIG_ENDIAN);
         frame.put("TIT2".getBytes());
-        frame.put( frameSizeBytes );
+        frame.put(frameSizeBytes);
         frame.putShort((short) 0);
 
         //body
-        frame.put((byte) 0x03);
+        frame.put((byte) 0x01); // UTF-16 编码
+        frame.put((byte) 0xFF);  // BOM for UTF-16LE
+        frame.put((byte) 0xFE);
         frame.put(titleBytes);
 
         ID3Header.write(frame.array());
     }
 
     public void addTPE1(String artist) throws Exception {
-        byte[] artistBytes = artist.getBytes(UTF_8);
-        int frameSize = 1 + artistBytes.length;
-        byte[] frameSizeBytes;
+        byte[] artistBytes = artist.getBytes(UTF_16LE);
+        int frameSize = 1 + 2 + artistBytes.length; // BOM加2
 
-        frameSizeBytes = LengthUtils.toSyncSafeIntegerBytes(frameSize);
+        byte[] frameSizeBytes = LengthUtils.toBigEndianBytes(frameSize);
+
         ByteBuffer frame = ByteBuffer.allocate(10 + frameSize);
         frame.order(ByteOrder.BIG_ENDIAN);
         frame.put("TPE1".getBytes());
-        frame.put( frameSizeBytes );
+        frame.put(frameSizeBytes);
         frame.putShort((short) 0);
 
-        frame.put((byte) 0x03);
+        frame.put((byte) 0x01); // UTF-16 编码
+        frame.put((byte) 0xFF);  // BOM for UTF-16LE
+        frame.put((byte) 0xFE);
         frame.put(artistBytes);
 
         ID3Header.write(frame.array());
     }
 
     public void addTALB(String album) throws Exception {
-        byte[] albumBytes = album.getBytes(UTF_8);
-        int frameSize = 1 + albumBytes.length;
-        byte[] frameSizeBytes;
+        byte[] albumBytes = album.getBytes(UTF_16LE);
+        int frameSize = 1 + 2 + albumBytes.length; // BOM加2
 
-        frameSizeBytes = LengthUtils.toSyncSafeIntegerBytes(frameSize);
+        byte[] frameSizeBytes = LengthUtils.toBigEndianBytes(frameSize);
+
         ByteBuffer frame = ByteBuffer.allocate(10 + frameSize);
         frame.order(ByteOrder.BIG_ENDIAN);
         frame.put("TALB".getBytes());
-        frame.put( frameSizeBytes );
+        frame.put(frameSizeBytes);
         frame.putShort((short) 0);
 
-        frame.put((byte) 0x03);
+        frame.put((byte) 0x01);
+        frame.put((byte) 0xFF);
+        frame.put((byte) 0xFE);
         frame.put(albumBytes);
 
         ID3Header.write(frame.array());
@@ -109,8 +120,8 @@ class ID3HeaderGen
 class FLACHeaderGen
 {
     public static byte[] pictureBlockGen(byte[] coverData) {
-        byte[] mimeTypeBytes = "image/jpeg".getBytes(UTF_8);
-        byte[] descriptionBytes = "NCMC4A".getBytes(UTF_8);
+        byte[] mimeTypeBytes = "image/png".getBytes(UTF_8);
+        byte[] descriptionBytes = "".getBytes(UTF_8);
 
         int blockSize = 4 + 4 + mimeTypeBytes.length + 4 + descriptionBytes.length + 4 + 4 + 4 + 4 + 4 + coverData.length;
         ByteBuffer pictureBlock = ByteBuffer.allocate(blockSize + 4); //块的大小加上块头的大小
@@ -135,10 +146,7 @@ class FLACHeaderGen
         pictureBlock.putInt(coverData.length); // 封面长度 第八个4
         pictureBlock.put(coverData); // 封面数据
 
-        byte[] result = new byte[pictureBlock.position()];
-        pictureBlock.flip();
-        pictureBlock.get(result);
-        return result;
+        return pictureBlock.array();
     }
     public static byte[] vorbisCommentBlockGen(String title, String artist,String album, byte[] vendorBytes) {
         byte[] titleBytes = ("TITLE=" + title).getBytes(UTF_8);
@@ -164,9 +172,6 @@ class FLACHeaderGen
         vorbisCommentBlock.putInt(albumBytes.length); // 第五个4
         vorbisCommentBlock.put(albumBytes);
 
-        byte[] result = new byte[vorbisCommentBlock.position()];
-        vorbisCommentBlock.flip();
-        vorbisCommentBlock.get(result);
-        return result;
+        return vorbisCommentBlock.array();
     }
 }
