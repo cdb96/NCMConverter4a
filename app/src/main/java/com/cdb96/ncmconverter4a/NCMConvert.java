@@ -33,7 +33,8 @@ class NCMConverter {
     }
     private static byte[] getRC4key(InputStream fileStream) throws Exception
     {
-        fileStream.skip(10);
+        //这里-2是因为之前检测KGM文件的时候已经读取两个字节了
+        fileStream.skip(10 - 2);
         byte[] CoreKey = {0x68, 0x7A, 0x48, 0x52, 0x41, 0x6D, 0x73, 0x6F, 0x35, 0x6B, 0x49, 0x6E, 0x62, 0x61, 0x78, 0x57};
         byte[] bytes = new byte[4];
         fileStream.read(bytes, 0, 4);

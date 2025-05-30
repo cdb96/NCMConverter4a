@@ -10,10 +10,10 @@ import java.util.Objects;
 public class KGMConverter {
     private static final ThreadLocal<byte[]> ownKeyBytes = ThreadLocal.withInitial(() -> new byte[17]);
     public static boolean KGMDetect(InputStream inputStream) throws Exception {
-        final byte[] KGMMagicHeader = {0x7c, (byte) 0xd5, 0x32, (byte) 0xeb, (byte) 0x86, 0x02, 0x7f, 0x4b, (byte) 0xa8, (byte) 0xaf, (byte) 0xa6, (byte) 0x8e, 0x0f, (byte) 0xff, (byte) 0x99, 0x14};
-        byte[] fileHeader = new byte[16];
-        inputStream.read(fileHeader, 0, 16);
-        if (Arrays.equals(fileHeader, KGMMagicHeader)) {
+        final byte[] truncatedKGMMagicHeader = {0x7c, (byte) 0xd5};
+        byte[] fileHeader = new byte[2];
+        inputStream.read(fileHeader, 0, 2);
+        if (Arrays.equals(fileHeader, truncatedKGMMagicHeader)) {
             System.out.println("KGM file detected");
             return true;
         } else {
@@ -52,6 +52,8 @@ public class KGMConverter {
     }
 
     public static String detectFormat(InputStream inputStream) throws Exception {
+        //KGM magic header实际长度为16字节,上面为了简化检测步骤弄成两个字节，这里补回来
+        inputStream.skip(16 - 2);
         byte[] headerLengthBytes = new byte[4];
 
         inputStream.read(headerLengthBytes, 0, 4);
@@ -60,6 +62,7 @@ public class KGMConverter {
         Objects.requireNonNull(ownKeyBytes.get())[16] = 0;
 
         int headerLength = LengthUtils.getLittleEndianInteger(headerLengthBytes);
+        //减去之前读取的字节
         inputStream.skip(headerLength - 17 - 8 - 4 - 16);
 
         byte[] formatIdentifier = new byte[1];

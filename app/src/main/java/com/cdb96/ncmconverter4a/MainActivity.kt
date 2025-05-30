@@ -14,7 +14,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -178,20 +177,23 @@ class MainActivity : ComponentActivity() {
     ) {
         coroutineScope.launch {
             val startTime = System.currentTimeMillis()
+            val fileNameMap = mutableMapOf<Uri, String>()
             val successCount = AtomicInteger(0)
             val failureCount = AtomicInteger(0)
-            val fileNames = mutableListOf<String>()
 
             try {
+                val fileNames = uris.map { uri ->
+                    async(Dispatchers.IO) {
+                        val fileName = uri.getFileName(context) ?: "未知文件"
+                        fileNameMap[uri] = fileName
+                        fileName
+                    }
+                }.awaitAll()
                 // 使用统一的线程池处理所有文件
                 val jobs = uris.map { uri ->
                     async(fileProcessingDispatcher) {
-                        val fileName = uri.getFileName(context) ?: "未知文件"
-                        synchronized(fileNames) {
-                            fileNames.add(fileName)
-                        }
-
-                        val success = solveFile(uri, context, rawWriteMode)
+                        val fileName = fileNameMap[uri] ?: "未知文件"
+                        val success = solveFile(uri, context, rawWriteMode,fileName)
                         if (success) {
                             successCount.incrementAndGet()
                         } else {
@@ -224,10 +226,11 @@ private fun Uri.getFileName(context: Context): String? {
 }
 
 // 优化后的文件处理函数，移除冗余的withContext调用
-private suspend fun solveFile(
+private fun solveFile(
     uri: Uri,
     context: Context,
-    rawWriteMode: Boolean
+    rawWriteMode: Boolean,
+    fileName: String ?= null
 ): Boolean {
     try {
         // 先检测是否为 KGM 文件
@@ -235,10 +238,10 @@ private suspend fun solveFile(
             val isKGM = KGMConverter.KGMDetect(inputStream)
             if (isKGM) {
                 // 处理 KGM 文件
-                processKGMFile(uri, context, inputStream)
+                processKGMFile(uri, context, inputStream, fileName)
             } else {
                 // 处理 NCM 文件
-                if (!processNCMFile(uri, context, rawWriteMode)) return false
+                if (!processNCMFile(uri, context, rawWriteMode,inputStream)) return false
             }
         } == true
     } catch (e: Exception) {
@@ -251,25 +254,23 @@ private suspend fun solveFile(
 private fun processNCMFile(
     uri: Uri,
     context: Context,
-    rawWriteMode: Boolean
+    rawWriteMode: Boolean,
+    inputStream: InputStream
 ): Boolean {
     try {
-        context.contentResolver.openInputStream(uri)?.use { inputStream ->
+        val NCMFileInfo = NCMConverter.convert(inputStream, false)
+        val fileName = getMusicInfoData(NCMFileInfo.musicInfoStringArrayValue, "musicName")
+        val format = getMusicInfoData(NCMFileInfo.musicInfoStringArrayValue, "format")
 
-            val NCMFileInfo = NCMConverter.convert(inputStream, false)
-            val fileName = getMusicInfoData(NCMFileInfo.musicInfoStringArrayValue, "musicName")
-            val format = getMusicInfoData(NCMFileInfo.musicInfoStringArrayValue, "format")
-
-            getOutputStream(format, context, fileName)?.use { outputStream ->
-                NCMConverter.outputMusic(
-                    outputStream,
-                    inputStream,
-                    NCMFileInfo.RC4key,
-                    NCMFileInfo.coverData,
-                    rawWriteMode,
-                    NCMFileInfo.musicInfoStringArrayValue
-                )
-            }
+        getOutputStream(format, context, fileName)?.use { outputStream ->
+            NCMConverter.outputMusic(
+                outputStream,
+                inputStream,
+                NCMFileInfo.RC4key,
+                NCMFileInfo.coverData,
+                rawWriteMode,
+                NCMFileInfo.musicInfoStringArrayValue
+            )
         }
         return true
     } catch (e: Exception) {
@@ -281,7 +282,8 @@ private fun processNCMFile(
 private fun processKGMFile(
     uri: Uri,
     context: Context,
-    inputStream: InputStream
+    inputStream: InputStream,
+    fileName: String?
 ): Boolean {
     try {
         // 获取音乐格式
@@ -292,12 +294,11 @@ private fun processKGMFile(
         }
 
         // 获取文件名并处理
-        val originalFileName = uri.getFileName(context) ?: return false
-        val fileName = originalFileName.replace(Regex("(.kgm)|(.flac)", RegexOption.IGNORE_CASE), "")
-
+        var processedFileName = fileName ?: uri.getFileName(context) ?: "null"
+        processedFileName = processedFileName.replace(Regex("(.kgm)|(.flac)", RegexOption.IGNORE_CASE), "")
 
         // 创建输出流并转换
-        getOutputStream(musicFormat, context, fileName)?.use { outputStream ->
+        getOutputStream(musicFormat, context, processedFileName)?.use { outputStream ->
             KGMConverter.write(inputStream, outputStream, musicFormat)
             return true
         }
@@ -331,17 +332,11 @@ private fun getOutputStream(format: String, context: Context, fileName: String):
 }
 
 private fun getMusicInfoData(arrayList: ArrayList<String>, key: String): String {
-    return try {
-        val index = arrayList.indexOf(key)
-        if (index != -1 && index + 1 < arrayList.size) {
-            arrayList[index + 1]
-        } else {
-            "unknown"
-        }
-    } catch (_: Exception) {
-        "unknown"
-    }
+    return arrayList.indexOf(key).takeIf { it != -1 }?.let { index ->
+        arrayList.getOrNull(index + 1)
+    } ?: "unknown"
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
