@@ -31,25 +31,23 @@ class ID3HeaderGen
         int frameSize = 1 + mimeTypeBytes.length + 1 + descriptionBytes.length + 1 + 1 + coverData.length;
         byte[] frameSizeBytes;
         frameSizeBytes = LengthUtils.toSyncSafeIntegerBytes(frameSize);
-        ByteBuffer header = ByteBuffer.allocate(10);
-        header.order(ByteOrder.BIG_ENDIAN);
-        header.put("APIC".getBytes()); // 帧ID
-        header.put( frameSizeBytes ); // 帧大小
-        header.putShort((short) 0);
+        ByteBuffer frame = ByteBuffer.allocate(10 + frameSize);
+        //header
+        frame.order(ByteOrder.BIG_ENDIAN);
+        frame.put("APIC".getBytes()); // 帧ID
+        frame.put( frameSizeBytes ); // 帧大小
+        frame.putShort((short) 0);
 
-        ByteBuffer body = ByteBuffer.allocate(frameSize);
-        body.put(textEncoding); // 文本编码
-        body.put(mimeTypeBytes); // MIME类型
-        body.put((byte) 0); // MIME类型结束符
-        body.put(pictureType); // 图片类型
-        body.put(descriptionBytes); // 描述
-        body.put((byte) 0); // 描述结束符
-        body.put(coverData); // 图片数据
+        //body
+        frame.put(textEncoding); // 文本编码
+        frame.put(mimeTypeBytes); // MIME类型
+        frame.put((byte) 0); // MIME类型结束符
+        frame.put(pictureType); // 图片类型
+        frame.put(descriptionBytes); // 描述
+        frame.put((byte) 0); // 描述结束符
+        frame.put(coverData); // 图片数据
 
-        byte[] APICFrame = new byte[header.position() + body.position()];
-        System.arraycopy(header.array(),0,APICFrame,0,header.position());
-        System.arraycopy(body.array(),0,APICFrame,header.position(),body.position());
-        ID3Header.write(APICFrame);
+        ID3Header.write(frame.array());
     }
     public void addTIT2(String title) throws Exception {
         byte[] titleBytes = title.getBytes(UTF_8);
@@ -57,20 +55,18 @@ class ID3HeaderGen
         byte[] frameSizeBytes;
 
         frameSizeBytes = LengthUtils.toSyncSafeIntegerBytes(frameSize);
-        ByteBuffer header = ByteBuffer.allocate(10);
-        header.order(ByteOrder.BIG_ENDIAN);
-        header.put("TIT2".getBytes());
-        header.put( frameSizeBytes );
-        header.putShort((short) 0);
+        ByteBuffer frame = ByteBuffer.allocate(10 + frameSize);
+        //header
+        frame.order(ByteOrder.BIG_ENDIAN);
+        frame.put("TIT2".getBytes());
+        frame.put( frameSizeBytes );
+        frame.putShort((short) 0);
 
-        ByteBuffer body = ByteBuffer.allocate(frameSize);
-        body.put((byte) 0x03);
-        body.put(titleBytes);
+        //body
+        frame.put((byte) 0x03);
+        frame.put(titleBytes);
 
-        byte[] TIT2Frame = new byte[header.position() + body.position()];
-        System.arraycopy(header.array(),0,TIT2Frame,0,header.position());
-        System.arraycopy(body.array(),0,TIT2Frame,header.position(),body.position());
-        ID3Header.write(TIT2Frame);
+        ID3Header.write(frame.array());
     }
 
     public void addTPE1(String artist) throws Exception {
@@ -79,20 +75,16 @@ class ID3HeaderGen
         byte[] frameSizeBytes;
 
         frameSizeBytes = LengthUtils.toSyncSafeIntegerBytes(frameSize);
-        ByteBuffer header = ByteBuffer.allocate(10);
-        header.order(ByteOrder.BIG_ENDIAN);
-        header.put("TPE1".getBytes());
-        header.put( frameSizeBytes );
-        header.putShort((short) 0);
+        ByteBuffer frame = ByteBuffer.allocate(10 + frameSize);
+        frame.order(ByteOrder.BIG_ENDIAN);
+        frame.put("TPE1".getBytes());
+        frame.put( frameSizeBytes );
+        frame.putShort((short) 0);
 
-        ByteBuffer body = ByteBuffer.allocate(frameSize);
-        body.put((byte) 0x03);
-        body.put(artistBytes);
+        frame.put((byte) 0x03);
+        frame.put(artistBytes);
 
-        byte[] TPE1Frame = new byte[header.position() + body.position()];
-        System.arraycopy(header.array(),0,TPE1Frame,0,header.position());
-        System.arraycopy(body.array(),0,TPE1Frame,header.position(),body.position());
-        ID3Header.write(TPE1Frame);
+        ID3Header.write(frame.array());
     }
 
     public void addTALB(String album) throws Exception {
@@ -101,20 +93,16 @@ class ID3HeaderGen
         byte[] frameSizeBytes;
 
         frameSizeBytes = LengthUtils.toSyncSafeIntegerBytes(frameSize);
-        ByteBuffer header = ByteBuffer.allocate(10);
-        header.order(ByteOrder.BIG_ENDIAN);
-        header.put("TALB".getBytes());
-        header.put( frameSizeBytes );
-        header.putShort((short) 0);
+        ByteBuffer frame = ByteBuffer.allocate(10 + frameSize);
+        frame.order(ByteOrder.BIG_ENDIAN);
+        frame.put("TALB".getBytes());
+        frame.put( frameSizeBytes );
+        frame.putShort((short) 0);
 
-        ByteBuffer body = ByteBuffer.allocate(frameSize);
-        body.put((byte) 0x03);
-        body.put(albumBytes);
+        frame.put((byte) 0x03);
+        frame.put(albumBytes);
 
-        byte[] TALBFrame = new byte[header.position() + body.position()];
-        System.arraycopy(header.array(),0,TALBFrame,0,header.position());
-        System.arraycopy(body.array(),0,TALBFrame,header.position(),body.position());
-        ID3Header.write(TALBFrame);
+        ID3Header.write(frame.array());
     }
 }
 
