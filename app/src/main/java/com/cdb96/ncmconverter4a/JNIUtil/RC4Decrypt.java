@@ -4,6 +4,6 @@ public class RC4Decrypt {
         System.loadLibrary("ncmc4a");
     }
 
-    public static native byte[] ksa(byte[] key);
-    public static native void prgaDecrypt(byte[] sBox, byte[] cipherData, int bytesRead);
+    public static native void ksa(byte[] key);
+    public static native void prgaDecrypt(byte[] cipherData, int bytesRead);
 }

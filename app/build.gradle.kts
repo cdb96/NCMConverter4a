@@ -22,7 +22,7 @@ android {
         }
         externalNativeBuild {
             cmake {
-                cppFlags += "-Wno-gnu-inline-cpp-without-extern -Wno-deprecated-declarations"
+                cppFlags += "-std=c++17 -Wno-gnu-inline-cpp-without-extern -Wno-deprecated-declarations"
                 arguments("-DANDROID_ARM_NEON=TRUE")
                 targets("ncmc4a")
             }

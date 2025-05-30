@@ -1,7 +1,5 @@
 package com.cdb96.ncmconverter4a.JNIUtil;
 
-import java.nio.ByteBuffer;
-
 public class KGMDecrypt {
     static {
         System.loadLibrary("ncmc4a");

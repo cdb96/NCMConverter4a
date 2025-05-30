@@ -24,7 +24,8 @@ class NCMFileInfo {
 class NCMConverter {
     private static final String ALGORITHM = "AES";
     private static final String TRANSFORMATION = "AES/ECB/PKCS5Padding";
-    public static byte[] decrypt(byte[] key,byte[] encryptedBytes) throws Exception
+
+    public static byte[] decrypt(byte[] key, byte[] encryptedBytes) throws Exception
     {
         SecretKeySpec secretKey = new SecretKeySpec(key,ALGORITHM);
         Cipher cipher = Cipher.getInstance(TRANSFORMATION);
@@ -135,10 +136,10 @@ class NCMConverter {
         System.arraycopy(original, 0, newArray, 0, original.length);
         return newArray;
     }
-    public static void modifyHeader(InputStream fileStream, OutputStream fileOutputStream, byte[] sBox, ArrayList<String> musicInfo, byte[] coverData,int bufferSize) throws Exception {
+    public static void modifyHeader(InputStream fileStream, OutputStream fileOutputStream, ArrayList<String> musicInfo, byte[] coverData,int bufferSize) throws Exception {
         byte[] preFetchChunk = new byte[bufferSize];
         fileStream.read(preFetchChunk, 0, bufferSize);
-        RC4Decrypt.prgaDecrypt(sBox, preFetchChunk, preFetchChunk.length);
+        RC4Decrypt.prgaDecrypt(preFetchChunk, preFetchChunk.length);
 
         String musicName = musicInfo.get( musicInfo.indexOf("musicName") + 1);
         String musicArtist = musicInfo.get( musicInfo.indexOf("artist") + 1);
@@ -156,7 +157,7 @@ class NCMConverter {
                 preFetchChunk = expandByteArray(preFetchChunk, expandSize - bufferSize);
                 byte[] temp = new byte[expandSize - bufferSize];
                 int bytesRead = fileStream.read(temp,  0, expandSize - bufferSize);
-                RC4Decrypt.prgaDecrypt(sBox, temp, bytesRead);
+                RC4Decrypt.prgaDecrypt(temp, bytesRead);
                 System.arraycopy(temp, 0, preFetchChunk, bufferSize, bytesRead);
             }
 
@@ -175,7 +176,7 @@ class NCMConverter {
             while (!LengthUtils.hasLastBlock(preFetchChunk)) {
                 byte[] temp = new byte[bufferSize];
                 fileStream.read(temp, 0, bufferSize);
-                RC4Decrypt.prgaDecrypt(sBox,temp,temp.length);
+                RC4Decrypt.prgaDecrypt(temp,temp.length);
                 preFetchChunk = expandByteArray(preFetchChunk, bufferSize);
                 System.arraycopy(temp, 0, preFetchChunk, preFetchChunk.length - bufferSize, temp.length);
             }
@@ -208,17 +209,14 @@ class NCMConverter {
         if (fileStream.available() < bufferSize) {
             bufferSize = fileStream.available();
         }
-        byte[] sbox = RC4Decrypt.ksa(RC4Key);
+        RC4Decrypt.ksa(RC4Key);
         byte[] buffer = new byte[bufferSize];
         if (!rawWriteMode) {
-            modifyHeader(fileStream, outputFileStream, sbox, musicInfo, coverData,bufferSize);
+            modifyHeader(fileStream, outputFileStream, musicInfo, coverData,bufferSize);
         }
         int bytesRead;
         while ((bytesRead = fileStream.read(buffer)) != -1) {
-            long startTime = System.nanoTime();
-            RC4Decrypt.prgaDecrypt(sbox, buffer, bytesRead);
-            long duration = System.nanoTime() - startTime;
-            Log.d("Performance", "耗时: " + duration / 1_000_000 + "ms");
+            RC4Decrypt.prgaDecrypt(buffer, bytesRead);
             outputFileStream.write(buffer, 0, bytesRead);
         }
     }
