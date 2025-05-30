@@ -120,7 +120,7 @@ class ID3HeaderGen
 class FLACHeaderGen
 {
     public static byte[] pictureBlockGen(byte[] coverData) {
-        byte[] mimeTypeBytes = "image/png".getBytes(UTF_8);
+        byte[] mimeTypeBytes = "image/jpeg".getBytes(UTF_8);
         byte[] descriptionBytes = "".getBytes(UTF_8);
 
         int blockSize = 4 + 4 + mimeTypeBytes.length + 4 + descriptionBytes.length + 4 + 4 + 4 + 4 + 4 + coverData.length;
