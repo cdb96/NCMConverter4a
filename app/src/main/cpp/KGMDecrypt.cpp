@@ -60,8 +60,8 @@ void genMask(int startPos) {
 
 extern "C"
 JNIEXPORT int JNICALL
-Java_com_cdb96_ncmconverter4a_JNIUtil_KGMDecrypt_decrypt(JNIEnv *env, jobject , jbyteArray cipher_data_bytes, jint offset, jint bytes_read) {
-    auto *cipherDataBytes = reinterpret_cast<uint8_t *>( env->GetByteArrayElements(cipher_data_bytes, nullptr));
+Java_com_cdb96_ncmconverter4a_JNIUtil_KGMDecrypt_decrypt(JNIEnv *env, jobject , jobject cipher_data_bytes, jint offset, jint bytes_read) {
+    auto *cipherDataBytes = reinterpret_cast<uint8_t *>( env->GetDirectBufferAddress(cipher_data_bytes));
     int i = offset;
     int j = 0;
     //简化取模运算
@@ -138,7 +138,6 @@ Java_com_cdb96_ncmconverter4a_JNIUtil_KGMDecrypt_decrypt(JNIEnv *env, jobject , 
         MaskV2Counter++;
     }
 
-    env->ReleaseByteArrayElements(cipher_data_bytes, reinterpret_cast<jbyte *>(cipherDataBytes), 0);
     return i;
 }
 

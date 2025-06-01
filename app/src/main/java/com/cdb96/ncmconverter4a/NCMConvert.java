@@ -1,11 +1,15 @@
 package com.cdb96.ncmconverter4a;
 
 import com.cdb96.ncmconverter4a.JNIUtil.RC4Decrypt;
-import android.util.Log;
 import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
+
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -136,10 +140,10 @@ class NCMConverter {
         System.arraycopy(original, 0, newArray, 0, original.length);
         return newArray;
     }
-    public static void modifyHeader(InputStream fileStream, OutputStream fileOutputStream, ArrayList<String> musicInfo, byte[] coverData,int bufferSize) throws Exception {
+    public static void modifyHeader(FileInputStream fileStream, FileOutputStream fileOutputStream, ArrayList<String> musicInfo, byte[] coverData,int bufferSize) throws Exception {
         byte[] preFetchChunk = new byte[bufferSize];
         fileStream.read(preFetchChunk, 0, bufferSize);
-        RC4Decrypt.prgaDecrypt(preFetchChunk, preFetchChunk.length);
+        RC4Decrypt.prgaDecryptByteArray(preFetchChunk, preFetchChunk.length);
 
         String musicName = musicInfo.get( musicInfo.indexOf("musicName") + 1);
         String musicArtist = musicInfo.get( musicInfo.indexOf("artist") + 1);
@@ -157,7 +161,7 @@ class NCMConverter {
                 preFetchChunk = expandByteArray(preFetchChunk, expandSize - bufferSize);
                 byte[] temp = new byte[expandSize - bufferSize];
                 int bytesRead = fileStream.read(temp,  0, expandSize - bufferSize);
-                RC4Decrypt.prgaDecrypt(temp, bytesRead);
+                RC4Decrypt.prgaDecryptByteArray(temp, bytesRead);
                 System.arraycopy(temp, 0, preFetchChunk, bufferSize, bytesRead);
             }
 
@@ -176,7 +180,7 @@ class NCMConverter {
             while (!LengthUtils.hasLastBlock(preFetchChunk)) {
                 byte[] temp = new byte[bufferSize];
                 fileStream.read(temp, 0, bufferSize);
-                RC4Decrypt.prgaDecrypt(temp,temp.length);
+                RC4Decrypt.prgaDecryptByteArray(temp,temp.length);
                 preFetchChunk = expandByteArray(preFetchChunk, bufferSize);
                 System.arraycopy(temp, 0, preFetchChunk, preFetchChunk.length - bufferSize, temp.length);
             }
@@ -204,22 +208,23 @@ class NCMConverter {
             fileOutputStream.write(preFetchChunk,pictureBlockBegin, preFetchChunk.length - pictureBlockBegin);
         }
     }
-    public static void outputMusic(OutputStream outputFileStream,InputStream fileStream, byte[] RC4Key, byte[] coverData, boolean rawWriteMode, ArrayList<String> musicInfo) throws Exception {
-        int bufferSize = 4 * 1024 * 1024;
-        if (fileStream.available() < bufferSize) {
-            bufferSize = fileStream.available();
-        }
-        RC4Decrypt.ksa(RC4Key);
-        byte[] buffer = new byte[bufferSize];
-        if (!rawWriteMode) {
-            modifyHeader(fileStream, outputFileStream, musicInfo, coverData,bufferSize);
-        }
+    public static void outputMusic(FileChannel outputChannel, FileChannel inputChannel) throws Exception {
         int bytesRead;
-        while ((bytesRead = fileStream.read(buffer)) != -1) {
-            RC4Decrypt.prgaDecrypt(buffer, bytesRead);
-            outputFileStream.write(buffer, 0, bytesRead);
+        DirectBufferPool.Slot bufferSlot = DirectBufferPool.acquireDirectBuffer();
+        ByteBuffer buffer = bufferSlot.buffer;
+        while ((bytesRead = inputChannel.read(buffer)) != -1) {
+            RC4Decrypt.prgaDecryptByteBuffer(buffer, bytesRead);
+            safeWrite(outputChannel,buffer);
         }
+        bufferSlot.release();
     }
+
+    private static void safeWrite(FileChannel outputChannel,ByteBuffer byteBuffer) throws IOException {
+        byteBuffer.flip();
+        outputChannel.write(byteBuffer);
+        byteBuffer.clear();
+    }
+
     private static String combineArtistsString(String artistsString) {
         String[] artistsStringArray = artistsString.replaceAll("[\\\\\\[\\]\"]", "").split(",");
         StringJoiner joiner = new StringJoiner("/");

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -25,9 +26,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
+import com.cdb96.ncmconverter4a.JNIUtil.RC4Decrypt
 import kotlinx.coroutines.*
-import java.io.InputStream
-import java.io.OutputStream
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -230,46 +232,61 @@ private fun solveFile(
     uri: Uri,
     context: Context,
     rawWriteMode: Boolean,
-    fileName: String ?= null
+    fileName: String? = null
 ): Boolean {
+    var pfd: ParcelFileDescriptor? = null
+    var fis: FileInputStream? = null
+
     try {
+        // 通过 ContentResolver 获取文件描述符
+        pfd = context.contentResolver.openFileDescriptor(uri, "r")
+        if (pfd == null) return false
+
+        // 使用文件描述符创建 FileInputStream
+        fis = FileInputStream(pfd.fileDescriptor)
+
         // 先检测是否为 KGM 文件
-        context.contentResolver.openInputStream(uri)?.use { inputStream ->
-            val isKGM = KGMConverter.KGMDetect(inputStream)
-            if (isKGM) {
-                // 处理 KGM 文件
-                processKGMFile(uri, context, inputStream, fileName)
-            } else {
-                // 处理 NCM 文件
-                if (!processNCMFile(uri, context, rawWriteMode,inputStream)) return false
-            }
-        } == true
+        val isKGM = KGMConverter.KGMDetect(fis)
+        if (isKGM) {
+            // 处理 KGM 文件
+            processKGMFile(uri, context, fis, fileName)
+        } else {
+            // 处理 NCM 文件
+            if (!processNCMFile(context, rawWriteMode, fis)) return false
+        }
+
+        return true
     } catch (e: Exception) {
         e.printStackTrace()
-        false
+        return false
+    } finally {
+        // 关闭资源
+        fis?.close()
+        pfd?.close()
     }
-    return true
 }
 
 private fun processNCMFile(
-    uri: Uri,
     context: Context,
     rawWriteMode: Boolean,
-    inputStream: InputStream
+    inputStream: FileInputStream
 ): Boolean {
     try {
+        val preFetchChunkSize = 512 * 1024
         val NCMFileInfo = NCMConverter.convert(inputStream, false)
         val fileName = getMusicInfoData(NCMFileInfo.musicInfoStringArrayValue, "musicName")
         val format = getMusicInfoData(NCMFileInfo.musicInfoStringArrayValue, "format")
-
-        getOutputStream(format, context, fileName)?.use { outputStream ->
+        withFileOutputStream(format, context, fileName) { fileOutputStream ->
+            if (!rawWriteMode) {
+                RC4Decrypt.ksa(NCMFileInfo.RC4key)
+                NCMConverter.modifyHeader(
+                    inputStream, fileOutputStream, NCMFileInfo.musicInfoStringArrayValue,
+                    NCMFileInfo.coverData, preFetchChunkSize
+                )
+            }
             NCMConverter.outputMusic(
-                outputStream,
-                inputStream,
-                NCMFileInfo.RC4key,
-                NCMFileInfo.coverData,
-                rawWriteMode,
-                NCMFileInfo.musicInfoStringArrayValue
+                fileOutputStream.channel,
+                inputStream.channel,
             )
         }
         return true
@@ -279,15 +296,17 @@ private fun processNCMFile(
     }
 }
 
+val EXTENSION_REGEX = Regex("(.kgm)|(.flac)", RegexOption.IGNORE_CASE)
 private fun processKGMFile(
     uri: Uri,
     context: Context,
-    inputStream: InputStream,
+    inputStream: FileInputStream,
     fileName: String?
 ): Boolean {
     try {
         // 获取音乐格式
-        val musicFormat = KGMConverter.detectFormat(inputStream)
+        val ownKeyBytes = KGMConverter.getOwnKeyBytes(inputStream)
+        val musicFormat = KGMConverter.detectFormat(inputStream,ownKeyBytes)
 
         if (musicFormat.isNullOrBlank()) {
             return false
@@ -295,24 +314,24 @@ private fun processKGMFile(
 
         // 获取文件名并处理
         var processedFileName = fileName ?: uri.getFileName(context) ?: "null"
-        processedFileName = processedFileName.replace(Regex("(.kgm)|(.flac)", RegexOption.IGNORE_CASE), "")
-
+        processedFileName = processedFileName.replace(EXTENSION_REGEX, "")
         // 创建输出流并转换
-        getOutputStream(musicFormat, context, processedFileName)?.use { outputStream ->
-            KGMConverter.write(inputStream, outputStream, musicFormat)
-            return true
+        withFileOutputStream(musicFormat, context, processedFileName) { fileOutputStream ->
+            KGMConverter.write(inputStream.channel, fileOutputStream.channel, musicFormat, ownKeyBytes)
         }
-
-        false
-
+        return true
     } catch (e: Exception) {
         e.printStackTrace()
-        false
     }
     return false
 }
 
-private fun getOutputStream(format: String, context: Context, fileName: String): OutputStream? {
+private fun withFileOutputStream(
+    format: String,
+    context: Context,
+    fileName: String,
+    block: (FileOutputStream) -> Unit
+): Boolean {
     val mimeType = when (format.lowercase()) {
         "flac" -> "audio/flac"
         "mp3" -> "audio/mpeg"
@@ -327,8 +346,16 @@ private fun getOutputStream(format: String, context: Context, fileName: String):
         put(MediaStore.Audio.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/NCMConverter4A")
     }
 
-    return context.contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
-        ?.let { context.contentResolver.openOutputStream(it) }
+    val uri = context.contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
+    if (uri != null) {
+        context.contentResolver.openFileDescriptor(uri, "w")?.use { pfd ->
+            FileOutputStream(pfd.fileDescriptor).use { fileOutputStream ->
+                block(fileOutputStream)
+                return true
+            }
+        }
+    }
+    return false
 }
 
 private fun getMusicInfoData(arrayList: ArrayList<String>, key: String): String {
@@ -336,7 +363,6 @@ private fun getMusicInfoData(arrayList: ArrayList<String>, key: String): String 
         arrayList.getOrNull(index + 1)
     } ?: "unknown"
 }
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
