@@ -277,8 +277,8 @@ private fun processNCMFile(
         val fileName = getMusicInfoData(NCMFileInfo.musicInfoStringArrayValue, "musicName")
         val format = getMusicInfoData(NCMFileInfo.musicInfoStringArrayValue, "format")
         withFileOutputStream(format, context, fileName) { fileOutputStream ->
+            RC4Decrypt.ksa(NCMFileInfo.RC4key)
             if (!rawWriteMode) {
-                RC4Decrypt.ksa(NCMFileInfo.RC4key)
                 NCMConverter.modifyHeader(
                     inputStream, fileOutputStream, NCMFileInfo.musicInfoStringArrayValue,
                     NCMFileInfo.coverData, preFetchChunkSize
