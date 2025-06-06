@@ -40,7 +40,6 @@ void genMask(int startPos) {
     for (int pos = 0; pos < PRE_COMPUTED_TABLE_SIZE * 16; pos += 16 * 16) {
         int i = startPos + pos;
         i >>= 4;
-        //int med8 = PRE_COMPUTED_TABLE[i % PRE_COMPUTED_TABLE_SIZE];
         uint8x16_t tableDataChunk = vld1q_u8(
                 PRE_COMPUTED_TABLE + (i % PRE_COMPUTED_TABLE_SIZE));
         i >>= 8;
@@ -61,12 +60,12 @@ Java_com_cdb96_ncmconverter4a_JNIUtil_KGMDecrypt_decrypt(JNIEnv *env, jobject , 
     auto *cipherDataBytes = reinterpret_cast<uint8_t *>( env->GetDirectBufferAddress(cipher_data_bytes));
     int i = offset;
     int j = 0;
-    //简化取模运算
     int genMaskCounter = offset % 69632;
     int MaskV2Counter = offset % 272;
     int keyBytesIndexCounter = (offset >> 4) % 4352;
 
     for (; j + 16 <= bytes_read; i += 16 , j += 16) {
+        //简化取模运算
         if (genMaskCounter == 69632) {
             genMask(i);
             genMaskCounter = 0;
@@ -92,7 +91,7 @@ Java_com_cdb96_ncmconverter4a_JNIUtil_KGMDecrypt_decrypt(JNIEnv *env, jobject , 
         //int med8 = ownKeyBytes[i % 17] ^ cipherDataBytes[j];
         //med8 ^= (med8 & 0xf) << 4;
 
-        uint8x16_t msk8DataChunkOriginal = vdupq_n_u8(maskBytes[keyBytesIndexCounter]);
+        uint8x16_t msk8DataChunkOriginal = vld1q_dup_u8(maskBytes + keyBytesIndexCounter);
         uint8x16_t msk8DataChunkTemp;
         uint8x16_t maskV2Data = vld1q_u8(MASK_V2_PRE_DEF + MaskV2Counter);
         msk8DataChunkOriginal = veorq_u8(msk8DataChunkOriginal,maskV2Data);
