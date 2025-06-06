@@ -1,6 +1,8 @@
 package com.cdb96.ncmconverter4a;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.TimeUnit;
 public class DirectBufferPool {
@@ -27,5 +29,11 @@ public class DirectBufferPool {
 
     public static Slot acquireDirectBuffer() throws InterruptedException {
         return freeSlots.poll(TIMEOUT, TimeUnit.SECONDS);
+    }
+
+    public static void safeWrite(FileChannel outputChannel, ByteBuffer byteBuffer) throws IOException {
+        byteBuffer.flip();
+        outputChannel.write(byteBuffer);
+        byteBuffer.clear();
     }
 }

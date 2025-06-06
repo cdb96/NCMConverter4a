@@ -1,5 +1,7 @@
 package com.cdb96.ncmconverter4a;
 
+import static com.cdb96.ncmconverter4a.DirectBufferPool.safeWrite;
+
 import com.cdb96.ncmconverter4a.JNIUtil.KGMDecrypt;
 
 import java.io.FileInputStream;
@@ -24,46 +26,18 @@ public class KGMConverter {
         }
     }
 
-    public static void write(FileChannel inputChannel, FileChannel outputChannel, String format, byte[] ownKeyBytes) throws Exception {
+    public static void write(FileChannel inputChannel, FileChannel outputChannel, byte[] ownKeyBytes) throws Exception {
         DirectBufferPool.Slot bufferSlot = DirectBufferPool.acquireDirectBuffer();
         ByteBuffer buffer = bufferSlot.buffer;
-        byte formatIdentifier = switch (format.toLowerCase()) {
-            case "flac" -> (byte) 0x66;
-            case "mp3" -> (byte) 0x49;
-            default -> throw new IllegalArgumentException("格式错误");
-        };
 
         int pos = 0;
         KGMDecrypt.init(ownKeyBytes);
 
-        // 跳过前1024字节
         inputChannel.position(1024);
-
-        // 首次读取
-        int bytesRead = inputChannel.read(buffer);
-
-        // 解密数据
-        buffer.flip(); // 切换到读取模式
-        pos = KGMDecrypt.decrypt(buffer, pos, bytesRead);
-
-        // 修改第一个字节
-        buffer.position(0);
-        buffer.put(formatIdentifier);
-
-        // 重置位置准备写入
-        buffer.position(0);
-        buffer.limit(bytesRead);
-        outputChannel.write(buffer);
-
+        int bytesRead;
         while ((bytesRead = inputChannel.read(buffer)) != -1) {
-            buffer.flip();
             pos = KGMDecrypt.decrypt(buffer, pos, bytesRead);
-
-            buffer.position(0);
-            buffer.limit(bytesRead);
-            outputChannel.write(buffer);
-
-            buffer.clear();
+            safeWrite(outputChannel, buffer);
         }
         bufferSlot.release();
     }

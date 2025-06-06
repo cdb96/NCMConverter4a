@@ -1,5 +1,7 @@
 package com.cdb96.ncmconverter4a;
 
+import static com.cdb96.ncmconverter4a.DirectBufferPool.safeWrite;
+
 import com.cdb96.ncmconverter4a.JNIUtil.RC4Decrypt;
 import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
@@ -217,12 +219,6 @@ class NCMConverter {
             safeWrite(outputChannel,buffer);
         }
         bufferSlot.release();
-    }
-
-    private static void safeWrite(FileChannel outputChannel,ByteBuffer byteBuffer) throws IOException {
-        byteBuffer.flip();
-        outputChannel.write(byteBuffer);
-        byteBuffer.clear();
     }
 
     private static String combineArtistsString(String artistsString) {

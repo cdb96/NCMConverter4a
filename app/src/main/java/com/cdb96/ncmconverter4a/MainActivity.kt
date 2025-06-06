@@ -317,7 +317,7 @@ private fun processKGMFile(
         processedFileName = processedFileName.replace(EXTENSION_REGEX, "")
         // 创建输出流并转换
         withFileOutputStream(musicFormat, context, processedFileName) { fileOutputStream ->
-            KGMConverter.write(inputStream.channel, fileOutputStream.channel, musicFormat, ownKeyBytes)
+            KGMConverter.write(inputStream.channel, fileOutputStream.channel, ownKeyBytes)
         }
         return true
     } catch (e: Exception) {
