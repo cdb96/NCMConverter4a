@@ -13,7 +13,7 @@ android {
         minSdk = 28
         targetSdk = 36
         versionCode = 1
-        versionName = "3.1.6"
+        versionName = "3.1.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
@@ -40,7 +40,7 @@ android {
             )
             externalNativeBuild {
                 cmake {
-                    cppFlags += "-O3 -ffast-math -flto"
+                    cppFlags += "-Ofast"
                 }
             }
         }
@@ -66,7 +66,6 @@ android {
 }
 
 dependencies {
-
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

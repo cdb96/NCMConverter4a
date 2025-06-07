@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <vector>
 #include <numeric>
+#include <utility>
 
 #if defined(__ARM_NEON__) || defined(__aarch64__)
     #include <arm_neon.h>
@@ -10,6 +11,7 @@
 #endif
 
 thread_local uint8_t keyStreamBytes[256];
+thread_local uint8x16_t keys[16];
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_cdb96_ncmconverter4a_JNIUtil_RC4Decrypt_ksa(JNIEnv* env, jclass, jbyteArray key) {
@@ -30,34 +32,32 @@ Java_com_cdb96_ncmconverter4a_JNIUtil_RC4Decrypt_ksa(JNIEnv* env, jclass, jbyteA
         keyStreamBytes[k - 1] = sBox[ (sBox[k] + sBox [ ( sBox[k] + k ) & 0xff ] ) & 0xff ];
     }
     keyStreamBytes[255] = sBox[ (sBox[0] + sBox [ ( sBox[0] + 0 ) & 0xff ] ) & 0xff ];
+    for(int i = 0; i < 16; i++) {
+        uint8x16_t keyChunk = vld1q_u8(keyStreamBytes + i * 16);
+        keys[i] = keyChunk;
+    }
 }
 void decryptData(uint8_t* data, int bytesRead) {
     int i = 0;
-    #if defined(__aarch64__)
-        for (; i + 64 <= bytesRead; i += 64) {
-            int k = i & 0xff;
-            uint8x16x4_t dataChunk = vld1q_u8_x4(data + i);
-            uint8x16x4_t key = vld1q_u8_x4(keyStreamBytes + k);
-            dataChunk.val[0] = veorq_u8(dataChunk.val[0], key.val[0]);
-            dataChunk.val[1] = veorq_u8(dataChunk.val[1], key.val[1]);
-            dataChunk.val[2] = veorq_u8(dataChunk.val[2], key.val[2]);
-            dataChunk.val[3] = veorq_u8(dataChunk.val[3], key.val[3]);
-            vst1q_u8_x4(data + i, dataChunk);
+    uint8x16_t chunk[16];
+    for (; i + 256 <= bytesRead; i += 256) {
+        for (int k = 0; k < 16; ++k) {
+            int offset = i + k * 16;
+            chunk[k] = vld1q_u8(data + offset);
         }
-    #elif defined(__x86_64__)
-        for (; i + 16 <= bytesRead; i += 16) {
-            int k = i & 0xff;
-            uint8x16_t dataChunk = vld1q_u8(data + i);
-            uint8x16_t key = vld1q_u8(keyStreamBytes + k);
-            dataChunk = veorq_u8(dataChunk, key);
-            vst1q_u8(data + i, dataChunk);
+        for (int k = 0; k < 16; ++k) {
+            chunk[k] = veorq_u8(chunk[k], keys[k]);
         }
-    #endif
-        for (; i < bytesRead; i++) {
-            int j = i & 0xff;
-            data[i] ^= keyStreamBytes[j];
+        for (int k = 0; k < 16; ++k) {
+            int offset = i + k * 16;
+            vst1q_u8(data + offset, chunk[k]);
         }
     }
+    for (; i < bytesRead; i++) {
+        int j = i & 0xff;
+        data[i] ^= keyStreamBytes[j];
+    }
+}
 
 extern "C"
 JNIEXPORT void JNICALL
