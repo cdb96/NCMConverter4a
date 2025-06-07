@@ -14,45 +14,30 @@ const uint8x16_t andVec = vdupq_n_u8(0x0f);
 thread_local uint8_t maskBytes[PRE_COMPUTED_TABLE_SIZE];
 thread_local uint8_t ownKeyBytes[16 * 17];
 
-#if defined(__aarch64__)
 void genMask(int startPos) {
-    for (int pos = 0; pos < PRE_COMPUTED_TABLE_SIZE * 16; pos += 16 * 64) {
+    uint8x16_t chunk[16];
+    for (int pos = 0; pos < PRE_COMPUTED_TABLE_SIZE * 16; pos += 16 * 16 * 16) {
         int i = startPos + pos;
         i >>= 4;
-        //int med8 = PRE_COMPUTED_TABLE[i % PRE_COMPUTED_TABLE_SIZE];
-        uint8x16x4_t tableDataChunk = vld1q_u8_x4(
-                PRE_COMPUTED_TABLE + (i % PRE_COMPUTED_TABLE_SIZE));
-        i >>= 8;
-        while (i >= 0x11) {
-            uint8x16_t xorData0 = vdupq_n_u8(PRE_COMPUTED_TABLE[i % 4352]);
-            tableDataChunk.val[0] = veorq_u8(tableDataChunk.val[0], xorData0);
-            tableDataChunk.val[1] = veorq_u8(tableDataChunk.val[1], xorData0);
-            tableDataChunk.val[2] = veorq_u8(tableDataChunk.val[2], xorData0);
-            tableDataChunk.val[3] = veorq_u8(tableDataChunk.val[3], xorData0);
-            i >>= 8;
+        int chunkPreTablePos = i % PRE_COMPUTED_TABLE_SIZE;
+        for(int k = 0; k < 16; ++k) {
+            chunk[k] = vld1q_u8(PRE_COMPUTED_TABLE + chunkPreTablePos + k * 16);
         }
+        i >>= 8;
+        //startPos > 69632才能这么用
+        do {
+            uint8x16_t xorData = vld1q_dup_u8(PRE_COMPUTED_TABLE + (i % PRE_COMPUTED_TABLE_SIZE));
+            for (auto &k: chunk) {
+                k = veorq_u8(k, xorData);
+            }
+            i >>= 8;
+        } while (i >= 0x11);
         int storePos = pos >> 4;
-        vst1q_u8_x4(maskBytes + storePos, tableDataChunk);
+        for (int k = 0; k < 16; ++k) {
+            vst1q_u8(maskBytes + storePos + k * 16, chunk[k]);
+        }
     }
 }
-#elif defined(__x86_64__)
-void genMask(int startPos) {
-    for (int pos = 0; pos < PRE_COMPUTED_TABLE_SIZE * 16; pos += 16 * 16) {
-        int i = startPos + pos;
-        i >>= 4;
-        uint8x16_t tableDataChunk = vld1q_u8(
-                PRE_COMPUTED_TABLE + (i % PRE_COMPUTED_TABLE_SIZE));
-        i >>= 8;
-        while (i >= 0x11) {
-            uint8x16_t xorData0 = vdupq_n_u8(PRE_COMPUTED_TABLE[i % 4352]);
-            tableDataChunk = veorq_u8(tableDataChunk,xorData0);
-            i >>= 8;
-        }
-        int storePos = pos >> 4;
-        vst1q_u8(maskBytes + storePos, tableDataChunk);
-    }
-}
-#endif
 
 extern "C"
 JNIEXPORT int JNICALL

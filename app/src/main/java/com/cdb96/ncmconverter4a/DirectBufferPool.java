@@ -6,12 +6,11 @@ import java.nio.channels.FileChannel;
 import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.TimeUnit;
 public class DirectBufferPool {
-    private static final int MAX_THREADS = 8;
+    private static final int MAX_POOL_SIZE = 8;
     private static final int BUFFER_SIZE = 512 * 1024;
 
     private static final int TIMEOUT = 5;
     private static final LinkedTransferQueue<Slot> freeSlots = new LinkedTransferQueue<>();
-
 
     public static class Slot {
         final ByteBuffer buffer = ByteBuffer.allocateDirect(BUFFER_SIZE);
@@ -22,7 +21,7 @@ public class DirectBufferPool {
     }
 
     static {
-        for (int i = 0; i < MAX_THREADS; i++) {
+        for (int i = 0; i < MAX_POOL_SIZE; i++) {
             freeSlots.add(new Slot());
         }
     }

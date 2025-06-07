@@ -40,7 +40,7 @@ android {
             )
             externalNativeBuild {
                 cmake {
-                    cppFlags += "-Ofast"
+                    cppFlags += "-O3 -ffast-math -flto"
                 }
             }
         }

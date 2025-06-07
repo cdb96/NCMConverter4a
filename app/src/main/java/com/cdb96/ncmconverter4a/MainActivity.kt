@@ -37,13 +37,13 @@ class MainActivity : ComponentActivity() {
 
     private var threadCount by mutableStateOf(4) // 默认4个线程
     @OptIn(ExperimentalCoroutinesApi::class)
-    private var fileProcessingDispatcher = Dispatchers.IO.limitedParallelism(threadCount)
+    private var fileProcessingDispatcher = Dispatchers.Default.limitedParallelism(threadCount)
 
     // 更新线程池的函数
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun updateThreadPool(newThreadCount: Int) {
         threadCount = newThreadCount
-        fileProcessingDispatcher = Dispatchers.IO.limitedParallelism(threadCount)
+        fileProcessingDispatcher = Dispatchers.Default.limitedParallelism(threadCount)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
