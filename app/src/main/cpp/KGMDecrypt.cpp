@@ -64,7 +64,6 @@ Java_com_cdb96_ncmconverter4a_JNIUtil_KGMDecrypt_decrypt(JNIEnv *env, jobject , 
                 keyBytesIndexCounter = 0;
             }
         }
-
         uint8x16_t cipherDataBytesChunk = vld1q_u8(cipherDataBytes + j);
 
         uint8x16_t med8DataChunkOriginal = vld1q_u8(ownKeyBytes + MaskV2Counter);

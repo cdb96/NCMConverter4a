@@ -13,12 +13,11 @@ android {
         minSdk = 28
         targetSdk = 36
         versionCode = 1
-        versionName = "3.1.7"
+        versionName = "3.1.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            abiFilters += "x86_64"
-            abiFilters += "arm64-v8a"
+            abiFilters += listOf<String>("x86_64","arm64-v8a")
         }
         externalNativeBuild {
             cmake {

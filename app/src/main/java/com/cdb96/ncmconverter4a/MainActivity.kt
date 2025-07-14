@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : ComponentActivity() {
 
-    private var threadCount by mutableStateOf(4) // 默认4个线程
+    private var threadCount by mutableIntStateOf(4) // 默认4个线程
     @OptIn(ExperimentalCoroutinesApi::class)
     private var fileProcessingDispatcher = Dispatchers.Default.limitedParallelism(threadCount)
 
