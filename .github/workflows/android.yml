@@ -40,7 +40,7 @@ jobs:
     - name: 设置Keystore文件
       if: ${{ github.event_name != 'pull_request' }}
       run: |
-        echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > release.keystore
+        echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > app/release.keystore
 
     - name: 构建发布版APK
       if: ${{ github.event_name != 'pull_request' }}
