@@ -6,6 +6,8 @@ on:
     branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
+  release:
+    types: [published]
 
 jobs:
   build:
@@ -56,3 +58,10 @@ jobs:
       with:
         name: app-release-apk
         path: app/build/outputs/apk/release/app-release.apk
+
+    - name: 创建 GitHub Release
+      if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
+      with:
+        draft: false
+        prerelease: false
+        files: app/build/outputs/apk/release/app-release.apk
