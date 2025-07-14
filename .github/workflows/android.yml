@@ -40,7 +40,7 @@ jobs:
     - name: 设置Keystore文件
       if: ${{ github.event_name != 'pull_request' }}
       run: |
-        echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > app/release.keystore
+        echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > release.keystore
 
     - name: 构建发布版APK
       if: ${{ github.event_name != 'pull_request' }}
@@ -49,7 +49,7 @@ jobs:
         KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        SIGNING_STORE_FILE: ../release.keystore
+        SIGNING_STORE_FILE: release.keystore
   
     - name: 上传APK
       uses: actions/upload-artifact@v4
