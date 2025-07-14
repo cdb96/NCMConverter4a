@@ -22,7 +22,7 @@ jobs:
         cache: gradle
 
     - name: 设置Android SDK和NDK
-      uses: android/setup-sdk@v1
+      uses: android/setup-sdk@v3
       with:
         android-version: '36'
         ndk-version: '29.0.13113456'
