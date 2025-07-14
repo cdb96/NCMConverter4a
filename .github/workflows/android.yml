@@ -53,7 +53,7 @@ jobs:
         KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        SIGNING_STORE_FILE: app/release.keystore
+        SIGNING_STORE_FILE: /release.keystore
   
     - name: 上传APK
       uses: actions/upload-artifact@v4
