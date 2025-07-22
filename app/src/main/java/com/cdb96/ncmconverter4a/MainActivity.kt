@@ -26,7 +26,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
-import com.cdb96.ncmconverter4a.JNIUtil.RC4Decrypt
+import com.cdb96.ncmconverter4a.converter.KGMConverter
+import com.cdb96.ncmconverter4a.jni.RC4Decrypt
+import com.cdb96.ncmconverter4a.converter.NCMConverter
 import kotlinx.coroutines.*
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -273,15 +275,15 @@ private fun processNCMFile(
 ): Boolean {
     try {
         val preFetchChunkSize = 512 * 1024
-        val NCMFileInfo = NCMConverter.convert(inputStream, false)
-        val fileName = getMusicInfoData(NCMFileInfo.musicInfoStringArrayValue, "musicName")
-        val format = getMusicInfoData(NCMFileInfo.musicInfoStringArrayValue, "format")
+        val ncmFileInfo = NCMConverter.convert(inputStream, false)
+        val fileName = getMusicInfoData(ncmFileInfo.musicInfoStringArrayValue, "musicName")
+        val format = getMusicInfoData(ncmFileInfo.musicInfoStringArrayValue, "format")
         withFileOutputStream(format, context, fileName) { fileOutputStream ->
-            RC4Decrypt.ksa(NCMFileInfo.RC4key)
+            RC4Decrypt.ksa(ncmFileInfo.RC4key)
             if (!rawWriteMode) {
                 NCMConverter.modifyHeader(
-                    inputStream, fileOutputStream, NCMFileInfo.musicInfoStringArrayValue,
-                    NCMFileInfo.coverData, preFetchChunkSize
+                    inputStream, fileOutputStream, ncmFileInfo.musicInfoStringArrayValue,
+                    ncmFileInfo.coverData, preFetchChunkSize
                 )
             }
             NCMConverter.outputMusic(

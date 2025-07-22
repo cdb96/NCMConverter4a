@@ -1,8 +1,14 @@
-package com.cdb96.ncmconverter4a;
+package com.cdb96.ncmconverter4a.converter;
 
-import static com.cdb96.ncmconverter4a.DirectBufferPool.safeWrite;
+import static com.cdb96.ncmconverter4a.util.DirectBufferPool.safeWrite;
 
-import com.cdb96.ncmconverter4a.JNIUtil.RC4Decrypt;
+import com.cdb96.ncmconverter4a.tag.ID3TagBuilder;
+import com.cdb96.ncmconverter4a.tag.FLACHeaderGen;
+import com.cdb96.ncmconverter4a.jni.RC4Decrypt;
+import com.cdb96.ncmconverter4a.util.DirectBufferPool;
+import com.cdb96.ncmconverter4a.util.LengthUtils;
+import com.cdb96.ncmconverter4a.util.SimpleJsonParser;
+
 import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
 
@@ -16,17 +22,18 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.StringJoiner;
 
-class NCMFileInfo {
-    byte[] RC4key;
-    byte[] coverData;
-    ArrayList<String> musicInfoStringArrayValue;
-    NCMFileInfo(byte[] RC4key, byte[] coverData, ArrayList<String> musicInfoStringArrayValue) {
-        this.RC4key = RC4key;
-        this.coverData = coverData;
-        this.musicInfoStringArrayValue = musicInfoStringArrayValue;
+public class NCMConverter {
+    public static class NCMFileInfo {
+        public byte[] RC4key;
+        public byte[] coverData;
+        public ArrayList<String> musicInfoStringArrayValue;
+        NCMFileInfo(byte[] RC4key, byte[] coverData, ArrayList<String> musicInfoStringArrayValue) {
+            this.RC4key = RC4key;
+            this.coverData = coverData;
+            this.musicInfoStringArrayValue = musicInfoStringArrayValue;
+        }
     }
-}
-class NCMConverter {
+
     private static final String ALGORITHM = "AES";
     private static final String TRANSFORMATION = "AES/ECB/PKCS5Padding";
 
@@ -37,6 +44,7 @@ class NCMConverter {
         cipher.init(Cipher.DECRYPT_MODE,secretKey);
         return cipher.doFinal(encryptedBytes);
     }
+
     private static byte[] getRC4key(InputStream fileStream) throws Exception
     {
         //这里-2是因为之前检测KGM文件的时候已经读取两个字节了
@@ -78,46 +86,6 @@ class NCMConverter {
         return metaBytes;
     }
 
-    private static ArrayList<String> parseMetaData(String metaData) {
-        ArrayList<String> musicInfo = new ArrayList<>();
-        for (int i = 0,j; i < metaData.length() - 1; i++) {
-            if (metaData.charAt(i) == '\"') {
-                j = i + 1;
-                while (metaData.charAt(j) != '\"' && j < metaData.length() - 1) {
-                    j++;
-                }
-                musicInfo.add(metaData.substring(i + 1, j));
-                i = j + 2;
-                j = i ;
-                if (metaData.charAt(i) == '[' || metaData.charAt(i) == '{') {
-                    int leftBracketCount = 1;
-                    int rightBracketCount = 0;
-                    j++;
-                    while (leftBracketCount != rightBracketCount && j < metaData.length() -1 ) {
-                        if ( metaData.charAt(j) == '[' || metaData.charAt(j) == '{') {
-                            leftBracketCount++;
-                        } else if (metaData.charAt(j) == ']' || metaData.charAt(j) == '}') {
-                            rightBracketCount++;
-                        }
-                        j++;
-                    }
-                    musicInfo.add(metaData.substring(i,j));
-                } else {
-                    while (metaData.charAt(j) != ',' && j < metaData.length() - 1) {
-                        j++;
-                    }
-                    if (metaData.charAt(i) == '\"'){
-                        musicInfo.add(metaData.substring(i + 1,j - 1));
-                    } else {
-                        musicInfo.add(metaData.substring(i,j));
-                    }
-                }
-                i = j ;
-            }
-        }
-        return musicInfo;
-    }
-
     private static byte[] getCoverData(InputStream fileStream) throws Exception
     {
         fileStream.skip(5);
@@ -136,11 +104,15 @@ class NCMConverter {
         return image1Data;
     }
 
-    public static byte[] expandByteArray(byte[] original, int newSize) {
-        byte[] newArray = new byte[original.length + newSize];
+    public static byte[] expandByteArray(byte[] original, int addtionalBytes) {
+        if (original.length + addtionalBytes > 24 * 1024 * 1024) {
+            throw new OutOfMemoryError("扩展长度过长");
+        }
+        byte[] newArray = new byte[original.length + addtionalBytes];
         System.arraycopy(original, 0, newArray, 0, original.length);
         return newArray;
     }
+
     public static void modifyHeader(FileInputStream fileStream, FileOutputStream fileOutputStream, ArrayList<String> musicInfo, byte[] coverData,int bufferSize) throws Exception {
         byte[] preFetchChunk = new byte[bufferSize];
         fileStream.read(preFetchChunk, 0, bufferSize);
@@ -166,7 +138,7 @@ class NCMConverter {
                 System.arraycopy(temp, 0, preFetchChunk, bufferSize, bytesRead);
             }
 
-            ID3HeaderGen ID3Header = new ID3HeaderGen();
+            ID3TagBuilder ID3Header = new ID3TagBuilder();
             ID3Header.initDefaultTagHeader();
             ID3Header.addTIT2(musicName);
             ID3Header.addTPE1(musicArtist);
@@ -188,19 +160,19 @@ class NCMConverter {
 
             byte[] blockSizeBytes = new byte[3];
             int vorbisCommentBegin = LengthUtils.findVorbisComment(preFetchChunk);
-            fileOutputStream.write(preFetchChunk,0,vorbisCommentBegin);
+            fileOutputStream.write(preFetchChunk,0,vorbisCommentBegin); //写0表示不是最后一个块
             System.arraycopy(preFetchChunk,vorbisCommentBegin + 1, blockSizeBytes,0,3);
 
             byte[] vendorLengthBytes = new byte[4];
-            System.arraycopy(preFetchChunk,vorbisCommentBegin + 4, vendorLengthBytes,0,4);
+            System.arraycopy(preFetchChunk,vorbisCommentBegin + 4, vendorLengthBytes,0,4); // +4跳过块头
             int vendorLength = LengthUtils.getLittleEndianInteger(vendorLengthBytes);
             byte[] vendorBytes = new byte[vendorLength];
-            System.arraycopy(preFetchChunk,vorbisCommentBegin + 8, vendorBytes,0,vendorLength);
+            System.arraycopy(preFetchChunk,vorbisCommentBegin + 8, vendorBytes,0,vendorLength); // +8跳过块头和vendor长度字段
             int vorbisCommentSize = LengthUtils.getBigEndianInteger3bytes(blockSizeBytes);
             byte[] vorbisCommentBlock = FLACHeaderGen.vorbisCommentBlockGen(musicName,musicArtist,musicAlbum,vendorBytes);
             fileOutputStream.write(vorbisCommentBlock);
 
-            int vorbisCommentEnd = vorbisCommentSize + vorbisCommentBegin + 4; //加上块头的4个字节
+            int vorbisCommentEnd = vorbisCommentSize + vorbisCommentBegin + 4; //加上块头的4个字节,因为size不包含块头的4个字节
             int pictureBlockBegin = LengthUtils.findLastBlock(preFetchChunk);
             fileOutputStream.write(preFetchChunk,vorbisCommentEnd, pictureBlockBegin - vorbisCommentEnd);
             byte[] pictureBlock = FLACHeaderGen.pictureBlockGen(coverData);
@@ -209,6 +181,7 @@ class NCMConverter {
             fileOutputStream.write(preFetchChunk,pictureBlockBegin, preFetchChunk.length - pictureBlockBegin);
         }
     }
+
     public static void outputMusic(FileChannel outputChannel, FileChannel inputChannel) throws Exception {
         int bytesRead;
         DirectBufferPool.Slot bufferSlot = DirectBufferPool.acquireDirectBuffer();
@@ -229,6 +202,7 @@ class NCMConverter {
         }
         return joiner.toString();
     }
+
     public static NCMFileInfo convert(InputStream fileStream, boolean rawWriteMode) throws Exception
     {
         byte[] RC4Key = getRC4key(fileStream);
@@ -236,7 +210,7 @@ class NCMConverter {
         byte[] coverData = getCoverData(fileStream);
 
         String metaData = new String(metaBytes, StandardCharsets.UTF_8);
-        ArrayList<String> musicInfo = parseMetaData(metaData);
-        return new NCMFileInfo(RC4Key,coverData,musicInfo);
+        ArrayList<String> musicInfo = SimpleJsonParser.parse(metaData);
+        return new NCMFileInfo(RC4Key, coverData, musicInfo);
     }
 }

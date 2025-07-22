@@ -1,8 +1,8 @@
-package com.cdb96.ncmconverter4a;
+package com.cdb96.ncmconverter4a.util;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
-class LengthUtils {
+public class LengthUtils {
     public static byte[] toSyncSafeIntegerBytes(int value) {
         byte[] syncSafe = new byte[4];
         syncSafe[0] = (byte) ((value >> 21) & 0x7F);

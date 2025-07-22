@@ -41,7 +41,7 @@ void genMask(int startPos) {
 
 extern "C"
 JNIEXPORT int JNICALL
-Java_com_cdb96_ncmconverter4a_JNIUtil_KGMDecrypt_decrypt(JNIEnv *env, jobject , jobject cipher_data_bytes, jint offset, jint bytes_read) {
+Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv *env, jclass clazz, jobject cipher_data_bytes, jint offset, jint bytes_read) {
     auto *cipherDataBytes = reinterpret_cast<uint8_t *>( env->GetDirectBufferAddress(cipher_data_bytes));
     int i = offset;
     int j = 0;
@@ -123,7 +123,7 @@ Java_com_cdb96_ncmconverter4a_JNIUtil_KGMDecrypt_decrypt(JNIEnv *env, jobject , 
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_cdb96_ncmconverter4a_JNIUtil_KGMDecrypt_init(JNIEnv *env, jclass clazz, jbyteArray own_key_bytes) {
+Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_init(JNIEnv *env, jclass clazz, jbyteArray own_key_bytes) {
     env->GetByteArrayRegion(own_key_bytes, 0, 17, reinterpret_cast<jbyte*>(ownKeyBytes));
     for (int i = 1; i < 16; i++) {
         memcpy(ownKeyBytes + i * 17, ownKeyBytes, 17);

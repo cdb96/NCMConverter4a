@@ -1,16 +1,15 @@
-package com.cdb96.ncmconverter4a;
+package com.cdb96.ncmconverter4a.converter;
 
-import static com.cdb96.ncmconverter4a.DirectBufferPool.safeWrite;
+import static com.cdb96.ncmconverter4a.util.DirectBufferPool.safeWrite;
 
-import com.cdb96.ncmconverter4a.JNIUtil.KGMDecrypt;
+import com.cdb96.ncmconverter4a.jni.KGMDecrypt;
+import com.cdb96.ncmconverter4a.util.DirectBufferPool;
 
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.Arrays;
-
-
 
 public class KGMConverter {
     public static boolean KGMDetect(InputStream inputStream) throws Exception {

@@ -1,4 +1,4 @@
-package com.cdb96.ncmconverter4a;
+package com.cdb96.ncmconverter4a.util;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -13,7 +13,7 @@ public class DirectBufferPool {
     private static final LinkedTransferQueue<Slot> freeSlots = new LinkedTransferQueue<>();
 
     public static class Slot {
-        final ByteBuffer buffer = ByteBuffer.allocateDirect(BUFFER_SIZE);
+        public final ByteBuffer buffer = ByteBuffer.allocateDirect(BUFFER_SIZE);
         public void release() {
             buffer.clear();
             freeSlots.offer(this);

@@ -14,7 +14,7 @@ thread_local uint8_t keyStreamBytes[256];
 thread_local uint8x16_t keys[16];
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_cdb96_ncmconverter4a_JNIUtil_RC4Decrypt_ksa(JNIEnv* env, jclass, jbyteArray key) {
+Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_ksa(JNIEnv* env, jclass, jbyteArray key) {
     jsize keyLength = env->GetArrayLength(key);
     auto* keyBytes = reinterpret_cast<uint8_t*>(env->GetByteArrayElements(key, nullptr));
 
@@ -61,7 +61,7 @@ void decryptData(uint8_t* data, int bytesRead) {
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_cdb96_ncmconverter4a_JNIUtil_RC4Decrypt_prgaDecryptByteBuffer(JNIEnv* env, jclass, jobject cipherData, jint bytesRead) {
+Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_prgaDecryptByteBuffer(JNIEnv* env, jclass, jobject cipherData, jint bytesRead) {
     // 处理 ByteBuffer 的实现
     auto* cipherDataBytes = reinterpret_cast<uint8_t*>(env->GetDirectBufferAddress(cipherData));
     decryptData(cipherDataBytes, bytesRead);
@@ -69,7 +69,7 @@ Java_com_cdb96_ncmconverter4a_JNIUtil_RC4Decrypt_prgaDecryptByteBuffer(JNIEnv* e
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_cdb96_ncmconverter4a_JNIUtil_RC4Decrypt_prgaDecryptByteArray(JNIEnv* env, jclass, jbyteArray cipherData, jint bytesRead) {
+Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_prgaDecryptByteArray(JNIEnv* env, jclass, jbyteArray cipherData, jint bytesRead) {
     // 处理 ByteArray 的实现
     jbyte* cipherDataBytes = env->GetByteArrayElements(cipherData, nullptr);
     decryptData(reinterpret_cast<uint8_t*>(cipherDataBytes), bytesRead);

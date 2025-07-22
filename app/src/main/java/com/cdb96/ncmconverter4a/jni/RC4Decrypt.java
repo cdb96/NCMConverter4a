@@ -1,4 +1,4 @@
-package com.cdb96.ncmconverter4a.JNIUtil;
+package com.cdb96.ncmconverter4a.jni;
 
 import java.nio.ByteBuffer;
 
