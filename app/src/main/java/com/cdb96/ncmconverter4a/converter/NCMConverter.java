@@ -3,7 +3,7 @@ package com.cdb96.ncmconverter4a.converter;
 import static com.cdb96.ncmconverter4a.util.DirectBufferPool.safeWrite;
 
 import com.cdb96.ncmconverter4a.tag.ID3TagBuilder;
-import com.cdb96.ncmconverter4a.tag.FLACHeaderGen;
+import com.cdb96.ncmconverter4a.tag.FLACMetadataGenerator;
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt;
 import com.cdb96.ncmconverter4a.util.DirectBufferPool;
 import com.cdb96.ncmconverter4a.util.LengthUtils;
@@ -169,13 +169,13 @@ public class NCMConverter {
             byte[] vendorBytes = new byte[vendorLength];
             System.arraycopy(preFetchChunk,vorbisCommentBegin + 8, vendorBytes,0,vendorLength); // +8跳过块头和vendor长度字段
             int vorbisCommentSize = LengthUtils.getBigEndianInteger3bytes(blockSizeBytes);
-            byte[] vorbisCommentBlock = FLACHeaderGen.vorbisCommentBlockGen(musicName,musicArtist,musicAlbum,vendorBytes);
+            byte[] vorbisCommentBlock = FLACMetadataGenerator.vorbisCommentBlockGen(musicName,musicArtist,musicAlbum,vendorBytes);
             fileOutputStream.write(vorbisCommentBlock);
 
             int vorbisCommentEnd = vorbisCommentSize + vorbisCommentBegin + 4; //加上块头的4个字节,因为size不包含块头的4个字节
             int pictureBlockBegin = LengthUtils.findLastBlock(preFetchChunk);
             fileOutputStream.write(preFetchChunk,vorbisCommentEnd, pictureBlockBegin - vorbisCommentEnd);
-            byte[] pictureBlock = FLACHeaderGen.pictureBlockGen(coverData);
+            byte[] pictureBlock = FLACMetadataGenerator.pictureBlockGen(coverData);
 
             fileOutputStream.write(pictureBlock);
             fileOutputStream.write(preFetchChunk,pictureBlockBegin, preFetchChunk.length - pictureBlockBegin);
@@ -203,7 +203,7 @@ public class NCMConverter {
         return joiner.toString();
     }
 
-    public static NCMFileInfo convert(InputStream fileStream, boolean rawWriteMode) throws Exception
+    public static NCMFileInfo convert(InputStream fileStream) throws Exception
     {
         byte[] RC4Key = getRC4key(fileStream);
         byte[] metaBytes = getMetaData(fileStream);

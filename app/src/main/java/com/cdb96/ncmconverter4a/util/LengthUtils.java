@@ -1,38 +1,38 @@
 package com.cdb96.ncmconverter4a.util;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 
 public class LengthUtils {
+
     public static byte[] toSyncSafeIntegerBytes(int value) {
-        byte[] syncSafe = new byte[4];
-        syncSafe[0] = (byte) ((value >> 21) & 0x7F);
-        syncSafe[1] = (byte) ((value >> 14) & 0x7F);
-        syncSafe[2] = (byte) ((value >> 7) & 0x7F);
-        syncSafe[3] = (byte) (value & 0x7F);
-        return syncSafe;
+        return new byte[] {
+                (byte) ((value >> 21) & 0x7F),
+                (byte) ((value >> 14) & 0x7F),
+                (byte) ((value >> 7) & 0x7F),
+                (byte) (value & 0x7F)
+        };
     }
 
-    public static int getLittleEndianInteger(byte[] bytes)
-    {
-        ByteBuffer buffer = ByteBuffer.wrap(bytes);
-        buffer.order(ByteOrder.LITTLE_ENDIAN);
-
-        return buffer.getInt();
+    public static int getLittleEndianInteger(byte[] bytes) {
+        return (bytes[0] & 0xFF) |
+                ((bytes[1] & 0xFF) << 8) |
+                ((bytes[2] & 0xFF) << 16) |
+                ((bytes[3] & 0xFF) << 24);
     }
 
     public static byte[] toBigEndianBytes(int value) {
-        ByteBuffer buffer = ByteBuffer.allocate(4);
-        buffer.order(ByteOrder.BIG_ENDIAN);
-        buffer.putInt(value);
-        return buffer.array();
+        return new byte[] {
+                (byte) (value >> 24),
+                (byte) (value >> 16),
+                (byte) (value >> 8),
+                (byte) value
+        };
     }
-    public static byte[] toBigEndianInteger3Bytes(int value)
-    {
-        byte[] bigEndianInteger3Bytes = new byte[3];
-        bigEndianInteger3Bytes[0] = (byte) ((value >> 16) & 0xff);
-        bigEndianInteger3Bytes[1] = (byte) ((value >> 8) & 0xff);
-        bigEndianInteger3Bytes[2] = (byte) ( value & 0xff);
-        return bigEndianInteger3Bytes;
+
+    public static byte[] toBigEndianInteger3Bytes(int value) {
+        return new byte[] {
+                (byte) ((value >> 16) & 0xFF),
+                (byte) ((value >> 8) & 0xFF),
+                (byte) (value & 0xFF)
+        };
     }
 
     public static int getBigEndianInteger3bytes(byte[] bytes)
@@ -46,7 +46,7 @@ public class LengthUtils {
     }
 
     public static int findVorbisComment(byte[] flacBytes) {
-        int pivot = 4; //跳过FLAC
+        int pivot = 4; //跳过FLAC字段
         while ( (flacBytes[pivot] & 0x04) == 0 ) {
             byte[] blockSizeBytes = new byte[3];
             System.arraycopy(flacBytes,pivot + 1,blockSizeBytes,0,3);
@@ -56,7 +56,7 @@ public class LengthUtils {
     }
 
     public static int findLastBlock(byte[] flacBytes) {
-        int pivot = 4; //跳过FLAC
+        int pivot = 4; //跳过FLAC字段
         while ( (flacBytes[pivot] & 0x80) == 0 ) {
             int blockSize = ((flacBytes[pivot + 1] & 0xFF) << 16
                     | (flacBytes[pivot + 2] & 0xFF) << 8

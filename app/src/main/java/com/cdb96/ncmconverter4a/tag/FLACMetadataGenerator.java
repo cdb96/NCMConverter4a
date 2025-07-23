@@ -4,7 +4,7 @@ import com.cdb96.ncmconverter4a.util.LengthUtils;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
-public class FLACHeaderGen
+public class FLACMetadataGenerator
 {
     public static byte[] pictureBlockGen(byte[] coverData) {
         byte[] mimeTypeBytes = "image/jpeg".getBytes(UTF_8);

@@ -275,7 +275,7 @@ private fun processNCMFile(
 ): Boolean {
     try {
         val preFetchChunkSize = 512 * 1024
-        val ncmFileInfo = NCMConverter.convert(inputStream, false)
+        val ncmFileInfo = NCMConverter.convert(inputStream)
         val fileName = getMusicInfoData(ncmFileInfo.musicInfoStringArrayValue, "musicName")
         val format = getMusicInfoData(ncmFileInfo.musicInfoStringArrayValue, "format")
         withFileOutputStream(format, context, fileName) { fileOutputStream ->
