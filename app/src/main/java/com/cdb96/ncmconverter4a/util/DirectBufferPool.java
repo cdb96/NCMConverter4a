@@ -26,7 +26,7 @@ public class DirectBufferPool {
 
 
     static {
-        updateSlotBuffer(poolSize);
+        updateSlotBuffer(1);
     }
 
     public static void updateSlotBuffer(int newPoolSize) {
