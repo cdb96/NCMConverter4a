@@ -6,29 +6,46 @@ import java.nio.channels.FileChannel;
 import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.TimeUnit;
 public class DirectBufferPool {
-    private static final int MAX_POOL_SIZE = 8;
-    private static final int BUFFER_SIZE = 512 * 1024;
-
+    private static int poolSize = 1;
+    private static final int BIG_BUFFER_SIZE = 8 * 1024 * 1024;
     private static final int TIMEOUT = 5;
     private static final LinkedTransferQueue<Slot> freeSlots = new LinkedTransferQueue<>();
 
+    private static final ByteBuffer bigBuffer = ByteBuffer.allocateDirect(BIG_BUFFER_SIZE);
     public static class Slot implements AutoCloseable{
-        public final ByteBuffer buffer = ByteBuffer.allocateDirect(BUFFER_SIZE);
-        public void release() {
-            buffer.clear();
-            freeSlots.offer(this);
+        public ByteBuffer buffer;
+        Slot(ByteBuffer buffer) {
+            this.buffer = buffer;
         }
 
         @Override
         public void close() {
-            release();
+            freeSlots.offer(this);
         }
     }
 
+
     static {
-        for (int i = 0; i < MAX_POOL_SIZE; i++) {
-            freeSlots.add(new Slot());
+        updateSlotBuffer(poolSize);
+    }
+
+    public static void updateSlotBuffer(int newPoolSize) {
+        if (poolSize == newPoolSize) {
+            return;
         }
+        freeSlots.clear();
+        int temp = BIG_BUFFER_SIZE / newPoolSize;
+        int slotBufferSize = temp - temp % 16;
+
+        for (int i = 0; i < newPoolSize; i++) {
+            int offset = i * slotBufferSize;
+            bigBuffer.position(offset).limit(offset + slotBufferSize);
+            ByteBuffer slice = bigBuffer.slice();
+
+            freeSlots.add(new Slot(slice));
+        }
+
+        poolSize = newPoolSize;
     }
 
     public static Slot acquireDirectBuffer() throws InterruptedException {

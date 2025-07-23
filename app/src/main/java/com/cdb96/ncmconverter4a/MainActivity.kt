@@ -29,6 +29,7 @@ import androidx.documentfile.provider.DocumentFile
 import com.cdb96.ncmconverter4a.converter.KGMConverter
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt
 import com.cdb96.ncmconverter4a.converter.NCMConverter
+import com.cdb96.ncmconverter4a.util.DirectBufferPool
 import kotlinx.coroutines.*
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -102,6 +103,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun processMultipleFilesParallel(uris: List<Uri>) {
+        DirectBufferPool.updateSlotBuffer(minOf(uris.size, threadCount))
         CoroutineScope(Dispatchers.Main).launch {
             val startTime = System.currentTimeMillis()
             val successCount = AtomicInteger(0)
@@ -179,6 +181,7 @@ class MainActivity : ComponentActivity() {
         onProgress: (String, String, Long?) -> Unit,
         onComplete: () -> Unit
     ) {
+        DirectBufferPool.updateSlotBuffer(minOf(uris.size, threadCount))
         coroutineScope.launch {
             val startTime = System.currentTimeMillis()
             val fileNameMap = mutableMapOf<Uri, String>()
