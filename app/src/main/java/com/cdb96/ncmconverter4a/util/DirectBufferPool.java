@@ -12,11 +12,16 @@ public class DirectBufferPool {
     private static final int TIMEOUT = 5;
     private static final LinkedTransferQueue<Slot> freeSlots = new LinkedTransferQueue<>();
 
-    public static class Slot {
+    public static class Slot implements AutoCloseable{
         public final ByteBuffer buffer = ByteBuffer.allocateDirect(BUFFER_SIZE);
         public void release() {
             buffer.clear();
             freeSlots.offer(this);
+        }
+
+        @Override
+        public void close() {
+            release();
         }
     }
 

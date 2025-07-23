@@ -183,14 +183,14 @@ public class NCMConverter {
     }
 
     public static void outputMusic(FileChannel outputChannel, FileChannel inputChannel) throws Exception {
-        int bytesRead;
-        DirectBufferPool.Slot bufferSlot = DirectBufferPool.acquireDirectBuffer();
-        ByteBuffer buffer = bufferSlot.buffer;
-        while ((bytesRead = inputChannel.read(buffer)) != -1) {
-            RC4Decrypt.prgaDecryptByteBuffer(buffer, bytesRead);
-            safeWrite(outputChannel,buffer);
+        try (DirectBufferPool.Slot bufferSlot = DirectBufferPool.acquireDirectBuffer()){
+            ByteBuffer buffer = bufferSlot.buffer;
+            int bytesRead;
+            while ((bytesRead = inputChannel.read(buffer)) != -1) {
+                RC4Decrypt.prgaDecryptByteBuffer(buffer, bytesRead);
+                safeWrite(outputChannel, buffer);
+            }
         }
-        bufferSlot.release();
     }
 
     private static String combineArtistsString(String artistsString) {

@@ -26,19 +26,19 @@ public class KGMConverter {
     }
 
     public static void write(FileChannel inputChannel, FileChannel outputChannel, byte[] ownKeyBytes) throws Exception {
-        DirectBufferPool.Slot bufferSlot = DirectBufferPool.acquireDirectBuffer();
-        ByteBuffer buffer = bufferSlot.buffer;
-
-        int pos = 0;
         KGMDecrypt.init(ownKeyBytes);
 
         inputChannel.position(1024);
-        int bytesRead;
-        while ((bytesRead = inputChannel.read(buffer)) != -1) {
-            pos = KGMDecrypt.decrypt(buffer, pos, bytesRead);
-            safeWrite(outputChannel, buffer);
+
+        try (DirectBufferPool.Slot bufferSlot = DirectBufferPool.acquireDirectBuffer()){
+            ByteBuffer buffer = bufferSlot.buffer;
+            int bytesRead;
+            int pos = 0;
+            while ((bytesRead = inputChannel.read(buffer)) != -1) {
+                pos = KGMDecrypt.decrypt(buffer, pos, bytesRead);
+                safeWrite(outputChannel, buffer);
+            }
         }
-        bufferSlot.release();
     }
 
     public static byte[] getOwnKeyBytes(FileInputStream inputStream) throws Exception {
