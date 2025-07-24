@@ -12,7 +12,17 @@ import com.cdb96.ncmconverter4a.converter.KGMConverter
 import com.cdb96.ncmconverter4a.converter.NCMConverter
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt
 import com.cdb96.ncmconverter4a.util.DirectBufferPool
+import kotlinx.coroutines.CloseableCoroutineDispatcher
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -29,6 +39,7 @@ class FileConversionService(private val context: Context) {
         uris: List<Uri>,
         threadCount: Int,
         rawWriteMode: Boolean,
+        fileCoroutineDispatcher: CoroutineDispatcher,
         onProgress: (processed: Int, total: Int, fileName: String) -> Unit
     ): ConversionResult {
         DirectBufferPool.updateSlotBuffer(minOf(uris.size, threadCount))
@@ -36,6 +47,7 @@ class FileConversionService(private val context: Context) {
         val startTime = System.currentTimeMillis()
         val successCount = AtomicInteger(0)
         val failureCount = AtomicInteger(0)
+        val completedCount = AtomicInteger(0)
         val totalFiles = uris.size
 
         try {
@@ -49,30 +61,37 @@ class FileConversionService(private val context: Context) {
             }
 
             // 并行处理所有文件
-            uris.mapIndexed { index, uri ->
-                withContext(Dispatchers.Default) {
-                    try {
+            supervisorScope {
+                val jobs = uris.map { uri ->
+                    launch (fileCoroutineDispatcher) {
                         val fileName = fileNameMap[uri] ?: "未知文件"
-                        onProgress(index + 1, totalFiles, fileName)
-
-                        val success = solveFile(uri, rawWriteMode, fileName)
-                        if (success) {
-                            successCount.incrementAndGet()
-                        } else {
+                        try {
+                            val success = solveFile(uri, rawWriteMode, fileName)
+                            if (success) {
+                                successCount.incrementAndGet()
+                            } else {
+                                failureCount.incrementAndGet()
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "处理文件时出错: ${e.message}", e)
                             failureCount.incrementAndGet()
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "处理文件时出错: ${e.message}", e)
-                        failureCount.incrementAndGet()
+                        val completed = completedCount.incrementAndGet()
+                        launch(Dispatchers.Main) {
+                            onProgress(completed, totalFiles, fileName)
+                        }
                     }
                 }
+                jobs.joinAll()
             }
 
+            val allFileNames = fileNameMap.values.joinToString(", ")
             val duration = System.currentTimeMillis() - startTime
             return ConversionResult(
                 successCount = successCount.get(),
                 failureCount = failureCount.get(),
-                durationMillis = duration
+                durationMillis = duration,
+                allFileNames = allFileNames,
             )
         } catch (e: Exception) {
             Log.e(TAG, "批量转换过程中发生错误: ${e.message}", e)
@@ -230,5 +249,6 @@ class FileConversionService(private val context: Context) {
 data class ConversionResult(
     val successCount: Int,
     val failureCount: Int,
-    val durationMillis: Long
+    val durationMillis: Long,
+    val allFileNames: String
 )
