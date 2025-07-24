@@ -35,7 +35,7 @@ public class DirectBufferPool {
         }
         freeSlots.clear();
         int temp = BIG_BUFFER_SIZE / newPoolSize;
-        int slotBufferSize = temp - temp % 16;
+        int slotBufferSize = temp - temp % 256;
 
         for (int i = 0; i < newPoolSize; i++) {
             int offset = i * slotBufferSize;
