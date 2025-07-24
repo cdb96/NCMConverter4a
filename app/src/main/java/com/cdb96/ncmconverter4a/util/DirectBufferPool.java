@@ -24,7 +24,6 @@ public class DirectBufferPool {
         }
     }
 
-
     static {
         updateSlotBuffer(1);
     }
