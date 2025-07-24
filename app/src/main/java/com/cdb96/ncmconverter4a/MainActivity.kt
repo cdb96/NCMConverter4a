@@ -170,8 +170,8 @@ class MainActivity : ComponentActivity() {
         var isSettingsExpanded by remember { mutableStateOf(false) }
         var isProcessing by remember { mutableStateOf(false) }
         var currentFile by remember { mutableStateOf("") }
-        var processedCount by remember { mutableStateOf(0) }
-        var totalCount by remember { mutableStateOf(0) }
+        var processedCount by remember { mutableIntStateOf(0) }
+        var totalCount by remember { mutableIntStateOf(0) }
 
         val context = LocalContext.current
         val coroutineScope = rememberCoroutineScope()

@@ -12,14 +12,8 @@ import com.cdb96.ncmconverter4a.converter.KGMConverter
 import com.cdb96.ncmconverter4a.converter.NCMConverter
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt
 import com.cdb96.ncmconverter4a.util.DirectBufferPool
-import kotlinx.coroutines.CloseableCoroutineDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
