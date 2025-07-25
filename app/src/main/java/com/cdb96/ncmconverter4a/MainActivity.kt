@@ -9,8 +9,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -164,7 +167,6 @@ class MainActivity : ComponentActivity() {
         onThreadCountChange: (Int) -> Unit
     ) {
         var convertResult by remember { mutableStateOf<String?>("尚未选择文件") }
-        var musicName by remember { mutableStateOf("尚未选择文件") }
         var rawWriteMode by remember { mutableStateOf(false) }
         var conversionDurationMillis by remember { mutableStateOf<Long?>(null) }
         var isSettingsExpanded by remember { mutableStateOf(false) }
@@ -184,7 +186,6 @@ class MainActivity : ComponentActivity() {
                     if (selectedUris.isNotEmpty() && activity != null) {
                         isProcessing = true
                         convertResult = "处理中..."
-                        musicName = ""
                         processedCount = 0
                         totalCount = selectedUris.size
 
@@ -201,7 +202,6 @@ class MainActivity : ComponentActivity() {
                                     totalCount = total
                                     currentFile = fileName
                                     convertResult = "处理中 ($processed/$total)"
-                                    musicName = fileName
                                 }
 
                                 // Update UI with final result
@@ -261,7 +261,6 @@ class MainActivity : ComponentActivity() {
             ) {
                 StatusCard(
                     convertResult = convertResult,
-                    musicName = musicName,
                     conversionDurationMillis = conversionDurationMillis,
                     isProcessing = isProcessing,
                     processedCount = processedCount,
@@ -287,7 +286,6 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun StatusCard(
         convertResult: String?,
-        musicName: String,
         conversionDurationMillis: Long?,
         isProcessing: Boolean,
         processedCount: Int = 0,
@@ -301,6 +299,7 @@ class MainActivity : ComponentActivity() {
             modifier = Modifier
                 .padding(top = 16.dp)
                 .fillMaxWidth()
+                .animateContentSize()
         ) {
             Column(
                 modifier = Modifier
@@ -340,13 +339,15 @@ class MainActivity : ComponentActivity() {
                 if (currentFile.isNotEmpty()) {
                     Text(
                         text = "当前文件: $currentFile",
-                        modifier = Modifier.padding(bottom = 8.dp),
+                        modifier = Modifier.padding(bottom = 8.dp)
+                                .heightIn(max = 225.dp)
+                                .verticalScroll(rememberScrollState()),
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.bodyMedium
                     )
                 } else {
                     Text(
-                        text = "文件名: $musicName",
+                        text = "文件名: 尚未选择文件",
                         modifier = Modifier.padding(bottom = 8.dp),
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.bodyMedium
@@ -357,7 +358,8 @@ class MainActivity : ComponentActivity() {
                     val seconds = duration / 1000.0
                     Text(
                         text = String.format(java.util.Locale.US, "处理耗时: %.3f 秒", seconds),
-                        modifier = Modifier.padding(bottom = 16.dp),
+                        modifier = Modifier.padding(bottom = 4.dp)
+                                .padding(top = 8.dp),
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.bodySmall
                     )
