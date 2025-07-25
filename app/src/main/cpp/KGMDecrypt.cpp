@@ -6,7 +6,7 @@
 #if defined(__ARM_NEON__) || defined(__aarch64__)
     #include <arm_neon.h>
 #else
-    #include "NEON_2_SSE.h"
+    #include "NEON_2_SSE/NEON_2_SSE.h"
 #endif
 
 const uint8x16_t andVec = vdupq_n_u8(0x0f);

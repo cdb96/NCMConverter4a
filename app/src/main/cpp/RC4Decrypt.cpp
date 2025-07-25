@@ -7,7 +7,7 @@
 #if defined(__ARM_NEON__) || defined(__aarch64__)
     #include <arm_neon.h>
 #else
-    #include "NEON_2_SSE.h"
+    #include "NEON_2_SSE/NEON_2_SSE.h"
 #endif
 
 thread_local uint8_t keyStreamBytes[256];
