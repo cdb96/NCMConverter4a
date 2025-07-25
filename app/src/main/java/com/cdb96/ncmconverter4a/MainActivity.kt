@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -26,6 +27,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.cdb96.ncmconverter4a.service.FileConversionService
 import kotlinx.coroutines.*
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private var threadCount by mutableIntStateOf(4) // 默认4个线程
@@ -154,7 +156,7 @@ class MainActivity : ComponentActivity() {
                 if (successCount > 0) append("，")
                 append("失败${failureCount}个")
             }
-            append("\n耗时：${String.format(java.util.Locale.US, "%.2f", duration / 1000.0)}秒")
+            append("\n耗时：${String.format(Locale.US, "%.2f", duration / 1000.0)}秒")
             append("\n存储于Music文件夹")
         }
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
@@ -357,7 +359,7 @@ class MainActivity : ComponentActivity() {
                 conversionDurationMillis?.let { duration ->
                     val seconds = duration / 1000.0
                     Text(
-                        text = String.format(java.util.Locale.US, "处理耗时: %.3f 秒", seconds),
+                        text = String.format(Locale.US, "处理耗时: %.3f 秒", seconds),
                         modifier = Modifier.padding(bottom = 4.dp)
                                 .padding(top = 8.dp),
                         textAlign = TextAlign.Center,
@@ -384,17 +386,22 @@ class MainActivity : ComponentActivity() {
             ),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(modifier = Modifier.padding()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(enabled = enabled) { onExpandToggle() }
-                        .padding(vertical = 8.dp),
+                        .clickable(enabled = enabled,
+                            onClick = onExpandToggle,
+                            indication = ripple(),
+                            interactionSource = remember { MutableInteractionSource() }
+                        )
+                        .padding(all = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
                         "兼容性设置",
+                        modifier = Modifier.padding(all = 12.dp),
                         style = MaterialTheme.typography.titleSmall,
                         color = if (enabled)
                             MaterialTheme.colorScheme.onSurface
@@ -415,7 +422,8 @@ class MainActivity : ComponentActivity() {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 8.dp, start = 8.dp)
+                            .padding(horizontal = 24.dp)
+                            .padding(bottom = 16.dp)
                     ) {
                         // 原始写入模式设置
                         Row(
