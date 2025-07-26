@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.cdb96.ncmconverter4a.service.FileConversionService
+import com.cdb96.ncmconverter4a.util.DirectBufferPool
 import kotlinx.coroutines.*
 import java.util.Locale
 
@@ -45,7 +46,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
+        DirectBufferPool.updateSlotBuffer(1)
         fileConversionService = FileConversionService(this)
 
         handleIntent(intent)
