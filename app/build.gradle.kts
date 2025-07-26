@@ -22,7 +22,11 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags += "-std=c++23 -Wno-gnu-inline-cpp-without-extern -Wno-deprecated-declarations"
-                arguments("-DANDROID_ARM_NEON=TRUE")
+                val ninjaPath = System.getenv("CMAKE_NINJA_PATH")
+                arguments.add("-DANDROID_ARM_NEON=TRUE")
+                if (!ninjaPath.isNullOrBlank()){
+                    arguments.add("-DCMAKE_MAKE_PROGRAM=${ninjaPath}")
+                    }
                 targets("ncmc4a")
             }
         }
