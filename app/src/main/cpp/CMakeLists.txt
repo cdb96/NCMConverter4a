@@ -4,7 +4,7 @@
 # For more examples on how to use CMake, see https://github.com/android/ndk-samples.
 
 # Sets the minimum CMake version required for this project.
-cmake_minimum_required(VERSION 3.22.1)
+cmake_minimum_required(VERSION 4.0.3)
 
 # Declares the project name. The project name can be accessed via ${ PROJECT_NAME},
 # Since this is the top level CMakeLists.txt, the project name is also accessible
@@ -25,7 +25,7 @@ project("ncmc4a")
 # System.loadLibrary() and pass the name of the library defined here;
 # for GameActivity/NativeActivity derived applications, the same library name must be
 # used in the AndroidManifest.xml file.
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_library(${CMAKE_PROJECT_NAME} SHARED
     # List C/C++ source files with relative paths to this CMakeLists.txt.
@@ -38,3 +38,8 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     # List libraries link to the target library
         android
         log)
+target_sources(${CMAKE_PROJECT_NAME}
+        PRIVATE
+        FILE_SET CXX_MODULES FILES
+        KGMData.cppm
+)

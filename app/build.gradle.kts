@@ -21,7 +21,7 @@ android {
         }
         externalNativeBuild {
             cmake {
-                cppFlags += "-std=c++17 -Wno-gnu-inline-cpp-without-extern -Wno-deprecated-declarations"
+                cppFlags += "-std=c++23 -Wno-gnu-inline-cpp-without-extern -Wno-deprecated-declarations"
                 arguments("-DANDROID_ARM_NEON=TRUE")
                 targets("ncmc4a")
             }
@@ -67,7 +67,7 @@ android {
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
+            version = "4.0.3"
         }
     }
     ndkVersion = "29.0.13599879"
