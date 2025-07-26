@@ -23,7 +23,7 @@ import java.util.Base64;
 import java.util.StringJoiner;
 
 public class NCMConverter {
-    public record ncmFileInfo(byte[] RC4Key, byte[] coverData, ArrayList<String> musicInfoStringArrayValue) {}
+    public record ncmFileInfo(byte[] RC4key, byte[] coverData, ArrayList<String> musicInfoStringArrayValue) {}
 
     private static final String ALGORITHM = "AES";
     private static final String TRANSFORMATION = "AES/ECB/PKCS5Padding";
