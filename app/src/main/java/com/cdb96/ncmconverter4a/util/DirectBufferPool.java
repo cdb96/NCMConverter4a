@@ -1,5 +1,7 @@
 package com.cdb96.ncmconverter4a.util;
 
+import android.util.Log;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -30,8 +32,10 @@ public class DirectBufferPool {
 
     public static void updateSlotBuffer(int newPoolSize) {
         if (poolSize == newPoolSize) {
+            Log.i("DirectBufferPool","未更新,当前池大小" + newPoolSize);
             return;
         }
+        Log.i("DirectBufferPool","已更新,当前池大小" + newPoolSize);
         freeSlots.clear();
         int temp = BIG_BUFFER_SIZE / newPoolSize;
         int slotBufferSize = temp - temp % 256;
