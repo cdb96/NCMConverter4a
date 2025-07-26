@@ -30,7 +30,12 @@ jobs:
       uses: ashutoshvarma/setup-ninja@master
       with:
         version: 1.13.1
-      
+
+    - name: 验证构建工具版本
+      run: |
+        cmake --version
+        ninja --version
+
     - name: 设置 JDK 17
       uses: actions/setup-java@v4
       with:
@@ -61,7 +66,8 @@ jobs:
 
     - name: 构建发布版APK
       if: ${{ github.event_name != 'pull_request' }}
-      run: ./gradlew assembleRelease
+      run: ./gradlew assembleRelease \
+          -DCMAKE_MAKE_PROGRAM = /usr/local/bin/ninja
       env:
         KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
