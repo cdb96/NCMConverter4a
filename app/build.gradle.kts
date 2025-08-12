@@ -53,7 +53,7 @@ android {
             )
             externalNativeBuild {
                 cmake {
-                    cppFlags += "-O3 -ffast-math -flto -march=native -funroll-loops"
+                    cppFlags += "-O3 -ffast-math -flto -funroll-loops"
                 }
             }
         }
