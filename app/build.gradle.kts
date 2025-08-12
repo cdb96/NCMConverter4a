@@ -13,7 +13,7 @@ android {
         minSdk = 28
         targetSdk = 36
         versionCode = 1
-        versionName = "3.2.0"
+        versionName = "3.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
@@ -53,7 +53,7 @@ android {
             )
             externalNativeBuild {
                 cmake {
-                    cppFlags += "-O3 -ffast-math -flto"
+                    cppFlags += "-O3 -ffast-math -flto -march=native -funroll-loops"
                 }
             }
         }
@@ -74,7 +74,7 @@ android {
             version = "4.0.3"
         }
     }
-    ndkVersion = "29.0.13599879"
+    ndkVersion = "29.0.13846066"
     buildToolsVersion = "36.0.0"
 }
 

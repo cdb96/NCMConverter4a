@@ -10,9 +10,8 @@ import KGMData;
 #endif
 
 const uint8x16_t andVec = vdupq_n_u8(0x0f);
-
-thread_local uint8_t maskBytes[KGMData::PRE_COMPUTED_TABLE_SIZE];
-thread_local uint8_t ownKeyBytes[16 * 17];
+alignas(64) thread_local uint8_t maskBytes[KGMData::PRE_COMPUTED_TABLE_SIZE];
+alignas(64) thread_local uint8_t ownKeyBytes[16 * 17];
 
 void genMask(int startPos) {
     uint8x16_t chunk[16];
