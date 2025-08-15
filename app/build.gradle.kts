@@ -70,7 +70,7 @@ android {
             version = "3.22.1"
         }
     }
-    ndkVersion = "29.0.13599879"
+    ndkVersion = "29.0.13846066"
     buildToolsVersion = "36.0.0"
 }
 
