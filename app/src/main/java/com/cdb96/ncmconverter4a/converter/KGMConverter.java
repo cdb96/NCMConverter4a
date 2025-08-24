@@ -6,25 +6,10 @@ import com.cdb96.ncmconverter4a.jni.KGMDecrypt;
 import com.cdb96.ncmconverter4a.util.DirectBufferPool;
 
 import java.io.FileInputStream;
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.Arrays;
 
 public class KGMConverter {
-    public static boolean KGMDetect(InputStream inputStream) throws Exception {
-        final byte[] truncatedKGMMagicHeader = {0x7c, (byte) 0xd5};
-        byte[] fileHeader = new byte[2];
-        inputStream.read(fileHeader, 0, 2);
-        if (Arrays.equals(fileHeader, truncatedKGMMagicHeader)) {
-            System.out.println("KGM file detected");
-            return true;
-        } else {
-            System.out.println("KGM file not detected");
-            return false;
-        }
-    }
-
     public static void write(FileChannel inputChannel, FileChannel outputChannel, byte[] ownKeyBytes) throws Exception {
         KGMDecrypt.init(ownKeyBytes);
 

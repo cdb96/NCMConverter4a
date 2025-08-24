@@ -4,7 +4,6 @@ import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
-import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
@@ -20,8 +19,10 @@ import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.regex.Pattern
+
 
 class FileConversionService(private val context: Context) {
     companion object {
@@ -46,11 +47,9 @@ class FileConversionService(private val context: Context) {
 
         try {
             // 获取所有文件名
-            val fileNameMap = mutableMapOf<Uri, String>()
-            uris.map { uri ->
+            val fileNameMap = uris.associateWith { uri ->
                 withContext(Dispatchers.IO) {
-                    val fileName = uri.getFileName(context) ?: "未知文件"
-                    fileNameMap[uri] = fileName
+                    uri.getFileName(context) ?: "未知文件"
                 }
             }
 
@@ -61,11 +60,7 @@ class FileConversionService(private val context: Context) {
                         val fileName = fileNameMap[uri] ?: "未知文件"
                         try {
                             val success = solveFile(uri, rawWriteMode, fileName)
-                            if (success) {
-                                successCount.incrementAndGet()
-                            } else {
-                                failureCount.incrementAndGet()
-                            }
+                            if (success) successCount.incrementAndGet() else failureCount.incrementAndGet()
                         } catch (e: Exception) {
                             Log.e(TAG, "处理文件时出错: ${e.message}", e)
                             failureCount.incrementAndGet()
@@ -85,7 +80,7 @@ class FileConversionService(private val context: Context) {
                 successCount = successCount.get(),
                 failureCount = failureCount.get(),
                 durationMillis = duration,
-                allFileNames = allFileNames,
+                allFileNames = allFileNames
             )
         } catch (e: Exception) {
             Log.e(TAG, "批量转换过程中发生错误: ${e.message}", e)
@@ -98,43 +93,12 @@ class FileConversionService(private val context: Context) {
         rawWriteMode: Boolean,
         fileName: String?
     ): Boolean = withContext(Dispatchers.IO) {
-        var pfd: ParcelFileDescriptor? = null
-        var fis: FileInputStream? = null
-
-        try {
-            // 通过 ContentResolver 获取文件描述符
-            pfd = context.contentResolver.openFileDescriptor(uri, "r")
-            if (pfd == null) return@withContext false
-
-            // 使用文件描述符创建 FileInputStream
-            fis = FileInputStream(pfd.fileDescriptor)
-
-            // 先检测是否为 KGM 文件
-            val isKGM = KGMConverter.KGMDetect(fis)
-            if (isKGM) {
-                // 处理 KGM 文件
-                processKGMFile(uri, fis, fileName)
-            } else {
-                // 处理 NCM 文件
-                if (!processNCMFile(rawWriteMode, fis)) return@withContext false
-            }
-
-            return@withContext true
-        } catch (e: Exception) {
-            Log.e(TAG, "文件处理失败: ${e.message}", e)
-            return@withContext false
-        } finally {
-            // 关闭资源
-            try {
-                fis?.close()
-            } catch (e: Exception) {
-                Log.w(TAG, "关闭FileInputStream时出错", e)
-            }
-
-            try {
-                pfd?.close()
-            } catch (e: Exception) {
-                Log.w(TAG, "关闭ParcelFileDescriptor时出错", e)
+        withFileInputStream(uri) { fis ->
+            val format = detectEncryptedFormat(fis)
+            Log.i(TAG,"使用${format}解密器")
+            when (format) {
+                EncryptedFormat.KGM -> processKGMFile(uri, fis, fileName)
+                EncryptedFormat.NCM -> processNCMFile(rawWriteMode, fis)
             }
         }
     }
@@ -162,10 +126,10 @@ class FileConversionService(private val context: Context) {
                     inputStream.channel,
                 )
             }
-            return@withContext true
+            true
         } catch (e: Exception) {
             Log.e(TAG, "NCM文件处理失败: ${e.message}", e)
-            return@withContext false
+            false
         }
     }
 
@@ -179,9 +143,7 @@ class FileConversionService(private val context: Context) {
             val ownKeyBytes = KGMConverter.getOwnKeyBytes(inputStream)
             val musicFormat = KGMConverter.detectFormat(inputStream, ownKeyBytes)
 
-            if (musicFormat.isNullOrBlank()) {
-                return@withContext false
-            }
+            if (musicFormat.isNullOrBlank()) false
 
             // 获取文件名并处理
             var processedFileName = fileName ?: uri.getFileName(context) ?: "null"
@@ -191,10 +153,21 @@ class FileConversionService(private val context: Context) {
             withFileOutputStream(musicFormat, processedFileName) { fileOutputStream ->
                 KGMConverter.write(inputStream.channel, fileOutputStream.channel, ownKeyBytes)
             }
-            return@withContext true
+            true
         } catch (e: Exception) {
             Log.e(TAG, "KGM文件处理失败: ${e.message}", e)
-            return@withContext false
+            false
+        }
+    }
+
+    private suspend fun withFileInputStream(
+        uri: Uri,
+        block: suspend (FileInputStream) -> Boolean
+    ): Boolean = withContext(Dispatchers.IO) {
+        context.contentResolver.openFileDescriptor(uri, "r").use { pfd ->
+            FileInputStream(pfd?.fileDescriptor).use { fis ->
+                block(fis)
+            }
         }
     }
 
@@ -238,8 +211,16 @@ class FileConversionService(private val context: Context) {
     private fun Uri.getFileName(context: Context): String? {
         return DocumentFile.fromSingleUri(context, this)?.name
     }
-}
 
+    private fun detectEncryptedFormat(inputStream: InputStream): EncryptedFormat {
+        val truncatedKGMMagicHeader = byteArrayOf(0x7c, 0xd5.toByte())
+        val fileHeader = ByteArray(2)
+        inputStream.read(fileHeader, 0, 2)
+        //这里应该检测NCM的头来判断是否为NCM格式的，不过我懒得搞了，反正就两个格式
+        return if (fileHeader.contentEquals(truncatedKGMMagicHeader)) EncryptedFormat.KGM else EncryptedFormat.NCM
+    }
+}
+enum class EncryptedFormat { KGM, NCM }
 data class ConversionResult(
     val successCount: Int,
     val failureCount: Int,
