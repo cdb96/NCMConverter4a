@@ -23,16 +23,7 @@ import java.util.Base64;
 import java.util.StringJoiner;
 
 public class NCMConverter {
-    public static class NCMFileInfo {
-        public byte[] RC4key;
-        public byte[] coverData;
-        public ArrayList<String> musicInfoStringArrayValue;
-        NCMFileInfo(byte[] RC4key, byte[] coverData, ArrayList<String> musicInfoStringArrayValue) {
-            this.RC4key = RC4key;
-            this.coverData = coverData;
-            this.musicInfoStringArrayValue = musicInfoStringArrayValue;
-        }
-    }
+    public record ncmFileInfo(byte[] RC4key, byte[] coverData, ArrayList<String> musicInfoStringArrayValue) {}
 
     private static final String ALGORITHM = "AES";
     private static final String TRANSFORMATION = "AES/ECB/PKCS5Padding";
@@ -203,7 +194,7 @@ public class NCMConverter {
         return joiner.toString();
     }
 
-    public static NCMFileInfo convert(InputStream fileStream) throws Exception
+    public static ncmFileInfo convert(InputStream fileStream) throws Exception
     {
         byte[] RC4Key = getRC4key(fileStream);
         byte[] metaBytes = getMetaData(fileStream);
@@ -211,6 +202,6 @@ public class NCMConverter {
 
         String metaData = new String(metaBytes, StandardCharsets.UTF_8);
         ArrayList<String> musicInfo = SimpleJsonParser.parse(metaData);
-        return new NCMFileInfo(RC4Key, coverData, musicInfo);
+        return new ncmFileInfo(RC4Key, coverData, musicInfo);
     }
 }
