@@ -59,7 +59,7 @@ class FileConversionService(private val context: Context) {
                     launch (fileCoroutineDispatcher) {
                         val fileName = fileNameMap[uri] ?: "未知文件"
                         try {
-                            val success = solveFile(uri, rawWriteMode, fileName)
+                            val success = routeEncryptedFile(uri, rawWriteMode, fileName)
                             if (success) successCount.incrementAndGet() else failureCount.incrementAndGet()
                         } catch (e: Exception) {
                             Log.e(TAG, "处理文件时出错: ${e.message}", e)
@@ -88,7 +88,7 @@ class FileConversionService(private val context: Context) {
         }
     }
 
-    private suspend fun solveFile(
+    private suspend fun routeEncryptedFile(
         uri: Uri,
         rawWriteMode: Boolean,
         fileName: String?
