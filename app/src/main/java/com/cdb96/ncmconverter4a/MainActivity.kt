@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.cdb96.ncmconverter4a.service.FileConversionService
 import com.cdb96.ncmconverter4a.util.DirectBufferPool
@@ -285,6 +286,17 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Preview
+    @Composable
+    fun MainFramePreview() {
+        MainFrame(
+            threadCount = 4,
+            onThreadCountChange = {}
+        )
+    }
+
 
     @Composable
     private fun StatusCard(
