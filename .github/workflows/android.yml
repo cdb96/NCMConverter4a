@@ -34,7 +34,7 @@ jobs:
       run: chmod +x gradlew
       
     - name: 缓存Gradle依赖
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.gradle/caches
