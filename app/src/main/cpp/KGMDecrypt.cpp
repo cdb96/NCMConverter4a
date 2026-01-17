@@ -64,30 +64,28 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv *env, jclass clazz, 
                 keyBytesIndexCounter = 0;
             }
         }
-        uint8x16_t cipherDataBytesChunk = vld1q_u8(cipherDataBytes + j);
-
-        uint8x16_t med8DataChunkOriginal = vld1q_u8(ownKeyBytes + MaskV2Counter);
-        uint8x16_t med8DataChunkTemp;
-        med8DataChunkOriginal = veorq_u8(med8DataChunkOriginal,cipherDataBytesChunk);
-        med8DataChunkTemp = vandq_u8(med8DataChunkOriginal, andVec);
-        med8DataChunkTemp = vshlq_n_u8(med8DataChunkTemp, 4);
-        med8DataChunkOriginal = veorq_u8(med8DataChunkOriginal, med8DataChunkTemp);
+        //这里主要利用线性特性来进行优化
+        // 若F(x) = x ^ ((x & 0x0F) << 4),则有F(a) ^ F(b) = F(a^b)
+        uint8x16_t vCipher = vld1q_u8(cipherDataBytes + j);
+        uint8x16_t vMed8 = vld1q_u8(ownKeyBytes + MaskV2Counter);
+        uint8x16_t vMsk8 = vld1q_dup_u8(maskBytes + keyBytesIndexCounter);
+        uint8x16_t vMaskV2 = vld1q_u8(MASK_V2_PRE_DEF + MaskV2Counter);
+        vMed8 = veorq_u8(vMed8,vCipher);
+        vMsk8 = veorq_u8(vMsk8,vMaskV2);
+        vMed8 = veorq_u8(vMed8,vMsk8);
+        //这里把vMsk8当作temp用，省点寄存器
+        vMsk8 = vandq_u8(vMed8,andVec);
+        vMsk8 = vshlq_n_u8(vMsk8,4);
+        vMsk8 = veorq_u8(vMed8,vMsk8);
+        //原始过程:
         //int med8 = ownKeyBytes[i % 17] ^ cipherDataBytes[j];
         //med8 ^= (med8 & 0xf) << 4;
-
-        uint8x16_t msk8DataChunkOriginal = vld1q_dup_u8(maskBytes + keyBytesIndexCounter);
-        uint8x16_t msk8DataChunkTemp;
-        uint8x16_t maskV2Data = vld1q_u8(MASK_V2_PRE_DEF + MaskV2Counter);
-        msk8DataChunkOriginal = veorq_u8(msk8DataChunkOriginal,maskV2Data);
-        msk8DataChunkTemp = vandq_u8(msk8DataChunkOriginal, andVec);
-        msk8DataChunkTemp = vshlq_n_u8(msk8DataChunkTemp, 4);
-        msk8DataChunkOriginal = veorq_u8(msk8DataChunkOriginal, msk8DataChunkTemp);
         //int msk8 = maskBytes[keyBytesIndexCounter] ^ MASK_V2_PRE_DEF[MaskV2Counter];
         //msk8 ^= (msk8 & 0xf) << 4;
         //cipherDataBytes[j] = (med8 ^ msk8);
 
-        cipherDataBytesChunk = veorq_u8(msk8DataChunkOriginal,med8DataChunkOriginal);
-        vst1q_u8(cipherDataBytes + j,cipherDataBytesChunk);
+        //vMsk8已为最终结果
+        vst1q_u8(cipherDataBytes + j,vMsk8);
 
         genMaskCounter += 16;
         MaskV2Counter += 16;

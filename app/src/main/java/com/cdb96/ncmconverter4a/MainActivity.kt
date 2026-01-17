@@ -26,6 +26,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.cdb96.ncmconverter4a.jni.KGMDecrypt
+import com.cdb96.ncmconverter4a.jni.RC4Decrypt
 import com.cdb96.ncmconverter4a.service.FileConversionService
 import com.cdb96.ncmconverter4a.util.DirectBufferPool
 import kotlinx.coroutines.*
@@ -47,7 +49,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        DirectBufferPool.updateSlotBuffer(1)
+        warmup();
         fileConversionService = FileConversionService(this)
 
         handleIntent(intent)
@@ -57,6 +59,16 @@ class MainActivity : ComponentActivity() {
                 onThreadCountChange = ::updateThreadPool
             )
         }
+    }
+
+    fun warmup() {
+        DirectBufferPool.updateSlotBuffer(1)
+        /*
+        val dummyRC4Data = ByteArray(256);
+        val dummyKGMData = ByteArray(17);
+        RC4Decrypt.ksa(dummyRC4Data);
+        KGMDecrypt.init(dummyKGMData);
+        */
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -354,9 +366,10 @@ class MainActivity : ComponentActivity() {
                 if (currentFile.isNotEmpty()) {
                     Text(
                         text = "当前文件: $currentFile",
-                        modifier = Modifier.padding(bottom = 8.dp)
-                                .heightIn(max = 225.dp)
-                                .verticalScroll(rememberScrollState()),
+                        modifier = Modifier
+                            .padding(bottom = 8.dp)
+                            .heightIn(max = 225.dp)
+                            .verticalScroll(rememberScrollState()),
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -373,8 +386,9 @@ class MainActivity : ComponentActivity() {
                     val seconds = duration / 1000.0
                     Text(
                         text = String.format(Locale.US, "处理耗时: %.3f 秒", seconds),
-                        modifier = Modifier.padding(bottom = 4.dp)
-                                .padding(top = 8.dp),
+                        modifier = Modifier
+                            .padding(bottom = 4.dp)
+                            .padding(top = 8.dp),
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -403,7 +417,8 @@ class MainActivity : ComponentActivity() {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(enabled = enabled,
+                        .clickable(
+                            enabled = enabled,
                             onClick = onExpandToggle,
                             indication = ripple(),
                             interactionSource = remember { MutableInteractionSource() }
