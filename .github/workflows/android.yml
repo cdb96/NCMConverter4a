@@ -25,7 +25,6 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
-        cache: gradle
 
     - name: 设置Android SDK和NDK
       uses: android-actions/setup-android@v3
@@ -39,7 +38,7 @@ jobs:
         path: |
           ~/.gradle/caches
           ~/.gradle/wrapper
-          ~/.gradle/configuration-cache
+          .gradle/configuration-cache
         key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
         restore-keys: |
           ${{ runner.os }}-gradle-
