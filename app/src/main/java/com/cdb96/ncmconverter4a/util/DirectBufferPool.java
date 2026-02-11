@@ -9,7 +9,7 @@ import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.TimeUnit;
 public class DirectBufferPool {
     private static int poolSize = 0;
-    private static final int BIG_BUFFER_SIZE = 8 * 1024 * 1024;
+    private static final int BIG_BUFFER_SIZE = 1024 * 1024;
     private static final int TIMEOUT = 5;
     private static final LinkedTransferQueue<Slot> freeSlots = new LinkedTransferQueue<>();
 

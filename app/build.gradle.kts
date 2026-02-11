@@ -1,32 +1,35 @@
+import com.android.build.api.dsl.ApplicationExtension
+
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
+    id("com.android.application")
     alias(libs.plugins.kotlin.compose)
 }
-
-android {
+configure<ApplicationExtension> {
     namespace = "com.cdb96.ncmconverter4a"
     compileSdk = 36
 
-    defaultConfig {
+    compileOptions.apply {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    defaultConfig.apply {
         applicationId = "com.cdb96.ncmconverter4a"
         minSdk = 28
         targetSdk = 36
         versionCode = 1
-        versionName = "3.2.3"
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        versionName = "3.3.0"
+        ndkVersion = "29.0.14206865"
         ndk {
             abiFilters += listOf<String>("x86_64","arm64-v8a")
         }
-        externalNativeBuild {
+        externalNativeBuild{
             cmake {
                 cppFlags += "-std=c++17 -Wno-gnu-inline-cpp-without-extern -Wno-deprecated-declarations"
                 arguments("-DANDROID_ARM_NEON=TRUE")
                 targets("ncmc4a")
             }
         }
-        proguardFiles()
     }
 
     signingConfigs {
@@ -47,30 +50,24 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            externalNativeBuild {
+            externalNativeBuild{
                 cmake {
-                    cppFlags += "-O3 -ffast-math -flto"
+                    cppFlags += "-std=c++17 -Wno-gnu-inline-cpp-without-extern -Wno-deprecated-declarations"
+                    arguments("-DANDROID_ARM_NEON=TRUE")
+                    targets("ncmc4a")
                 }
             }
         }
-    }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    buildFeatures {
-        compose = true
-    }
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
+        externalNativeBuild {
+            cmake {
+                path = file("src/main/cpp/CMakeLists.txt")
+                version = "3.22.1"
+            }
         }
     }
-    ndkVersion = "29.0.13846066"
-    buildToolsVersion = "36.0.0"
-    kotlinOptions {
-        jvmTarget = "17"
+
+    buildFeatures{
+        compose = true
     }
 }
 
@@ -83,6 +80,7 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.documentfile)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

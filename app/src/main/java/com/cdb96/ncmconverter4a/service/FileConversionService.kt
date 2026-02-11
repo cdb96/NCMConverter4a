@@ -44,6 +44,8 @@ class FileConversionService(private val context: Context) {
         val failureCount = AtomicInteger(0)
         val completedCount = AtomicInteger(0)
         val totalFiles = uris.size
+        val successfulFiles = mutableListOf<String>()
+        val failedFiles = mutableListOf<String>()
 
         try {
             // 获取所有文件名
@@ -52,7 +54,6 @@ class FileConversionService(private val context: Context) {
                     uri.getFileName(context) ?: "未知文件"
                 }
             }
-
             // 并行处理所有文件
             supervisorScope {
                 val jobs = uris.map { uri ->
@@ -60,9 +61,16 @@ class FileConversionService(private val context: Context) {
                         val fileName = fileNameMap[uri] ?: "未知文件"
                         try {
                             val success = routeEncryptedFile(uri, rawWriteMode, fileName)
-                            if (success) successCount.incrementAndGet() else failureCount.incrementAndGet()
+                            if (success) {
+                                successfulFiles.add(fileName)
+                                successCount.incrementAndGet()
+                            } else {
+                                failedFiles.add(fileName)
+                                failureCount.incrementAndGet()
+                            }
                         } catch (e: Exception) {
                             Log.e(TAG, "处理文件时出错: ${e.message}", e)
+                            failedFiles.add(fileName)
                             failureCount.incrementAndGet()
                         }
                         val completed = completedCount.incrementAndGet()
@@ -73,14 +81,15 @@ class FileConversionService(private val context: Context) {
                 }
                 jobs.joinAll()
             }
-
             val allFileNames = fileNameMap.values.joinToString(", ")
             val duration = System.currentTimeMillis() - startTime
             return ConversionResult(
                 successCount = successCount.get(),
                 failureCount = failureCount.get(),
                 durationMillis = duration,
-                allFileNames = allFileNames
+                allFileNames = allFileNames,
+                successfulFileNames = successfulFiles,
+                failedFileNames = failedFiles,
             )
         } catch (e: Exception) {
             Log.e(TAG, "批量转换过程中发生错误: ${e.message}", e)
@@ -225,5 +234,7 @@ data class ConversionResult(
     val successCount: Int,
     val failureCount: Int,
     val durationMillis: Long,
-    val allFileNames: String
-)
+    val allFileNames: String,
+    val successfulFileNames: List<String>,
+    val failedFileNames: List<String>
+    )
