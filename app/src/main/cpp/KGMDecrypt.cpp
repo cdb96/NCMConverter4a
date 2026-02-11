@@ -48,7 +48,10 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv *env, jclass clazz, 
     int genMaskCounter = offset % 69632;
     int MaskV2Counter = offset % 272;
     int keyBytesIndexCounter = (offset >> 4) % 4352;
-
+    //防止buffer在位置恰好为69632字节整数倍切换数据时，下方if函数未生成mask
+    if (genMaskCounter == 0) {
+        genMask(i);
+    }
     for (; j + 16 <= bytes_read; i += 16 , j += 16) {
         //简化取模运算
         if (genMaskCounter == 69632) {
