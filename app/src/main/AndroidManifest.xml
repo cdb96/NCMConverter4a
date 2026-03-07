@@ -40,5 +40,10 @@
                 <data android:mimeType="audio/flac"/>
             </intent-filter>
         </activity>
+        <activity
+            android:name=".KGGDecryptActivity"
+            android:exported="false"
+            android:label="KGG解密"
+            android:theme="@style/Theme.NCMConverter4a" />
     </application>
 </manifest>

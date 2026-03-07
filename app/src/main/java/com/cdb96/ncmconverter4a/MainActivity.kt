@@ -47,6 +47,7 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Speed
@@ -333,6 +334,15 @@ class MainActivity : ComponentActivity() {
                                 Icon(
                                     imageVector = Icons.Outlined.Speed,
                                     contentDescription = "基准测试"
+                                )
+                            }
+                            IconButton(onClick = {
+                                val intent = Intent(this@MainActivity, KGGDecryptActivity::class.java)
+                                startActivity(intent)
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Key,
+                                    contentDescription = "KGG解密"
                                 )
                             }
                         },

@@ -237,4 +237,4 @@ data class ConversionResult(
     val allFileNames: String,
     val successfulFileNames: List<String>,
     val failedFileNames: List<String>
-    )
+)
