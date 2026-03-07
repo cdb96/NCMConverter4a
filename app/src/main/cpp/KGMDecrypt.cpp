@@ -9,8 +9,6 @@
     #include "NEON_2_SSE/NEON_2_SSE.h"
 #endif
 
-const uint8x16_t andVec = vdupq_n_u8(0x0f);
-
 thread_local uint8_t maskBytes[PRE_COMPUTED_TABLE_SIZE];
 thread_local uint8_t ownKeyBytes[16 * 17];
 
@@ -77,8 +75,7 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv *env, jclass clazz, 
         vMsk8 = veorq_u8(vMsk8,vMaskV2);
         vMed8 = veorq_u8(vMed8,vMsk8);
         //这里把vMsk8当作temp用，省点寄存器
-        vMsk8 = vandq_u8(vMed8,andVec);
-        vMsk8 = vshlq_n_u8(vMsk8,4);
+        vMsk8 = vshlq_n_u8(vMed8,4);
         vMsk8 = veorq_u8(vMed8,vMsk8);
         //原始过程:
         //int med8 = ownKeyBytes[i % 17] ^ cipherDataBytes[j];
