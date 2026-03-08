@@ -65,16 +65,11 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv *env, jclass clazz, 
                 keyBytesIndexCounter = 0;
             }
         }
-        //这里主要利用线性特性来进行优化
-        // 若F(x) = x ^ ((x & 0x0F) << 4),则有F(a) ^ F(b) = F(a^b)
         uint8x16_t vCipher = vld1q_u8(cipherDataBytes + j);
         uint8x16_t vMed8 = vld1q_u8(ownKeyBytes + MaskV2Counter);
         uint8x16_t vMsk8 = vld1q_dup_u8(maskBytes + keyBytesIndexCounter);
-        uint8x16_t vMaskV2 = vld1q_u8(MASK_V2_PRE_DEF + MaskV2Counter);
         vMed8 = veorq_u8(vMed8,vCipher);
-        vMsk8 = veorq_u8(vMsk8,vMaskV2);
         vMed8 = veorq_u8(vMed8,vMsk8);
-        //这里把vMsk8当作temp用，省点寄存器
         vMsk8 = vshlq_n_u8(vMed8,4);
         vMsk8 = veorq_u8(vMed8,vMsk8);
         //原始过程:
@@ -127,4 +122,7 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_init(JNIEnv *env, jclass clazz, jby
         memcpy(ownKeyBytes + i * 17, ownKeyBytes, 17);
     }
     memcpy(maskBytes, PRE_COMPUTED_TABLE, PRE_COMPUTED_TABLE_SIZE);
+    for (int i = 0; i < MASKV2_PRE_DEF_TABLE_SIZE; i++) {
+        ownKeyBytes[i] ^= MASK_V2_PRE_DEF[i];
+    }
 }
