@@ -10,7 +10,7 @@
 #endif
 
 thread_local uint8_t maskBytes[PRE_COMPUTED_TABLE_SIZE];
-thread_local uint8_t ownKeyBytes[16 * 17];
+thread_local uint8_t fileKeyBytes[16 * 17];
 
 void genMask(int startPos) {
     uint8x16_t chunk[16];
@@ -44,8 +44,8 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv *env, jclass clazz, 
     int i = offset;
     int j = 0;
     int genMaskCounter = offset % 69632;
-    int MaskV2Counter = offset % 272;
-    int keyBytesIndexCounter = (offset >> 4) % 4352;
+    int fileKeyCounter = offset % 272;
+    int maskBytesIndexCounter = (offset >> 4) % 4352;
     //防止buffer在位置恰好为69632字节整数倍切换数据时，下方if函数未生成mask
     if (genMaskCounter == 0) {
         genMask(i);
@@ -56,26 +56,26 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv *env, jclass clazz, 
             genMask(i);
             genMaskCounter = 0;
         }
-        if (MaskV2Counter == 272) {
-            MaskV2Counter = 0;
+        if (fileKeyCounter == 272) {
+            fileKeyCounter = 0;
         }
         if (j > 0 && (i & 15) == 0) {
-            keyBytesIndexCounter++;
-            if (keyBytesIndexCounter == 4352) {
-                keyBytesIndexCounter = 0;
+            maskBytesIndexCounter++;
+            if (maskBytesIndexCounter == 4352) {
+                maskBytesIndexCounter = 0;
             }
         }
         uint8x16_t vCipher = vld1q_u8(cipherDataBytes + j);
-        uint8x16_t vMed8 = vld1q_u8(ownKeyBytes + MaskV2Counter);
-        uint8x16_t vMsk8 = vld1q_dup_u8(maskBytes + keyBytesIndexCounter);
+        uint8x16_t vMed8 = vld1q_u8(fileKeyBytes + fileKeyCounter);
+        uint8x16_t vMsk8 = vld1q_dup_u8(maskBytes + maskBytesIndexCounter);
         vMed8 = veorq_u8(vMed8,vCipher);
         vMed8 = veorq_u8(vMed8,vMsk8);
         vMsk8 = vshlq_n_u8(vMed8,4);
         vMsk8 = veorq_u8(vMed8,vMsk8);
         //原始过程:
-        //int med8 = ownKeyBytes[i % 17] ^ cipherDataBytes[j];
+        //int med8 = fileKeyBytes[i % 17] ^ cipherDataBytes[j];
         //med8 ^= (med8 & 0xf) << 4;
-        //int msk8 = maskBytes[keyBytesIndexCounter] ^ MASK_V2_PRE_DEF[MaskV2Counter];
+        //int msk8 = maskBytes[maskBytesIndexCounter] ^ MASK_V2_PRE_DEF[fileKeyCounter];
         //msk8 ^= (msk8 & 0xf) << 4;
         //cipherDataBytes[j] = (med8 ^ msk8);
 
@@ -83,32 +83,29 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv *env, jclass clazz, 
         vst1q_u8(cipherDataBytes + j,vMsk8);
 
         genMaskCounter += 16;
-        MaskV2Counter += 16;
+        fileKeyCounter += 16;
     }
     for (; j < bytes_read; ++i, ++j) {
-        int med8 = ownKeyBytes[i % 17] ^ cipherDataBytes[j];
-        med8 ^= (med8 & 0xf) << 4;
-
         if (genMaskCounter == 69632) {
             genMask(i);
             genMaskCounter = 0;
         }
-        if (MaskV2Counter == 272) {
-            MaskV2Counter = 0;
+        if (fileKeyCounter == 272) {
+            fileKeyCounter = 0;
         }
         if (j > 0 && (i & 15) == 0) {
-            keyBytesIndexCounter++;
-            if (keyBytesIndexCounter == 4352) {
-                keyBytesIndexCounter = 0;
+            maskBytesIndexCounter++;
+            if (maskBytesIndexCounter == 4352) {
+                maskBytesIndexCounter = 0;
             }
         }
 
-        int msk8 = maskBytes[keyBytesIndexCounter] ^ MASK_V2_PRE_DEF[MaskV2Counter];
-        msk8 ^= (msk8 & 0xf) << 4;
-        cipherDataBytes[j] = (med8 ^ msk8);
+        int combined = fileKeyBytes[fileKeyCounter] ^ cipherDataBytes[j] ^ maskBytes[maskBytesIndexCounter];
+
+        cipherDataBytes[j] = combined ^ (combined << 4);
 
         genMaskCounter++;
-        MaskV2Counter++;
+        fileKeyCounter++;
     }
 
     return i;
@@ -116,13 +113,13 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv *env, jclass clazz, 
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_init(JNIEnv *env, jclass clazz, jbyteArray own_key_bytes) {
-    env->GetByteArrayRegion(own_key_bytes, 0, 17, reinterpret_cast<jbyte*>(ownKeyBytes));
+Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_init(JNIEnv *env, jclass clazz, jbyteArray file_key_bytes) {
+    env->GetByteArrayRegion(file_key_bytes, 0, 17, reinterpret_cast<jbyte*>(fileKeyBytes));
     for (int i = 1; i < 16; i++) {
-        memcpy(ownKeyBytes + i * 17, ownKeyBytes, 17);
+        memcpy(fileKeyBytes + i * 17, fileKeyBytes, 17);
     }
     memcpy(maskBytes, PRE_COMPUTED_TABLE, PRE_COMPUTED_TABLE_SIZE);
     for (int i = 0; i < MASKV2_PRE_DEF_TABLE_SIZE; i++) {
-        ownKeyBytes[i] ^= MASK_V2_PRE_DEF[i];
+        fileKeyBytes[i] ^= MASK_V2_PRE_DEF[i];
     }
 }
