@@ -17,7 +17,7 @@ class BenchmarkService {
 
     companion object {
         private const val TAG = "BenchmarkService"
-        private const val ITERATIONS = 3 // 每个数据大小测试次数
+        private const val ITERATIONS = 6 // 每个数据大小测试次数
         private const val POOL_SIZE_FOR_TEST = 1 // 测试期间 poolSize=1，slot 大小为 buffer 总容量
         private const val POOL_SIZE_AFTER_TEST = 4 // 测试后恢复为 poolSize=4
     }
@@ -150,11 +150,11 @@ class BenchmarkService {
                 }
             }
 
-            val avgThroughput = results.average()
+            val maxThroughput = results.maxOrNull() ?: 0.0
             // durationMs = total_kb / throughput(kb/s) * 1000
-            val avgDurationMs = (results.size * sizeKB / avgThroughput * 1000).toLong()
+            val avgDurationMs = (results.size * sizeKB / maxThroughput * 1000).toLong()
 
-            SizeThroughput(sizeKB, avgThroughput, avgDurationMs)
+            SizeThroughput(sizeKB, maxThroughput, avgDurationMs)
         }
     }
 
@@ -194,10 +194,10 @@ class BenchmarkService {
                 }
             }
 
-            val avgThroughput = results.average()
-            val avgDurationMs = (results.size * sizeKB / avgThroughput * 1000).toLong()
+            val maxThroughput = results.maxOrNull() ?: 0.0
+            val avgDurationMs = (results.size * sizeKB / maxThroughput * 1000).toLong()
 
-            SizeThroughput(sizeKB, avgThroughput, avgDurationMs)
+            SizeThroughput(sizeKB, maxThroughput, avgDurationMs)
         }
     }
 
@@ -232,10 +232,10 @@ class BenchmarkService {
                 results.add(throughput)
             }
 
-            val avgThroughput = results.average()
-            val avgDurationMs = (results.size * sizeKB / avgThroughput * 1000).toLong()
+            val maxThroughput = results.maxOrNull() ?: 0.0
+            val avgDurationMs = (results.size * sizeKB / maxThroughput * 1000).toLong()
 
-            SizeThroughput(sizeKB, avgThroughput, avgDurationMs)
+            SizeThroughput(sizeKB, maxThroughput, avgDurationMs)
         }
     }
 
