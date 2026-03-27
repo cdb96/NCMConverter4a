@@ -27,7 +27,7 @@ jobs:
         distribution: 'temurin'
 
     - name: 设置Android SDK和NDK
-      uses: android-actions/setup-android@v3
+      uses: android-actions/setup-android@v4
 
     - name: 给Gradlew授予执行权限
       run: chmod +x gradlew
