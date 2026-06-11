@@ -23,7 +23,7 @@ import java.util.Base64;
 import java.util.StringJoiner;
 
 public class NCMConverter {
-    public record ncmFileInfo(byte[] RC4key, byte[] coverData, ArrayList<String> musicInfoStringArrayValue) {}
+    public record ncmFileInfo(byte[] RC4key, byte[] coverData,String musicName,String musicAlbum, String musicArtists, String format) {}
 
     private static final String ALGORITHM = "AES";
     private static final String TRANSFORMATION = "AES/ECB/PKCS5Padding";
@@ -104,15 +104,14 @@ public class NCMConverter {
         return newArray;
     }
 
-    public static void modifyHeader(FileInputStream fileStream, FileOutputStream fileOutputStream, ArrayList<String> musicInfo, byte[] coverData,int bufferSize) throws Exception {
+    public static void modifyHeader(FileInputStream fileStream, FileOutputStream fileOutputStream, ncmFileInfo info, byte[] coverData,int bufferSize) throws Exception {
         byte[] preFetchChunk = new byte[bufferSize];
         fileStream.read(preFetchChunk, 0, bufferSize);
         RC4Decrypt.prgaDecryptByteArray(preFetchChunk, preFetchChunk.length);
 
-        String musicName = musicInfo.get( musicInfo.indexOf("musicName") + 1);
-        String musicArtist = musicInfo.get( musicInfo.indexOf("artist") + 1);
-        String musicAlbum = musicInfo.get( musicInfo.indexOf("album") + 1);
-        musicArtist = combineArtistsString(musicArtist);
+        String musicName = info.musicName;
+        String musicAlbum = info.musicAlbum;
+        String musicArtist = info.musicArtists;
 
         if (preFetchChunk[0] == 0x49) {
             byte[] ID3LengthBytes = new byte[4];
@@ -202,6 +201,13 @@ public class NCMConverter {
 
         String metaData = new String(metaBytes, StandardCharsets.UTF_8);
         ArrayList<String> musicInfo = SimpleJsonParser.parse(metaData);
-        return new ncmFileInfo(RC4Key, coverData, musicInfo);
+
+        String musicName = musicInfo.get( musicInfo.indexOf("musicName") + 1);
+        String musicAlbum = musicInfo.get( musicInfo.indexOf("album") + 1);
+        String musicArtists = musicInfo.get( musicInfo.indexOf("artist") + 1);
+        String format = musicInfo.get( musicInfo.indexOf("format") + 1);
+        musicArtists = combineArtistsString(musicArtists);
+
+        return new ncmFileInfo(RC4Key, coverData, musicName, musicAlbum, musicArtists, format);
     }
 }

@@ -15,7 +15,7 @@ configure<ApplicationExtension> {
 
     defaultConfig.apply {
         applicationId = "com.cdb96.ncmconverter4a"
-        minSdk = 28
+        minSdk = 29
         targetSdk = 36
         versionCode = 1
         versionName = "3.4.0"

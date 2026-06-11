@@ -253,6 +253,7 @@ class MainActivity : ComponentActivity() {
     ) {
         var convertResult by remember { mutableStateOf<String?>(null) }
         var rawWriteMode by remember { mutableStateOf(false) }
+        var duplicateConflictMitigation by remember { mutableStateOf(false) }
         var conversionDurationMillis by remember { mutableStateOf<Long?>(null) }
         var isSettingsExpanded by remember { mutableStateOf(false) }
         var isProcessing by remember { mutableStateOf(false) }
@@ -292,6 +293,7 @@ class MainActivity : ComponentActivity() {
                                     uris = selectedUris,
                                     threadCount = threadCount,
                                     rawWriteMode = rawWriteMode,
+                                    duplicateConflictMitigation = duplicateConflictMitigation,
                                     fileCoroutineDispatcher = fileProcessingDispatcher
                                 ) { processed, total, fileName ->
                                     processedCount = processed
@@ -429,6 +431,8 @@ class MainActivity : ComponentActivity() {
                         onExpandToggle = { isSettingsExpanded = !isSettingsExpanded },
                         rawWriteMode = rawWriteMode,
                         onRawWriteModeChange = { rawWriteMode = it },
+                        duplicateConflictMitigation = duplicateConflictMitigation,
+                        onDuplicateConflictMitigationChange = { duplicateConflictMitigation = it },
                         threadCount = threadCount,
                         onThreadCountChange = onThreadCountChange,
                         enabled = !isProcessing
@@ -838,6 +842,8 @@ class MainActivity : ComponentActivity() {
         onExpandToggle: () -> Unit,
         rawWriteMode: Boolean,
         onRawWriteModeChange: (Boolean) -> Unit,
+        duplicateConflictMitigation: Boolean,
+        onDuplicateConflictMitigationChange: (Boolean) -> Unit,
         threadCount: Int,
         onThreadCountChange: (Int) -> Unit,
         enabled: Boolean
@@ -945,6 +951,49 @@ class MainActivity : ComponentActivity() {
                                         Icon(
                                             imageVector = Icons.Filled.Check,
                                             contentDescription = "原始写入模式已开启",
+                                            modifier = Modifier.size(SwitchDefaults.IconSize),
+                                        )
+                                    }
+                                } else null
+                            )
+                        }
+
+                        // 重名文件冲突缓解设置
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Outlined.InsertDriveFile,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = if (enabled)
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    else
+                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    "重名文件冲突缓解",
+                                    color = if (enabled)
+                                        MaterialTheme.colorScheme.onSurface
+                                    else
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                            Switch(
+                                checked = duplicateConflictMitigation,
+                                onCheckedChange = onDuplicateConflictMitigationChange,
+                                enabled = enabled,
+                                thumbContent = if (duplicateConflictMitigation) {
+                                    {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = "重名文件冲突缓解已开启",
                                             modifier = Modifier.size(SwitchDefaults.IconSize),
                                         )
                                     }
