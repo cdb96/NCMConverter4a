@@ -27,7 +27,7 @@ jobs:
         distribution: 'temurin'
 
     - name: 设置Android SDK和NDK
-      uses: android-actions/setup-android@v3
+      uses: android-actions/setup-android@v4
 
     - name: 给Gradlew授予执行权限
       run: chmod +x gradlew
@@ -58,7 +58,7 @@ jobs:
         SIGNING_STORE_FILE: release.keystore
   
     - name: 上传APK
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: app-release-apk
         path: app/build/outputs/apk/release/app-release.apk
