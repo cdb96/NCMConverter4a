@@ -65,7 +65,7 @@ jobs:
 
     - name: 创建 GitHub Release
       if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v3
       with:
         draft: false
         prerelease: false
