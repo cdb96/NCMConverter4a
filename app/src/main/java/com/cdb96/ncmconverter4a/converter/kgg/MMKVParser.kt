@@ -10,6 +10,7 @@ class MMKVParser(private val input: InputStream) {
 
         while (true) {
             val keyLen = input.read()
+            if (keyLen == -1) return null
             val keyBytes = ByteArray(keyLen)
             input.read(keyBytes)
 

@@ -1015,7 +1015,7 @@ class MainActivity : ComponentActivity() {
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
-                                    text = "并发线程数: $threadCount",
+                                    text = "线程数: $threadCount",
                                     color = if (enabled)
                                         MaterialTheme.colorScheme.onSurface
                                     else

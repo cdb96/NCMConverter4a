@@ -68,18 +68,22 @@ class KGGDecryptActivity : ComponentActivity() {
         val dbFilePicker = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.OpenDocument(),
             onResult = { uri: Uri? ->
-                dbFileUri = uri
-                dbFileName = getFileName(dbFileUri!!)
-                isDbDecrypted = false
-                decryptedDbData = null
+                if (uri != null) {
+                    dbFileUri = uri
+                    dbFileName = getFileName(uri)
+                    isDbDecrypted = false
+                    decryptedDbData = null
+                }
             }
         )
 
         val audioFilePicker = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.OpenDocument(),
             onResult = { uri: Uri? ->
-                audioFileUri = uri
-                audioFileName = getFileName(audioFileUri!!)
+                if (uri != null) {
+                    audioFileUri = uri
+                    audioFileName = getFileName(uri)
+                }
             }
         )
 
