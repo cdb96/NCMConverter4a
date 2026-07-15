@@ -6,7 +6,7 @@ plugins {
 }
 configure<ApplicationExtension> {
     namespace = "com.cdb96.ncmconverter4a"
-    compileSdk = 36
+    compileSdk = 37
 
     compileOptions.apply {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -16,10 +16,10 @@ configure<ApplicationExtension> {
     defaultConfig.apply {
         applicationId = "com.cdb96.ncmconverter4a"
         minSdk = 29
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 1
         versionName = "3.4.0"
-        ndkVersion = "30.0.14904198"
+        ndkVersion = "30.0.15729638"
         ndk {
             abiFilters += listOf<String>("x86_64","arm64-v8a")
         }
