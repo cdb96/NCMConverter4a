@@ -7,10 +7,11 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import java.io.BufferedInputStream
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.io.BufferedInputStream
+
 
 data class KggHeader(
     val magicHeader: ByteArray,      // 16字节: 魔数
@@ -63,7 +64,7 @@ fun parseKgmHeader(data: ByteArray): KggHeader {
 class KggDecoder(context: Context) {
     private val contentResolver = context.contentResolver
 
-    fun decryptWithUri(audioFileUri: Uri,dbFileUri: Uri){
+    fun decryptWithUri(audioFileUri: Uri, dbFileUri: Uri?, isRooted: Boolean){
         val rawStream: InputStream = contentResolver.openInputStream(audioFileUri) ?: throw IllegalStateException("无法打开音频文件，Uri: $audioFileUri")
         val audioFileInputStream = BufferedInputStream(rawStream).apply {
             mark(1024 * 1024)
@@ -76,8 +77,7 @@ class KggDecoder(context: Context) {
             throw IllegalStateException("不是KGG文件")
         }
 
-        val dbFileInputStream: InputStream = contentResolver.openInputStream(dbFileUri) ?: throw IllegalStateException("无法打开mmkv数据库文件，Uri: $dbFileUri")
-        val cipher = getCipher(dbFileInputStream,header.audioHash)
+        val cipher = getCipher(header.audioHash, dbFileUri, isRooted)
         val musicName = getFileName(audioFileUri)
         outputMusic(musicName,cipher,audioFileInputStream)
     }
@@ -93,26 +93,41 @@ class KggDecoder(context: Context) {
         return name
     }
 
-    fun getCipher(dbFileInputStream: InputStream,audioHash: String): QmcCipher.QmcStreamCipher {
-        val mmkvParser = MMKVParser(dbFileInputStream)
-        val eKeyBytes =
-            mmkvParser.getBytes(audioHash) ?: throw IllegalStateException("ekey解析失败")
-
-        /*
-        val kggDbDecryptor = KggDbDecryptor()
-        val eKey = kggDbDecryptor.extractKeyMapping(dbByteArray)[KggHeader.audioHash] ?: throw IllegalStateException("未找到对应的eKey")
-        val eKeyBytes = eKey.toByteArray(Charsets.UTF_8)
-        */
-
-        val key = deriveKey(eKeyBytes)
-        val cipher = QmcCipher.createCipher(key)
-        return cipher
+    fun getCipher(audioHash: String, dbFileUri: Uri?, isRooted: Boolean): QmcCipher.QmcStreamCipher {
+        val key = if (isRooted) {
+            getKeyAsRoot(audioHash)
+        } else {
+            val dbFileInputStream = contentResolver.openInputStream(dbFileUri!!)
+                ?: throw IllegalStateException("无法打开mmkv数据库文件，Uri: $dbFileUri")
+            getKey(dbFileInputStream, audioHash)
+        }
+        return QmcCipher.createCipher(key)
     }
 
-    fun getFormat(audioFileInputStream: BufferedInputStream,cipher: QmcCipher.QmcStreamCipher): String {
+    fun getKey(inputStream: InputStream,audioHash: String): ByteArray{
+        val mmkvParser = MMKVParser(inputStream)
+        val eKeyBytes = mmkvParser.getBytes(audioHash) ?: throw IllegalStateException("ekey解析失败")
+        val key = deriveKey(eKeyBytes)
+        return key
+    }
+
+    private fun getKeyAsRoot(audioHash: String): ByteArray {
+        val mmkvPath = "/data/data/com.kugou.android/files/mmkv/mggkey_multi_process"
+        val processBuilder = ProcessBuilder("su", "-c", "cat \"$mmkvPath\"")
+        processBuilder.redirectErrorStream(true)
+        val process = processBuilder.start()
+        val key = getKey(process.inputStream, audioHash)
+        val exitCode = process.waitFor()
+        if (exitCode != 0) {
+            throw IllegalStateException("Root获取密钥失败，请确认已授予Root权限")
+        }
+        return key
+    }
+
+    fun detectAudioFormat(audioFileInputStream: BufferedInputStream, cipher: QmcCipher.QmcStreamCipher?): String {
         val header = ByteArray(4)
         audioFileInputStream.read(header)
-        cipher.decrypt(header, 0)
+        cipher?.decrypt(header, 0)
         return when {
             header.startsWith("ID3".toByteArray()) -> "mp3"
             header.startsWith("fLaC".toByteArray()) -> "flac"
@@ -123,17 +138,17 @@ class KggDecoder(context: Context) {
 
     fun outputMusic(
         fileName: String,
-        cipher: QmcCipher.QmcStreamCipher,
+        cipher: QmcCipher.QmcStreamCipher?,
         audioFileInputStream: BufferedInputStream
     ){
-        val format = getFormat(audioFileInputStream,cipher)
-        val mimeType = when (format.lowercase()) {
+        val audioFormat = detectAudioFormat(audioFileInputStream, cipher)
+        val mimeType = when (audioFormat.lowercase()) {
             "flac" -> "audio/flac"
             "mp3" -> "audio/mpeg"
             "ogg" -> "audio/ogg"
             else -> "audio/mpeg"
         }
-        val musicName = "$fileName.${format.lowercase()}"
+        val musicName = "$fileName.${audioFormat.lowercase()}"
         val values = ContentValues().apply {
             put(MediaStore.Audio.Media.DISPLAY_NAME, musicName)
             put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
@@ -151,7 +166,7 @@ class KggDecoder(context: Context) {
 
                 // 从输入源读取并写入
                 while (audioFileInputStream.read(buffer).also { bytesRead = it } != -1) {
-                    cipher.decrypt(buffer,offset)
+                    cipher?.decrypt(buffer,offset)
                     outputStream.write(buffer, 0, bytesRead)
                     offset += bufferSize
                 }

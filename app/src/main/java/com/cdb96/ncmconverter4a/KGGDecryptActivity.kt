@@ -53,6 +53,7 @@ class KGGDecryptActivity : ComponentActivity() {
         var isProcessing by remember { mutableStateOf(false) }
         var decryptResult by remember { mutableStateOf<String?>(null) }
         var isDbDecrypted by remember { mutableStateOf(false) }
+        var isRooted by remember { mutableStateOf(false) }
 
         fun getFileName(uri: Uri): String {
             var name = "未知文件"
@@ -158,6 +159,16 @@ class KGGDecryptActivity : ComponentActivity() {
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                Text(
+                    text = "启用自动获取MMKV数据库文件(需要Root)"
+                )
+                Switch(
+                    checked = isRooted,
+                    onCheckedChange = { newValue ->
+                        isRooted = newValue
+                    }
+                )
+
                 FileSelectCard(
                     title = "DB文件",
                     description = "KGG数据库文件",
@@ -182,14 +193,14 @@ class KGGDecryptActivity : ComponentActivity() {
                 ) {
                     Button(
                         onClick = {
-                            if (dbFileUri != null && audioFileUri != null) {
+                            if (audioFileUri != null && (dbFileUri != null || isRooted)) {
                                 isProcessing = true
                                 decryptResult = "正在解密文件..."
 
                                 coroutineScope.launch {
                                     try {
                                         val kggDecoder = KggDecoder(context)
-                                        kggDecoder.decryptWithUri(audioFileUri!!, dbFileUri!!)
+                                        kggDecoder.decryptWithUri(audioFileUri!!, dbFileUri, isRooted)
                                         decryptResult = "文件解密完成！"
                                         Toast.makeText(context, "文件解密完成", Toast.LENGTH_SHORT).show()
                                     } catch (e: Exception) {
