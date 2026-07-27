@@ -128,8 +128,8 @@ class FileConversionService(private val context: Context) {
         try {
             val preFetchChunkSize = 512 * 1024
             val ncmFileInfo = NCMConverter.convert(inputStream)
-            val fileName = "${ncmFileInfo.musicArtists().replace(Regex("[/\\\\]"), ",")} - ${ncmFileInfo.musicName()}"
-            val format = ncmFileInfo.format()
+            val fileName = "${ncmFileInfo.musicArtists.replace(Regex("[/\\\\]"), ",")} - ${ncmFileInfo.musicName}"
+            val format = ncmFileInfo.format
 
             withFileOutputStream(format, fileName, duplicateConflictMitigation) { fileOutputStream ->
                 RC4Decrypt.ksa(ncmFileInfo.RC4key)
