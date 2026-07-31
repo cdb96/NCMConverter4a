@@ -26,6 +26,12 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
+      - name: 设置 Android SDK 和 NDK
+        uses: android-actions/setup-android@v4
+        with:
+          # nativeLib 模块所需的 NDK 版本 (见 nativeLib/build.gradle.kts)
+          packages: ndk;30.0.15729638
+
       - name: 授予 Gradlew 执行权限
         run: chmod +x gradlew
 
@@ -95,14 +101,6 @@ jobs:
       - name: 授予 Gradlew 执行权限
         run: chmod +x gradlew
 
-      - name: 接受 SDK licenses 并安装 NDK
-        shell: bash
-        run: |
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          [ -f "$SDKMANAGER.bat" ] && SDKMANAGER="$SDKMANAGER.bat"
-          yes | "$SDKMANAGER" --licenses > /dev/null || true
-          "$SDKMANAGER" "ndk;30.0.15729638"
-
       - name: 缓存 Gradle 依赖
         uses: actions/cache@v5
         with:
@@ -114,7 +112,12 @@ jobs:
           restore-keys: ${{ runner.os }}-gradle-
 
       - name: 构建桌面分发版
-        run: ./gradlew :composeApp:createDistributable
+        # packageDistributionForCurrentOS 生成安装包 (deb/dmg/msi);
+        # createDistributable 只生成未打包目录, 上传路径将找不到文件
+        # --configure-on-demand: 只配置任务依赖链上的项目 (composeApp),
+        # 跳过 androidApp/nativeLib —— 否则配置阶段会解析 nativeLib 的 NDK 需求,
+        # 在无 NDK 的 runner 上触发 LicenceNotAcceptedException
+        run: ./gradlew :composeApp:packageDistributionForCurrentOS --configure-on-demand
 
       - name: 上传桌面分发版 (Linux)
         if: ${{ runner.os == 'Linux' }}
