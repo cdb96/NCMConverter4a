@@ -26,12 +26,6 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: 设置 Android SDK 和 NDK
-        uses: android-actions/setup-android@v4
-        with:
-          # nativeLib 模块所需的 NDK 版本 (见 nativeLib/build.gradle.kts)
-          packages: ndk;30.0.15729638
-
       - name: 授予 Gradlew 执行权限
         run: chmod +x gradlew
 
@@ -100,6 +94,14 @@ jobs:
 
       - name: 授予 Gradlew 执行权限
         run: chmod +x gradlew
+
+      - name: 接受 SDK licenses 并安装 NDK
+        shell: bash
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          [ -f "$SDKMANAGER.bat" ] && SDKMANAGER="$SDKMANAGER.bat"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "ndk;30.0.15729638"
 
       - name: 缓存 Gradle 依赖
         uses: actions/cache@v5
