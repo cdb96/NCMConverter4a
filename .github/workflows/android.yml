@@ -111,34 +111,43 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle-
 
-      - name: 构建桌面分发版
-        # packageDistributionForCurrentOS 生成安装包 (deb/dmg/msi);
-        # createDistributable 只生成未打包目录, 上传路径将找不到文件
+      - name: 构建桌面分发版 (release 安装包 + Uber Jar)
+        # Release 后缀任务 = release 变体 (proguard 压缩); 无后缀的是 main 变体
+        # packageReleaseDistributionForCurrentOS 生成安装包 (deb/dmg/msi);
+        # packageReleaseUberJarForCurrentOS 生成可执行 fat jar (java -jar 直接运行)
         # --configure-on-demand: 只配置任务依赖链上的项目 (composeApp),
         # 跳过 androidApp/nativeLib —— 否则配置阶段会解析 nativeLib 的 NDK 需求,
         # 在无 NDK 的 runner 上触发 LicenceNotAcceptedException
-        run: ./gradlew :composeApp:packageDistributionForCurrentOS --configure-on-demand
+        run: |
+          ./gradlew :composeApp:packageReleaseDistributionForCurrentOS \
+            :composeApp:packageReleaseUberJarForCurrentOS --configure-on-demand
 
       - name: 上传桌面分发版 (Linux)
         if: ${{ runner.os == 'Linux' }}
         uses: actions/upload-artifact@v7
         with:
           name: NCMConverter4a-linux
-          path: composeApp/build/compose/binaries/main/deb/*.deb
+          path: composeApp/build/compose/binaries/main-release/deb/*.deb
 
       - name: 上传桌面分发版 (macOS)
         if: ${{ runner.os == 'macOS' }}
         uses: actions/upload-artifact@v7
         with:
           name: NCMConverter4a-macos
-          path: composeApp/build/compose/binaries/main/dmg/*.dmg
+          path: composeApp/build/compose/binaries/main-release/dmg/*.dmg
 
       - name: 上传桌面分发版 (Windows)
         if: ${{ runner.os == 'Windows' }}
         uses: actions/upload-artifact@v7
         with:
           name: NCMConverter4a-windows
-          path: composeApp/build/compose/binaries/main/msi/*.msi
+          path: composeApp/build/compose/binaries/main-release/msi/*.msi
+
+      - name: 上传 Uber Jar
+        uses: actions/upload-artifact@v7
+        with:
+          name: NCMConverter4a-jar-${{ runner.os }}
+          path: composeApp/build/compose/jars/*.jar
 
       - name: 创建 GitHub Release (Desktop)
         if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
@@ -147,6 +156,7 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            composeApp/build/compose/binaries/main/deb/*.deb
-            composeApp/build/compose/binaries/main/dmg/*.dmg
-            composeApp/build/compose/binaries/main/msi/*.msi
+            composeApp/build/compose/binaries/main-release/deb/*.deb
+            composeApp/build/compose/binaries/main-release/dmg/*.dmg
+            composeApp/build/compose/binaries/main-release/msi/*.msi
+            composeApp/build/compose/jars/*.jar
