@@ -111,16 +111,16 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle-
 
-      - name: 构建桌面分发版 (release 安装包 + Uber Jar)
-        # Release 后缀任务 = release 变体 (proguard 压缩); 无后缀的是 main 变体
-        # packageReleaseDistributionForCurrentOS 生成安装包 (deb/dmg/msi);
-        # packageReleaseUberJarForCurrentOS 生成可执行 fat jar (java -jar 直接运行)
-        # --configure-on-demand: 只配置任务依赖链上的项目 (composeApp),
-        # 跳过 androidApp/nativeLib —— 否则配置阶段会解析 nativeLib 的 NDK 需求,
-        # 在无 NDK 的 runner 上触发 LicenceNotAcceptedException
+      - name: 构建桌面安装包 (release)
+        shell: bash
         run: |
-          ./gradlew :composeApp:packageReleaseDistributionForCurrentOS \
-            :composeApp:packageReleaseUberJarForCurrentOS --configure-on-demand
+          ./gradlew :composeApp:packageReleaseDistributionForCurrentOS --configure-on-demand
+
+      - name: 构建 Uber Jar (release)
+        # 独立编译, 产物在 composeApp/build/compose/jars/, 与安装包目录分开
+        shell: bash
+        run: |
+          ./gradlew :composeApp:packageReleaseUberJarForCurrentOS --configure-on-demand
 
       - name: 上传桌面分发版 (Linux)
         if: ${{ runner.os == 'Linux' }}
