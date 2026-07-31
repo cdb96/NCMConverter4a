@@ -1,72 +1,147 @@
-name: Android CI
+name: CI
 
 on:
   workflow_dispatch:
   push:
-    branches: [ "master" ]
+    branches: ["master"]
   pull_request:
-    branches: [ "master" ]
+    branches: ["master"]
   release:
     types: [published]
 
 jobs:
-  build:
+  # ======================== Android Build ========================
+  android:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      
     steps:
-    - uses: actions/checkout@v6
-    - name: 设置submodules
-      run: git submodule update --init --recursive
-      
-    - name: 设置JDK 17
-      uses: actions/setup-java@v5
-      with:
-        java-version: '17'
-        distribution: 'temurin'
+      - uses: actions/checkout@v6
+      - name: 设置 submodules
+        run: git submodule update --init --recursive
 
-    - name: 设置Android SDK和NDK
-      uses: android-actions/setup-android@v4
+      - name: 设置 JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
 
-    - name: 给Gradlew授予执行权限
-      run: chmod +x gradlew
-      
-    - name: 缓存Gradle依赖
-      uses: actions/cache@v5
-      with:
-        path: |
-          ~/.gradle/caches
-          ~/.gradle/wrapper
-          .gradle/configuration-cache
-        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-        restore-keys: |
-          ${{ runner.os }}-gradle-
+      - name: 设置 Android SDK 和 NDK
+        uses: android-actions/setup-android@v4
+        with:
+          # nativeLib 模块所需的 NDK 版本 (见 nativeLib/build.gradle.kts)
+          packages: ndk;30.0.15729638
 
-    - name: 设置Keystore文件
-      if: ${{ github.event_name != 'pull_request' }}
-      run: |
-        echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > app/release.keystore
+      - name: 授予 Gradlew 执行权限
+        run: chmod +x gradlew
 
-    - name: 构建发布版APK
-      if: ${{ github.event_name != 'pull_request' }}
-      run: ./gradlew assembleRelease
-      env:
-        KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        SIGNING_STORE_FILE: release.keystore
-  
-    - name: 上传APK
-      uses: actions/upload-artifact@v7
-      with:
-        name: app-release-apk
-        path: app/build/outputs/apk/release/app-release.apk
+      - name: 缓存 Gradle 依赖
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            .gradle/configuration-cache
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
 
-    - name: 创建 GitHub Release
-      if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
-      uses: softprops/action-gh-release@v3
-      with:
-        draft: false
-        prerelease: false
-        files: app/build/outputs/apk/release/app-release.apk
+      - name: 设置 Keystore 文件
+        if: ${{ github.event_name != 'pull_request' }}
+        run: |
+          echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > androidApp/release.keystore
+
+      - name: 构建发布版 APK
+        if: ${{ github.event_name != 'pull_request' }}
+        run: ./gradlew :androidApp:assembleRelease
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          SIGNING_STORE_FILE: release.keystore
+
+      - name: 构建 Debug APK (PR check)
+        if: ${{ github.event_name == 'pull_request' }}
+        run: ./gradlew :androidApp:assembleDebug
+
+      - name: 上传 APK
+        # PR 只构建 debug APK (release/ 目录不存在), 跳过上传避免 upload-artifact 报错
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-release-apk
+          path: androidApp/build/outputs/apk/release/*.apk
+
+      - name: 创建 GitHub Release (Android)
+        if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
+        uses: softprops/action-gh-release@v3
+        with:
+          draft: false
+          prerelease: false
+          files: androidApp/build/outputs/apk/release/*.apk
+
+  # ======================== Desktop Build ========================
+  desktop:
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write  # softprops/action-gh-release 发布 Release 需要
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - name: 设置 submodules
+        run: git submodule update --init --recursive
+
+      - name: 设置 JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: 授予 Gradlew 执行权限
+        run: chmod +x gradlew
+
+      - name: 缓存 Gradle 依赖
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            .gradle/configuration-cache
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - name: 构建桌面分发版
+        run: ./gradlew :composeApp:createDistributable
+
+      - name: 上传桌面分发版 (Linux)
+        if: ${{ runner.os == 'Linux' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: NCMConverter4a-linux
+          path: composeApp/build/compose/binaries/main/deb/*.deb
+
+      - name: 上传桌面分发版 (macOS)
+        if: ${{ runner.os == 'macOS' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: NCMConverter4a-macos
+          path: composeApp/build/compose/binaries/main/dmg/*.dmg
+
+      - name: 上传桌面分发版 (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: NCMConverter4a-windows
+          path: composeApp/build/compose/binaries/main/msi/*.msi
+
+      - name: 创建 GitHub Release (Desktop)
+        if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
+        uses: softprops/action-gh-release@v3
+        with:
+          draft: false
+          prerelease: false
+          files: |
+            composeApp/build/compose/binaries/main/deb/*.deb
+            composeApp/build/compose/binaries/main/dmg/*.dmg
+            composeApp/build/compose/binaries/main/msi/*.msi

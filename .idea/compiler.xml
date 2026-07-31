@@ -3,4 +3,12 @@
   <component name="CompilerConfiguration">
     <bytecodeTargetLevel target="21" />
   </component>
+  <component name="JavacSettings">
+    <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="NCMConverter4a.composeApp" options="--add-modules=jdk.incubator.vector" />
+      <module name="NCMConverter4a.composeApp.desktopDev" options="--add-modules=jdk.incubator.vector" />
+      <module name="NCMConverter4a.composeApp.desktopMain" options="--add-modules=jdk.incubator.vector" />
+      <module name="NCMConverter4a.composeApp.desktopTest" options="--add-modules=jdk.incubator.vector" />
+    </option>
+  </component>
 </project>

@@ -9,6 +9,8 @@ lifecycleRuntimeKtx = "2.10.0"
 activityCompose = "1.12.3"
 composeBom = "2026.06.00"
 documentfile = "1.1.0"
+composeMultiplatform = "1.12.0-beta03"
+launch4j = "3.0.6"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -30,5 +32,10 @@ androidx-material-icons-extended = { group = "androidx.compose.material", name =
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
+android-native-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
+launch4j = { id = "edu.sc.seis.launch4j", version.ref = "launch4j" }

@@ -10,10 +10,11 @@
         <option name="modules">
           <set>
             <option value="$PROJECT_DIR$" />
-            <option value="$PROJECT_DIR$/app" />
+            <option value="$PROJECT_DIR$/androidApp" />
+            <option value="$PROJECT_DIR$/composeApp" />
+            <option value="$PROJECT_DIR$/nativeLib" />
           </set>
         </option>
-        <option name="resolveExternalAnnotations" value="false" />
       </GradleProjectSettings>
     </option>
   </component>

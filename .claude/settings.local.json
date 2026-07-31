@@ -3,7 +3,30 @@
     "allow": [
       "Bash(tree:*)",
       "Bash(./gradlew assembleDebug:*)",
-      "Bash(adb logcat:*)"
+      "Bash(adb logcat:*)",
+      "WebSearch",
+      "WebFetch(domain:maven.pkg.jetbrains.space)",
+      "Bash(curl -s --max-time 20 \"https://repo1.maven.org/maven2/org/jetbrains/compose/compose-multiplatform/maven-metadata.xml\")",
+      "Bash(curl -s --max-time 20 \"https://maven.pkg.jetbrains.space/kotlin/p/wasm/compose/org/jetbrains/compose/compose-multiplatform/maven-metadata.xml\")",
+      "Bash(curl -s --max-time 20 \"https://plugins.gradle.org/m2/org/jetbrains/compose/compose-multiplatform/maven-metadata.xml\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} in %{time_total}s\\\\n\" --max-time 15 \"https://repo1.maven.org/maven2/\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} in %{time_total}s\\\\n\" --max-time 15 \"https://www.google.com\")",
+      "Bash(curl -s --max-time 30 \"https://repo1.maven.org/maven2/org/jetbrains/compose/compose-multiplatform/maven-metadata.xml\")",
+      "Bash(curl -s --max-time 30 -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"https://maven.pkg.jetbrains.space/public/compose/org/jetbrains/compose/compose-multiplatform/maven-metadata.xml\")",
+      "Bash(curl -s --max-time 30 \"https://maven.pkg.jetbrains.space/public/compose/org/jetbrains/compose/compose-multiplatform/maven-metadata.xml\")",
+      "Bash(curl -s --max-time 30 \"https://plugins.gradle.org/api/gradle/2.14/org.jetbrains.compose\")",
+      "Bash(curl -s --max-time 30 \"https://plugins.gradle.org/m2/org/jetbrains/compose/org.jetbrains.compose.gradle.plugin/maven-metadata.xml\")",
+      "Bash(curl -s --max-time 30 -o /dev/null -w \"github API: HTTP %{http_code}\\\\n\" \"https://api.github.com/repos/JetBrains/compose-multiplatform/releases/tags/v1.9.3\")",
+      "Bash(curl -s --max-time 30 \"https://api.github.com/repos/JetBrains/compose-multiplatform/releases/tags/v1.9.3\")",
+      "Bash(grep -oE '\"body\":\"[^\"]{0,1500}')",
+      "Bash(curl -s --max-time 30 \"https://repo1.maven.org/maven2/org/jetbrains/compose/runtime/runtime/1.9.3/runtime-1.9.3.pom\")",
+      "Bash(curl -s --max-time 30 \"https://repo1.maven.org/maven2/org/jetbrains/compose/ui/ui/1.9.3/ui-1.9.3.pom\")",
+      "Bash(curl -s --max-time 30 \"https://plugins.gradle.org/m2/org/jetbrains/compose/compose-multiplatform/1.9.3/compose-multiplatform-1.9.3.pom\")",
+      "Bash(curl -s --max-time 30 \"https://repo1.maven.org/maven2/org/jetbrains/compose/ui/ui-desktop/1.9.3/ui-desktop-1.9.3.pom\")",
+      "Bash(curl -s --max-time 30 \"https://plugins.gradle.org/m2/org/jetbrains/compose/compose-multiplatform/maven-metadata.xml\")",
+      "Bash(sed 's/<[^>]*>//g')",
+      "Bash(curl -s --max-time 40 \"https://plugins.gradle.org/m2/org/jetbrains/compose/compose-multiplatform/1.9.3/compose-multiplatform-1.9.3.pom\")",
+      "Bash(curl -s --max-time 40 \"https://plugins.gradle.org/m2/org/jetbrains/compose/compose-multiplatform/maven-metadata.xml\")"
     ]
   }
 }

@@ -15,7 +15,7 @@ plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
         google()
         mavenCentral()
@@ -23,4 +23,6 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "NCMConverter4a"
-include(":app")
+include(":composeApp")
+include(":androidApp")
+include(":nativeLib")
