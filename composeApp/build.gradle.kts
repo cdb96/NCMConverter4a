@@ -1,5 +1,9 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.compose.desktop.application.tasks.AbstractProguardTask
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.gradle.jvm.toolchain.JavaToolchainService
+import org.gradle.jvm.toolchain.JvmVendorSpec
+import org.gradle.api.tasks.testing.Test
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -9,17 +13,29 @@ plugins {
     alias(libs.plugins.compose.multiplatform)
 }
 
+val desktopJdk25Home = extensions.getByType<JavaToolchainService>()
+    .launcherFor {
+        languageVersion.set(JavaLanguageVersion.of(25))
+        vendor.set(JvmVendorSpec.ADOPTIUM)
+    }
+    .map { it.metadata.installationPath.asFile.absolutePath }
+
 kotlin {
+    jvmToolchain {
+        languageVersion.set(JavaLanguageVersion.of(25))
+        vendor.set(JvmVendorSpec.ADOPTIUM)
+    }
+
     android {
         namespace = "com.cdb96.ncmconverter4a.lib"
         compileSdk = 37
         compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_21)
+            jvmTarget.set(JvmTarget.JVM_25)
         }
     }
     jvm("desktop") {
         compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_21)
+            jvmTarget.set(JvmTarget.JVM_25)
         }
     }
 
@@ -56,13 +72,20 @@ kotlin {
 
 // Java 编译启用 Vector API 模块（Kotlin 无法直接解析 Vector API，用 Java 封装）
 tasks.withType<JavaCompile>().configureEach {
-    sourceCompatibility = JavaVersion.VERSION_21.toString()
-    targetCompatibility = JavaVersion.VERSION_21.toString()
+    sourceCompatibility = JavaVersion.VERSION_25.toString()
+    targetCompatibility = JavaVersion.VERSION_25.toString()
     options.compilerArgs.add("--add-modules=jdk.incubator.vector")
+}
+
+tasks.withType<Test>().configureEach {
+    jvmArgs("--add-modules=jdk.incubator.vector")
 }
 
 compose.desktop {
     application {
+        // Compose packaging tasks default to the Gradle process JDK. Use the
+        // full JDK 25 toolchain because Android Studio's JBR omits jdk.incubator.vector.
+        javaHome = desktopJdk25Home.get()
         mainClass = "com.cdb96.ncmconverter4a.MainKt"
         jvmArgs += "--add-modules=jdk.incubator.vector"
         buildTypes.release {
@@ -91,7 +114,7 @@ compose.desktop {
 
 afterEvaluate {
     tasks.withType<AbstractProguardTask>().configureEach {
-        javaHome.set(System.getProperty("java.home"))
+        javaHome.set(desktopJdk25Home)
     }
 }
 
