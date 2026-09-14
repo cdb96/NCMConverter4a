@@ -16,9 +16,11 @@ import com.cdb96.ncmconverter4a.ui.screens.KggScreen
 import com.cdb96.ncmconverter4a.ui.screens.KggUiState
 import com.cdb96.ncmconverter4a.ui.screens.MainScreen
 import com.cdb96.ncmconverter4a.ui.screens.SettingsUiState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.swing.Swing
+import kotlinx.coroutines.withContext
 import java.io.File
-import kotlin.concurrent.thread
 
 fun main() = application {
     Window(onCloseRequest = ::exitApplication, title = "NCMConverter4a") {
@@ -63,10 +65,14 @@ fun DesktopMainScreen(onNavigateToKGG: () -> Unit) {
         },
         onThreadCountChange = { settingsState = settingsState.copy(threadCount = it) },
         onPickFiles = {
-            // Run file picker on a separate thread to avoid blocking EDT
-            thread(name = "file-picker", isDaemon = true) {
-                val files = DesktopFilePicker.pickFiles()
-                if (files.isNotEmpty()) {
+            scope.launch {
+                val files = withContext(Dispatchers.Swing) {
+                    DesktopFilePicker.pickFiles()
+                }
+                if (files.isEmpty()) return@launch
+
+                val selectedSettings = settingsState
+                withContext(Dispatchers.Swing) {
                     conversionState = conversionState.copy(
                         isProcessing = true,
                         hasConversionStarted = true,
@@ -77,36 +83,43 @@ fun DesktopMainScreen(onNavigateToKGG: () -> Unit) {
                         currentFile = "",
                         convertResult = null,
                     )
-                    scope.launch {
-                        try {
-                            val result = desktopFacade.processFiles(
-                                files,
-                                settingsState.threadCount,
-                                settingsState.rawWriteMode,
-                                settingsState.duplicateConflictMitigation,
-                            ) { processed, total, fileName ->
+                }
+
+                try {
+                    val result = withContext(Dispatchers.IO) {
+                        desktopFacade.processFiles(
+                            filePaths = files,
+                            threadCount = selectedSettings.threadCount,
+                            rawWriteMode = selectedSettings.rawWriteMode,
+                            duplicateConflictMitigation = selectedSettings.duplicateConflictMitigation,
+                        ) { processed, total, fileName ->
+                            withContext(Dispatchers.Swing) {
                                 conversionState = conversionState.copy(
                                     processedCount = processed,
                                     totalCount = total,
                                     currentFile = fileName,
                                 )
                             }
-                            conversionState = conversionState.copy(
-                                isProcessing = false,
-                                convertResult = "done",
-                                successCount = result.successCount,
-                                failureCount = result.failureCount,
-                                successfulFileNames = result.successfulFileNames,
-                                failedFileNames = result.failedFileNames,
-                                conversionDurationMillis = result.durationMillis,
-                                currentFile = result.allFileNames,
-                            )
-                        } catch (e: Exception) {
-                            conversionState = conversionState.copy(
-                                isProcessing = false,
-                                convertResult = "处理过程中发生错误: ${e.message}",
-                            )
                         }
+                    }
+                    withContext(Dispatchers.Swing) {
+                        conversionState = conversionState.copy(
+                            isProcessing = false,
+                            convertResult = "done",
+                            successCount = result.successCount,
+                            failureCount = result.failureCount,
+                            successfulFileNames = result.successfulFileNames,
+                            failedFileNames = result.failedFileNames,
+                            conversionDurationMillis = result.durationMillis,
+                            currentFile = result.allFileNames,
+                        )
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Swing) {
+                        conversionState = conversionState.copy(
+                            isProcessing = false,
+                            convertResult = "处理过程中发生错误: ${e.message}",
+                        )
                     }
                 }
             }
@@ -142,27 +155,47 @@ fun DesktopKggScreen(onNavigateBack: () -> Unit) {
         state = state,
         onNavigateBack = onNavigateBack,
         onSelectDbFile = {
-            thread(name = "file-picker", isDaemon = true) {
-                val files = DesktopFilePicker.pickFiles(multiSelect = false)
-                if (files.isNotEmpty()) state = state.copy(dbFileName = files.first())
+            scope.launch {
+                val files = withContext(Dispatchers.Swing) {
+                    DesktopFilePicker.pickFiles(multiSelect = false)
+                }
+                if (files.isNotEmpty()) {
+                    withContext(Dispatchers.Swing) {
+                        state = state.copy(dbFileName = files.first())
+                    }
+                }
             }
         },
         onSelectAudioFile = {
-            thread(name = "file-picker", isDaemon = true) {
-                val files = DesktopFilePicker.pickFiles(multiSelect = false)
-                if (files.isNotEmpty()) state = state.copy(audioFileName = files.first())
+            scope.launch {
+                val files = withContext(Dispatchers.Swing) {
+                    DesktopFilePicker.pickFiles(multiSelect = false)
+                }
+                if (files.isNotEmpty()) {
+                    withContext(Dispatchers.Swing) {
+                        state = state.copy(audioFileName = files.first())
+                    }
+                }
             }
         },
         onDecrypt = {
-            state = state.copy(isProcessing = true, decryptResult = "正在解密文件...")
-            scope.launch {
-                try {
-                    val decrypter = DesktopKggDecrypt()
-                    // Desktop KGG decrypt - simplified since root mode not available
-                    decrypter.decrypt(state.audioFileName!!, state.dbFileName)
-                    state = state.copy(isProcessing = false, decryptResult = "文件解密完成！")
-                } catch (e: Exception) {
-                    state = state.copy(isProcessing = false, decryptResult = "文件解密失败: ${e.message}")
+            val audioFileName = state.audioFileName
+            val dbFileName = state.dbFileName
+            if (audioFileName != null) {
+                state = state.copy(isProcessing = true, decryptResult = "正在解密文件...")
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        val decrypter = DesktopKggDecrypt()
+                        // Desktop KGG decrypt - simplified since root mode not available
+                        decrypter.decrypt(audioFileName, dbFileName)
+                        withContext(Dispatchers.Swing) {
+                            state = state.copy(isProcessing = false, decryptResult = "文件解密完成！")
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Swing) {
+                            state = state.copy(isProcessing = false, decryptResult = "文件解密失败: ${e.message}")
+                        }
+                    }
                 }
             }
         },

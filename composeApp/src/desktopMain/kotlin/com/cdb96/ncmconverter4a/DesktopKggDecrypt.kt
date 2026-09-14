@@ -5,64 +5,67 @@ import com.cdb96.ncmconverter4a.converter.kgg.MMKVParser
 import com.cdb96.ncmconverter4a.converter.kgg.QmcCipher
 import com.cdb96.ncmconverter4a.converter.kgg.deriveKey
 import com.cdb96.ncmconverter4a.converter.kgg.parseKgmHeader
+import com.cdb96.ncmconverter4a.io.readChunk
+import com.cdb96.ncmconverter4a.io.readFully
+import com.cdb96.ncmconverter4a.io.skipFully
 import com.cdb96.ncmconverter4a.platform.Logger
+import com.cdb96.ncmconverter4a.util.FileNameUtils
 import java.io.BufferedInputStream
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileInputStream
-import java.io.FileOutputStream
 
-/**
- * Desktop implementation of KGG decryption.
- * Reads from files instead of Android ContentResolver.
- */
+/** Desktop implementation of KGG decryption using bounded stream buffers. */
 class DesktopKggDecrypt {
     private val log = Logger("DesktopKggDecrypt")
 
     fun decrypt(audioFilePath: String, dbFilePath: String?) {
         val audioFile = File(audioFilePath)
-        if (!audioFile.exists()) throw IllegalStateException("音频文件不存在: $audioFilePath")
+        require(audioFile.isFile) { "音频文件不存在: $audioFilePath" }
 
-        val audioStream = BufferedInputStream(FileInputStream(audioFile)).apply {
-            mark(1024 * 1024)
-        }
-
-        val headerChunk = ByteArray(1024)
-        audioStream.read(headerChunk)
-        val header = parseKgmHeader(headerChunk)
-        if (header.cryptoVersion != 5u) {
-            throw IllegalStateException("不是KGG文件 (cryptoVersion=${header.cryptoVersion})")
-        }
-
-        val key = if (dbFilePath != null) {
-            val dbFile = File(dbFilePath)
-            if (!dbFile.exists()) throw IllegalStateException("数据库文件不存在: $dbFilePath")
-            getKeyFromFile(dbFile, header.audioHash)
-        } else {
-            throw IllegalStateException("桌面版本需要选择DB文件")
-        }
-
-        val cipher = QmcCipher.createCipher(key)
-        val audioFormat = detectAudioFormat(audioStream, cipher)
-        val outputDir = File(System.getProperty("user.home"), "Music/NCMConverter4A")
-        outputDir.mkdirs()
-
-        val outputName = "${audioFile.nameWithoutExtension}.$audioFormat"
-        val outputFile = File(outputDir, outputName)
-
-        audioStream.reset()
-        audioStream.skip(1024)
-
-        FileOutputStream(outputFile).use { outputStream ->
-            val buffer = ByteArray(8192)
-            var bytesRead: Int
-            var offset = 0
-            while (audioStream.read(buffer).also { bytesRead = it } != -1) {
-                cipher.decrypt(buffer, offset)
-                outputStream.write(buffer, 0, bytesRead)
-                offset += 8192
+        BufferedInputStream(FileInputStream(audioFile), 256 * 1024).use { audioStream ->
+            val headerChunk = ByteArray(1024)
+            audioStream.readFully(headerChunk)
+            val header = parseKgmHeader(headerChunk)
+            require(header.cryptoVersion == 5u) {
+                "不是KGG文件 (cryptoVersion=${header.cryptoVersion})"
             }
-            outputStream.flush()
+
+            val key = if (dbFilePath != null) {
+                val dbFile = File(dbFilePath)
+                require(dbFile.isFile) { "数据库文件不存在: $dbFilePath" }
+                getKeyFromFile(dbFile, header.audioHash)
+            } else {
+                error("桌面版本需要选择DB文件")
+            }
+
+            val cipher = QmcCipher.createCipher(key)
+            val audioOffset = header.audioOffset.toLong()
+            require(audioOffset >= headerChunk.size) {
+                "KGG audio offset is before the header: $audioOffset"
+            }
+            audioStream.skipFully(audioOffset - headerChunk.size)
+
+            val audioFormat = detectAudioFormat(audioStream, cipher)
+            val outputDir = File(System.getProperty("user.home"), "Music/NCMConverter4A")
+            val outputAllocator = DesktopOutputAllocator(outputDir)
+            val requestedName = FileNameUtils.removeLastExtension(audioFile.name)
+
+            outputAllocator.withUniqueOutput(
+                requestedName = requestedName,
+                extension = audioFormat,
+                mitigateConflicts = true
+            ) { outputStream ->
+                val buffer = ByteArray(8192)
+                var streamOffset = 0L
+                while (true) {
+                    val bytesRead = audioStream.readChunk(buffer)
+                    if (bytesRead < 0) break
+                    cipher.decrypt(buffer, streamOffset)
+                    outputStream.write(buffer, 0, bytesRead)
+                    streamOffset += bytesRead.toLong()
+                }
+            }
         }
     }
 
@@ -72,17 +75,10 @@ class DesktopKggDecrypt {
         log.i("dbFile=${dbFile.name} size=${dbBytes.size} isSqliteDatabase=$isSqlite")
         val eKeyBytes = if (isSqlite) {
             val decrypted = KggDbDecryptor.decryptDatabase(ByteArrayInputStream(dbBytes))
-            // 主路径: 用修复后的行解析器(现已正确忽略错误 payload_len, 用 header 算 record 大小)
             val mapping = KggDbDecryptor.extractKeyMapping(decrypted)
             log.i("map size=${mapping.size}, audioHash in map: ${mapping.containsKey(audioHash)}")
-            if (mapping.containsKey(audioHash)) {
-                log.d("map keys sample: ${mapping.keys.take(5)}")
-                mapping[audioHash]?.encodeToByteArray()
-            } else {
-                // 兜底: 直接在解密字节中搜索 — 处理 schema 列名对不上的情况
-                log.i("audioHash not in map, trying raw search...")
-                KggDbDecryptor.extractEkey(decrypted, audioHash)
-            }
+            mapping[audioHash]?.encodeToByteArray()
+                ?: KggDbDecryptor.extractEkey(decrypted, audioHash)
         } else {
             MMKVParser(dbBytes).getBytes(audioHash)
         } ?: throw IllegalStateException("ekey解析失败: hash=$audioHash")
@@ -93,22 +89,27 @@ class DesktopKggDecrypt {
         audioStream: BufferedInputStream,
         cipher: QmcCipher.QmcStreamCipher
     ): String {
+        audioStream.mark(8)
         val header = ByteArray(4)
-        audioStream.read(header)
-        cipher.decrypt(header, 0)
+        audioStream.readFully(header)
+        cipher.decrypt(header, 0L)
+        audioStream.reset()
         return when {
-            header.startsWith("ID3".toByteArray()) -> "mp3"
-            header.startsWith("fLaC".toByteArray()) -> "flac"
-            header.startsWith("Ogg".toByteArray()) -> "ogg"
-            else -> "mp3"
+            header.startsWith("ID3".encodeToByteArray()) -> "mp3"
+            header.startsWith("fLaC".encodeToByteArray()) -> "flac"
+            header.startsWith("Ogg".encodeToByteArray()) -> "ogg"
+            header.size >= 2 &&
+                (header[0].toInt() and 0xFF) == 0xFF &&
+                (header[1].toInt() and 0xE0) == 0xE0 -> "mp3"
+            else -> throw IllegalArgumentException("无法识别 KGG 音频格式")
         }
     }
 }
 
 private fun ByteArray.startsWith(prefix: ByteArray): Boolean {
-    if (this.size < prefix.size) return false
-    for (i in prefix.indices) {
-        if (this[i] != prefix[i]) return false
+    if (size < prefix.size) return false
+    for (index in prefix.indices) {
+        if (this[index] != prefix[index]) return false
     }
     return true
 }

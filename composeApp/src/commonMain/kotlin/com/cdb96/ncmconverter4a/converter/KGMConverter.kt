@@ -3,15 +3,17 @@ package com.cdb96.ncmconverter4a.converter
 import com.cdb96.ncmconverter4a.jni.KGMDecrypt
 
 object KGMConverter {
+    const val HEADER_LENGTH = 1024
 
     /**
-     * 从 KGM 文件头读取 17 字节密钥。前 2 字节已被调用方消费用于格式检测。
+     * 从完整 KGM 文件头读取 17 字节密钥。
      * @param header 文件头数据（至少 1024 字节）
      */
     fun getOwnKeyBytes(header: ByteArray): ByteArray {
+        require(header.size >= HEADER_LENGTH) { "KGM header is truncated" }
         val ownKeyBytes = ByteArray(17)
-        // header[0..1] 已消费；跳到 offset 30 (16-2+8+4)
-        val keyOffset = 16 - 2 + 8 + 4
+        // 16-byte magic + audio offset + crypto version.
+        val keyOffset = 16 + 8 + 4
         header.copyInto(ownKeyBytes, 0, keyOffset, keyOffset + 17)
         ownKeyBytes[16] = 0
         return ownKeyBytes
@@ -49,6 +51,12 @@ object KGMConverter {
         read: (ByteArray) -> Int,
         write: (ByteArray, Int) -> Unit
     ) {
+        require(ownKeyBytes.size >= 17) { "KGM key must contain 17 bytes" }
+        require(bufferSize > 0) { "KGM buffer size must be positive" }
+        require(firstSize in 1..firstChunk.size) {
+            "invalid first KGM chunk size: $firstSize"
+        }
+
         KGMDecrypt.init(ownKeyBytes)
 
         var fileOffset = 0
@@ -56,8 +64,11 @@ object KGMConverter {
         write(firstChunk, firstSize)
 
         val buf = ByteArray(bufferSize)
-        var bytesRead: Int
-        while (read(buf).also { bytesRead = it } != -1) {
+        while (true) {
+            val bytesRead = read(buf)
+            if (bytesRead < 0) break
+            require(bytesRead <= buf.size) { "KGM reader returned too many bytes: $bytesRead" }
+            if (bytesRead == 0) continue
             fileOffset = KGMDecrypt.decrypt(buf, fileOffset, bytesRead)
             write(buf, bytesRead)
         }

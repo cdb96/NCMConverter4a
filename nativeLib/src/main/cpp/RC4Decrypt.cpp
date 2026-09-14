@@ -12,11 +12,28 @@
 
 thread_local uint8_t keyStreamBytes[256];
 thread_local uint8x16_t keys[16];
+
+static void throwIllegalArgument(JNIEnv* env, const char* message) {
+    jclass exceptionClass = env->FindClass("java/lang/IllegalArgumentException");
+    if (exceptionClass != nullptr) {
+        env->ThrowNew(exceptionClass, message);
+    }
+}
+
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_ksa(JNIEnv* env, jclass, jbyteArray key) {
+    if (key == nullptr) {
+        throwIllegalArgument(env, "RC4 key must not be null or empty");
+        return;
+    }
     jsize keyLength = env->GetArrayLength(key);
+    if (keyLength <= 0) {
+        throwIllegalArgument(env, "RC4 key must not be null or empty");
+        return;
+    }
     auto* keyBytes = reinterpret_cast<uint8_t*>(env->GetByteArrayElements(key, nullptr));
+    if (keyBytes == nullptr) return;
 
     uint8_t sBox[256];
     std::iota(sBox, sBox + 256, 0);
@@ -63,7 +80,16 @@ extern "C"
 JNIEXPORT void JNICALL
 Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_prgaDecryptByteBuffer(JNIEnv* env, jclass, jobject cipherData, jint bytesRead) {
     // 处理 ByteBuffer 的实现
+    if (cipherData == nullptr) {
+        throwIllegalArgument(env, "RC4 buffer must not be null");
+        return;
+    }
     auto* cipherDataBytes = reinterpret_cast<uint8_t*>(env->GetDirectBufferAddress(cipherData));
+    jlong capacity = env->GetDirectBufferCapacity(cipherData);
+    if (cipherDataBytes == nullptr || bytesRead < 0 || static_cast<jlong>(bytesRead) > capacity) {
+        throwIllegalArgument(env, "bytesRead is outside the buffer bounds");
+        return;
+    }
     decryptData(cipherDataBytes, bytesRead);
 }
 
@@ -71,7 +97,17 @@ extern "C"
 JNIEXPORT void JNICALL
 Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_prgaDecryptByteArray(JNIEnv* env, jclass, jbyteArray cipherData, jint bytesRead) {
     // 处理 ByteArray 的实现
+    if (cipherData == nullptr) {
+        throwIllegalArgument(env, "RC4 data must not be null");
+        return;
+    }
+    jsize dataLength = env->GetArrayLength(cipherData);
+    if (bytesRead < 0 || bytesRead > dataLength) {
+        throwIllegalArgument(env, "bytesRead is outside the byte array bounds");
+        return;
+    }
     jbyte* cipherDataBytes = env->GetByteArrayElements(cipherData, nullptr);
+    if (cipherDataBytes == nullptr) return;
     decryptData(reinterpret_cast<uint8_t*>(cipherDataBytes), bytesRead);
     env->ReleaseByteArrayElements(cipherData, cipherDataBytes, 0);
 }

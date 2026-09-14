@@ -1,39 +1,44 @@
 package com.cdb96.ncmconverter4a.converter.kgg
 
 class MMKVParser(private val data: ByteArray) {
-    private var pos = 0
+    private var position = 0
 
     fun getBytes(queryKey: String): ByteArray? {
-        pos += 8
-        while (true) {
-            if (pos >= data.size) return null
-            val keyLen = (data[pos++].toInt() and 0xFF)
-            if (pos + keyLen > data.size) return null
-            val keyBytes = data.copyOfRange(pos, pos + keyLen); pos += keyLen
+        if (data.size < 8) return null
+        position = 8
+        while (position < data.size) {
+            val keyLength = data[position++].toInt() and 0xFF
+            if (position > data.size - keyLength) return null
+            val keyBytes = data.copyOfRange(position, position + keyLength)
+            position += keyLength
 
-            // tag(2) + length(2)
-            pos += 2  // skip tag
-            val valueLenBytes = data.copyOfRange(pos, pos + 2); pos += 2
-            val valueLen = valueLenBytes.readVarint32()
-            val value = data.copyOfRange(pos, pos + valueLen); pos += valueLen
+            // tag(2) + encoded value length
+            if (position > data.size - 2) return null
+            position += 2
+            val valueLengthResult = readVarint32(position) ?: return null
+            val valueLength = valueLengthResult.first
+            position = valueLengthResult.second
+            if (valueLength < 0 || position > data.size - valueLength) return null
 
-            if (queryKey == keyBytes.decodeToString()) {
-                return value
-            }
+            val value = data.copyOfRange(position, position + valueLength)
+            position += valueLength
+            if (queryKey == keyBytes.decodeToString()) return value
         }
+        return null
     }
 
-    private fun ByteArray.readVarint32(): Int {
+    private fun readVarint32(start: Int): Pair<Int, Int>? {
+        var cursor = start
         var result = 0
         var shift = 0
-        var i = 0
-        var byte: Int
-        do {
-            byte = this[i].toInt() and 0xFF
+        repeat(5) {
+            if (cursor >= data.size) return null
+            val byte = data[cursor++].toInt() and 0xFF
+            if (shift == 28 && byte > 0x0F) return null
             result = result or ((byte and 0x7F) shl shift)
+            if (byte and 0x80 == 0) return result to cursor
             shift += 7
-            i++
-        } while (byte and 0x80 != 0)
-        return result
+        }
+        return null
     }
 }

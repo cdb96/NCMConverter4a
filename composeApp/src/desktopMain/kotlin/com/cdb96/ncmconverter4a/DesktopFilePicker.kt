@@ -1,14 +1,18 @@
 package com.cdb96.ncmconverter4a
 
 import javax.swing.JFileChooser
+import javax.swing.SwingUtilities
 import javax.swing.filechooser.FileNameExtensionFilter
 
 /**
  * Desktop file picker using Swing JFileChooser.
- * Must be called from a non-EDT (non-Compose) thread to avoid blocking the coroutine dispatcher.
+ * Swing components must be created and shown on EDT.
  */
 object DesktopFilePicker {
     fun pickFiles(multiSelect: Boolean = true): List<String> {
+        check(SwingUtilities.isEventDispatchThread()) {
+            "DesktopFilePicker.pickFiles must be called on the Swing EDT"
+        }
         val chooser = JFileChooser().apply {
             fileSelectionMode = JFileChooser.FILES_ONLY
             isMultiSelectionEnabled = multiSelect

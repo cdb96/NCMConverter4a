@@ -17,7 +17,7 @@ class BenchmarkService {
         private val log = Logger(TAG)
     }
 
-    suspend fun runBenchmark(onProgress: (TestStatus) -> Unit): BenchmarkResult =
+    suspend fun runBenchmark(onProgress: suspend (TestStatus) -> Unit): BenchmarkResult =
         withContext(Dispatchers.Default) {
             val startMark = TimeSource.Monotonic.markNow()
             onProgress(TestStatus.WARMING)

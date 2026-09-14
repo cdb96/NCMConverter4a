@@ -1,5 +1,6 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.compose.desktop.application.tasks.AbstractProguardTask
+import org.gradle.jvm.tasks.Jar
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JavaToolchainService
 import org.gradle.jvm.toolchain.JvmVendorSpec
@@ -53,6 +54,11 @@ kotlin {
                 implementation("org.jetbrains.compose.ui:ui:1.12.0-beta03")
             }
         }
+        val commonTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
         val androidMain by getting {
             dependencies {
                 implementation(libs.androidx.activity.compose)
@@ -65,6 +71,11 @@ kotlin {
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
+            }
+        }
+        val desktopTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
             }
         }
     }
@@ -108,6 +119,20 @@ compose.desktop {
                 "jdk.crypto.ec",
                 "jdk.incubator.vector",
             )
+        }
+    }
+}
+
+// A Jar manifest cannot carry the JVM's --add-modules option. Use the small
+// relauncher above for the published Uber Jar; jpackage launchers continue to
+// receive the option directly through application.jvmArgs.
+tasks.withType<Jar>().configureEach {
+    if (name.endsWith("UberJarForCurrentOS")) {
+        // The Compose plugin assigns Main-Class in its own task action. Set
+        // ours immediately before the Jar task runs so that action cannot
+        // overwrite the launcher manifest.
+        doFirst {
+            manifest.attributes["Main-Class"] = "com.cdb96.ncmconverter4a.UberJarLauncherKt"
         }
     }
 }

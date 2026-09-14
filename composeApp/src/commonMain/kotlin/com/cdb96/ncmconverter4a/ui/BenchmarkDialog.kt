@@ -55,7 +55,9 @@ import androidx.compose.ui.window.DialogProperties
 import com.cdb96.ncmconverter4a.service.BenchmarkResult
 import com.cdb96.ncmconverter4a.service.SizeThroughput
 import com.cdb96.ncmconverter4a.service.TestStatus
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 基准测试Dialog - platform-agnostic
@@ -66,7 +68,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun BenchmarkDialog(
     onDismiss: () -> Unit,
-    onRunBenchmark: suspend (onProgress: (TestStatus) -> Unit) -> BenchmarkResult,
+    onRunBenchmark: suspend (onProgress: suspend (TestStatus) -> Unit) -> BenchmarkResult,
     modifier: Modifier = Modifier
 ) {
     var testing by remember { mutableStateOf(false) }
@@ -135,7 +137,9 @@ fun BenchmarkDialog(
                                 coroutineScope.launch {
                                     try {
                                         benchmarkResult = onRunBenchmark { status ->
-                                            currentStatus = status
+                                            withContext(Dispatchers.Main.immediate) {
+                                                currentStatus = status
+                                            }
                                         }
                                     } catch (e: Exception) {
                                         currentStatus = TestStatus.IDLE

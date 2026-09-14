@@ -27,3 +27,14 @@
 -dontwarn org.jspecify.**
 
 -dontnote
+
+# The release Uber Jar uses a Java-level relauncher to resolve the incubating
+# Vector API module before loading the Compose entry point. Keep both classes
+# and the reflection-invoked main method through ProGuard.
+-keep class com.cdb96.ncmconverter4a.UberJarLauncherKt {
+    public static void main(java.lang.String[]);
+}
+-keep class com.cdb96.ncmconverter4a.UberJarLauncher { *; }
+-keep class com.cdb96.ncmconverter4a.MainKt {
+    public static void main(...);
+}

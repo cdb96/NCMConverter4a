@@ -12,6 +12,13 @@
 thread_local uint8_t maskBytes[PRE_COMPUTED_TABLE_SIZE];
 thread_local uint8_t fileKeyBytes[16 * 17];
 
+static void throwIllegalArgument(JNIEnv* env, const char* message) {
+    jclass exceptionClass = env->FindClass("java/lang/IllegalArgumentException");
+    if (exceptionClass != nullptr) {
+        env->ThrowNew(exceptionClass, message);
+    }
+}
+
 void genMask(int startPos) {
     uint8x16_t chunk[16];
     for (int pos = 0; pos < PRE_COMPUTED_TABLE_SIZE * 16; pos += 16 * 16 * 16) {
@@ -40,7 +47,19 @@ void genMask(int startPos) {
 extern "C"
 JNIEXPORT int JNICALL
 Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv *env, jclass clazz, jbyteArray cipher_data_bytes, jint offset, jint bytes_read) {
+    if (cipher_data_bytes == nullptr) {
+        throwIllegalArgument(env, "KGM data must not be null");
+        return offset;
+    }
+    const jsize dataLength = env->GetArrayLength(cipher_data_bytes);
+    // offset is the absolute position in the KGM stream; the byte array
+    // contains only the current chunk.
+    if (offset < 0 || bytes_read < 0 || bytes_read > dataLength) {
+        throwIllegalArgument(env, "invalid KGM byte array range");
+        return offset;
+    }
     auto *cipherDataBytes = reinterpret_cast<uint8_t *>(env->GetByteArrayElements(cipher_data_bytes, nullptr));
+    if (cipherDataBytes == nullptr) return offset;
     int i = offset;
     int j = 0;
     int genMaskCounter = offset % 69632;
@@ -50,48 +69,43 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv *env, jclass clazz, 
     if (genMaskCounter == 0) {
         genMask(i);
     }
-    for (; j + 16 <= bytes_read; i += 16 , j += 16) {
-        //简化取模运算
-        if (genMaskCounter == 69632) {
-            genMask(i);
-            genMaskCounter = 0;
-        }
+    while (j < bytes_read) {
         if (fileKeyCounter == 272) {
             fileKeyCounter = 0;
         }
-        if (j > 0 && (i & 15) == 0) {
-            maskBytesIndexCounter++;
-            if (maskBytesIndexCounter == 4352) {
-                maskBytesIndexCounter = 0;
+
+        if (j + 16 <= bytes_read && fileKeyCounter + 16 <= 272) {
+            //简化取模运算
+            if (genMaskCounter == 69632) {
+                genMask(i);
+                genMaskCounter = 0;
             }
+            if (j > 0 && (i & 15) == 0) {
+                maskBytesIndexCounter++;
+                if (maskBytesIndexCounter == 4352) {
+                    maskBytesIndexCounter = 0;
+                }
+            }
+            uint8x16_t vCipher = vld1q_u8(cipherDataBytes + j);
+            uint8x16_t vMed8 = vld1q_u8(fileKeyBytes + fileKeyCounter);
+            uint8x16_t vMsk8 = vld1q_dup_u8(maskBytes + maskBytesIndexCounter);
+            vMed8 = veorq_u8(vMed8,vCipher);
+            vMed8 = veorq_u8(vMed8,vMsk8);
+            vMsk8 = vshlq_n_u8(vMed8,4);
+            vMsk8 = veorq_u8(vMed8,vMsk8);
+            // vMsk8已为最终结果
+            vst1q_u8(cipherDataBytes + j,vMsk8);
+
+            genMaskCounter += 16;
+            fileKeyCounter += 16;
+            i += 16;
+            j += 16;
+            continue;
         }
-        uint8x16_t vCipher = vld1q_u8(cipherDataBytes + j);
-        uint8x16_t vMed8 = vld1q_u8(fileKeyBytes + fileKeyCounter);
-        uint8x16_t vMsk8 = vld1q_dup_u8(maskBytes + maskBytesIndexCounter);
-        vMed8 = veorq_u8(vMed8,vCipher);
-        vMed8 = veorq_u8(vMed8,vMsk8);
-        vMsk8 = vshlq_n_u8(vMed8,4);
-        vMsk8 = veorq_u8(vMed8,vMsk8);
-        //原始过程:
-        //int med8 = fileKeyBytes[i % 17] ^ cipherDataBytes[j];
-        //med8 ^= (med8 & 0xf) << 4;
-        //int msk8 = maskBytes[maskBytesIndexCounter] ^ MASK_V2_PRE_DEF[fileKeyCounter];
-        //msk8 ^= (msk8 & 0xf) << 4;
-        //cipherDataBytes[j] = (med8 ^ msk8);
 
-        //vMsk8已为最终结果
-        vst1q_u8(cipherDataBytes + j,vMsk8);
-
-        genMaskCounter += 16;
-        fileKeyCounter += 16;
-    }
-    for (; j < bytes_read; ++i, ++j) {
         if (genMaskCounter == 69632) {
             genMask(i);
             genMaskCounter = 0;
-        }
-        if (fileKeyCounter == 272) {
-            fileKeyCounter = 0;
         }
         if (j > 0 && (i & 15) == 0) {
             maskBytesIndexCounter++;
@@ -101,11 +115,12 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv *env, jclass clazz, 
         }
 
         int combined = fileKeyBytes[fileKeyCounter] ^ cipherDataBytes[j] ^ maskBytes[maskBytesIndexCounter];
-
         cipherDataBytes[j] = combined ^ (combined << 4);
 
         genMaskCounter++;
         fileKeyCounter++;
+        i++;
+        j++;
     }
 
     env->ReleaseByteArrayElements(cipher_data_bytes, reinterpret_cast<jbyte*>(cipherDataBytes), 0);
@@ -115,6 +130,10 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv *env, jclass clazz, 
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_init(JNIEnv *env, jclass clazz, jbyteArray file_key_bytes) {
+    if (file_key_bytes == nullptr || env->GetArrayLength(file_key_bytes) < 17) {
+        throwIllegalArgument(env, "KGM key must contain at least 17 bytes");
+        return;
+    }
     env->GetByteArrayRegion(file_key_bytes, 0, 17, reinterpret_cast<jbyte*>(fileKeyBytes));
     for (int i = 1; i < 16; i++) {
         memcpy(fileKeyBytes + i * 17, fileKeyBytes, 17);

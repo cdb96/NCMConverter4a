@@ -14,10 +14,23 @@ data class KggHeader(
 )
 
 fun parseKgmHeader(data: ByteArray): KggHeader {
+    require(data.size >= 60) { "truncated KGG header" }
     var pos = 0
 
     val magicHeader = data.copyOfRange(pos, pos + 16); pos += 16
+    val expectedMagic = byteArrayOf(
+        0x7C, 0xD5.toByte(), 0x32, 0xEB.toByte(),
+        0x86.toByte(), 0x02, 0x7F, 0x4B,
+        0xA8.toByte(), 0xAF.toByte(), 0xA6.toByte(), 0x8E.toByte(),
+        0x0F, 0xFF.toByte(), 0x99.toByte(), 0x14
+    )
+    require(magicHeader.contentEquals(expectedMagic)) {
+        "invalid KGG magic"
+    }
     val audioOffset = readIntLEInline(data, pos).toUInt(); pos += 4
+    require(audioOffset.toLong() in 1024L..(64L * 1024L * 1024L)) {
+        "invalid KGG audio offset: $audioOffset"
+    }
     val cryptoVersion = readIntLEInline(data, pos).toUInt(); pos += 4
     val cryptoSlot = readIntLEInline(data, pos).toUInt(); pos += 4
 
@@ -35,8 +48,15 @@ fun parseKgmHeader(data: ByteArray): KggHeader {
 
     // V5 版本额外读取 AudioHash
     if (cryptoVersion == 5u) {
+        require(pos + 12 <= data.size) { "truncated KGG V5 header" }
         pos += 8  // 跳过 8 字节
         val audioHashLen = readIntLEInline(data, pos).toUInt().toInt(); pos += 4
+        require(audioHashLen in 1..(data.size - pos)) {
+            "invalid KGG audio hash length: $audioHashLen"
+        }
+        require(audioHashLen.toLong() <= audioOffset.toLong() - pos.toLong()) {
+            "KGG audio hash overlaps audio payload"
+        }
         val audioHashBuffer = data.copyOfRange(pos, pos + audioHashLen)
         header.audioHash = audioHashBuffer.decodeToString()
     }

@@ -28,3 +28,9 @@ data class ConversionResult(
     val successfulFileNames: List<String>,
     val failedFileNames: List<String>
 )
+
+data class FileConversionResult(
+    val fileName: String,
+    val success: Boolean,
+    val error: String? = null
+)

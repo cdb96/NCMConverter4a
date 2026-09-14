@@ -1,6 +1,12 @@
 package com.cdb96.ncmconverter4a.converter
 
 import com.cdb96.ncmconverter4a.crypto.AESDecrypt
+import com.cdb96.ncmconverter4a.io.BinaryInput
+import com.cdb96.ncmconverter4a.io.BinaryOutput
+import com.cdb96.ncmconverter4a.io.readAtMost
+import com.cdb96.ncmconverter4a.io.readFully
+import com.cdb96.ncmconverter4a.io.skipFully
+import com.cdb96.ncmconverter4a.io.write
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt
 import com.cdb96.ncmconverter4a.tag.FLACMetadataGenerator
 import com.cdb96.ncmconverter4a.tag.ID3TagBuilder
@@ -17,12 +23,22 @@ data class NcmFileInfo(
     val format: String
 )
 
-data class HeaderResult(
-    val headerBytes: ByteArray,
-    val remainingData: ByteArray
-)
-
+/**
+ * NCM header parsing and streaming audio conversion shared by Android and
+ * Desktop. Only bounded metadata and the current audio chunks are held in
+ * memory; the encrypted payload is never materialized as one array.
+ */
 object NCMConverter {
+    const val AUDIO_BUFFER_SIZE = 256 * 1024
+
+    private const val NCM_HEADER_SIZE = 10
+    private const val MAX_KEY_LENGTH = 4 * 1024
+    private const val MAX_METADATA_LENGTH = 16 * 1024 * 1024
+    private const val MAX_COVER_LENGTH = 64 * 1024 * 1024
+    private const val MAX_ID3_LENGTH = 16 * 1024 * 1024
+    private const val MAX_FLAC_METADATA_LENGTH = 16 * 1024 * 1024
+
+    private val ncmMagic = "CTENFDAM".encodeToByteArray()
     private val coreKey = byteArrayOf(
         0x68, 0x7A, 0x48, 0x52, 0x41, 0x6D, 0x73, 0x6F,
         0x35, 0x6B, 0x49, 0x6E, 0x62, 0x61, 0x78, 0x57
@@ -32,165 +48,346 @@ object NCMConverter {
         0x5C, 0x5D, 0x26, 0x30, 0x55, 0x3C, 0x27, 0x28
     )
 
+    /** Reads and validates the complete NCM fixed header and variable sections. */
+    fun readHeader(input: BinaryInput): NcmFileInfo {
+        val magic = ByteArray(ncmMagic.size)
+        input.readFully(magic)
+        require(magic.contentEquals(ncmMagic)) { "invalid NCM magic" }
+
+        // NCM stores two reserved/version bytes after CTENFDAM.
+        input.readFully(ByteArray(NCM_HEADER_SIZE - ncmMagic.size))
+
+        val rc4Key = readRc4Key(input)
+        val metadata = readMetadata(input)
+        val coverData = readCoverData(input)
+
+        val musicInfo = SimpleJsonParser.parse(metadata.decodeToString())
+        val musicName = requiredField(musicInfo, "musicName")
+        val musicAlbum = requiredField(musicInfo, "album")
+        val musicArtists = combineArtistsString(requiredField(musicInfo, "artist"))
+        val format = requiredField(musicInfo, "format").lowercase()
+        require(format == "mp3" || format == "flac") {
+            "unsupported NCM audio format: $format"
+        }
+
+        return NcmFileInfo(rc4Key, coverData, musicName, musicAlbum, musicArtists, format)
+    }
+
+    /**
+     * Decrypts the payload from the current input position. The caller must
+     * have called [readHeader] on the same input first.
+     */
+    fun writeAudio(
+        input: BinaryInput,
+        output: BinaryOutput,
+        info: NcmFileInfo,
+        rawWriteMode: Boolean,
+        bufferSize: Int = AUDIO_BUFFER_SIZE
+    ) {
+        require(bufferSize > 0 && bufferSize % 256 == 0) {
+            "NCM buffer size must be a positive multiple of 256"
+        }
+
+        // Rc4Vector starts each call at the beginning of its 256-byte stream.
+        // Filling every non-final chunk to a multiple of 256 preserves the
+        // stream position across calls without retaining the whole file.
+        RC4Decrypt.ksa(info.RC4key)
+        val reader = DecryptedPayloadReader(input, bufferSize)
+
+        val prefix = ByteArray(4)
+        val prefixSize = reader.read(prefix, 0, prefix.size)
+        if (prefixSize == 0) throw IllegalArgumentException("NCM payload is empty")
+        if (rawWriteMode) {
+            output.write(prefix, 0, prefixSize)
+            reader.copyTo(output)
+            return
+        }
+
+        when {
+            prefixSize >= 3 && prefix[0] == 'I'.code.toByte() &&
+                prefix[1] == 'D'.code.toByte() && prefix[2] == '3'.code.toByte() -> {
+                val id3Header = ByteArray(10)
+                prefix.copyInto(id3Header)
+                reader.readFully(id3Header, prefixSize, id3Header.size - prefixSize)
+                val id3Length = LengthUtils.getSyncSafeInteger(id3Header.copyOfRange(6, 10))
+                require(id3Length in 0..MAX_ID3_LENGTH) {
+                    "invalid ID3 length: $id3Length"
+                }
+                reader.skipFully(id3Length.toLong())
+
+                val rewrittenId3Header = ID3TagBuilder().apply {
+                    initDefaultTagHeader()
+                    addTIT2(info.musicName)
+                    addTPE1(info.musicArtists)
+                    addTALB(info.musicAlbum)
+                    addCover(info.coverData)
+                }.outputHeader()
+                output.write(rewrittenId3Header)
+                reader.copyTo(output)
+            }
+
+            prefixSize >= 4 && prefix.copyOfRange(0, 4).contentEquals("fLaC".encodeToByteArray()) -> {
+                val blocks = readFlacMetadata(reader)
+                writeFlacMetadata(output, blocks, info)
+                reader.copyTo(output)
+            }
+
+            else -> {
+                // Keep the historical behavior for an unknown decrypted audio
+                // header: decrypt the payload, but do not invent metadata.
+                output.write(prefix, 0, prefixSize)
+                reader.copyTo(output)
+            }
+        }
+    }
+
+    /** Kept for platform-independent AES regression tests and key extraction. */
     fun decrypt(key: ByteArray, encryptedBytes: ByteArray): ByteArray =
         AESDecrypt.decryptEcbPkcs5(key, encryptedBytes)
 
-    fun convert(fileData: ByteArray): Pair<NcmFileInfo, Int> {
-        var pos = 8  // fileData[0] 是文件字节 2 (前2字节已消费), 跳到文件字节 10 -> 下标 8
-        val (rc4Key, rc4Consumed) = getRC4key(fileData, pos); pos += rc4Consumed
-        val (metaBytes, metaConsumed) = getMetaData(fileData, pos); pos += metaConsumed
-        val (coverData, coverConsumed) = getCoverData(fileData, pos); pos += coverConsumed
-
-        val metaData = String(metaBytes, Charsets.UTF_8)
-        val musicInfo = SimpleJsonParser.parse(metaData)
-        val musicName = musicInfo[musicInfo.indexOf("musicName") + 1]
-        val musicAlbum = musicInfo[musicInfo.indexOf("album") + 1]
-        var musicArtists = musicInfo[musicInfo.indexOf("artist") + 1]
-        val format = musicInfo[musicInfo.indexOf("format") + 1]
-        musicArtists = combineArtistsString(musicArtists)
-        return Pair(NcmFileInfo(rc4Key, coverData, musicName, musicAlbum, musicArtists, format), pos)
-    }
-
-    private fun getRC4key(data: ByteArray, offset: Int): Pair<ByteArray, Int> {
-        var pos = offset
-        val keyLen = LengthUtils.getLittleEndianInteger(data.copyOfRange(pos, pos + 4)); pos += 4
-        require(keyLen in 1..<1024) { "invalid key length" }
-        val bytes = ByteArray(keyLen)
-        for (i in 0 until keyLen) bytes[i] = (data[pos + i].toInt() xor 0x64).toByte()
-        pos += keyLen
-        val dec = decrypt(coreKey, bytes)
-        val key = ByteArray(dec.size - 17)
-        dec.copyInto(key, 0, 17, dec.size)
-        return Pair(key, pos - offset)
-    }
-
-    private fun getMetaData(data: ByteArray, offset: Int): Pair<ByteArray, Int> {
-        var pos = offset
-        val metaLen = LengthUtils.getLittleEndianInteger(data.copyOfRange(pos, pos + 4)); pos += 4
-        val raw = ByteArray(metaLen)
-        for (i in 0 until metaLen) raw[i] = (data[pos + i].toInt() xor 0x63).toByte()
-        pos += metaLen
-        val metaBytes = raw.copyOfRange(22, raw.size)
-        val decoded = Base64.decode(metaBytes.decodeToString())
-        return Pair(decrypt(metaKey, decoded), pos - offset)
-    }
-
-    private fun getCoverData(data: ByteArray, offset: Int): Pair<ByteArray, Int> {
-        var pos = offset + 5  // skip 5
-        val coverLen = LengthUtils.getLittleEndianInteger(data.copyOfRange(pos, pos + 4)); pos += 4
-        val imgLen = LengthUtils.getLittleEndianInteger(data.copyOfRange(pos, pos + 4)); pos += 4
-        val imgData = data.copyOfRange(pos, pos + imgLen); pos += coverLen
-        return Pair(imgData, pos - offset)
-    }
-
-    private fun expandByteArray(original: ByteArray, additionalBytes: Int): ByteArray {
-        if (original.size + additionalBytes > 24 * 1024 * 1024) {
-            throw OutOfMemoryError("扩展长度过长")
+    private fun readRc4Key(input: BinaryInput): ByteArray {
+        val keyLength = readLength(input, "key", minimum = 1, maximum = MAX_KEY_LENGTH)
+        val encryptedKey = ByteArray(keyLength)
+        input.readFully(encryptedKey)
+        for (index in encryptedKey.indices) {
+            encryptedKey[index] = (encryptedKey[index].toInt() xor 0x64).toByte()
         }
-        val newArray = ByteArray(original.size + additionalBytes)
-        original.copyInto(newArray)
-        return newArray
-    }
 
-    // 辅助：拼接多个 ByteArray（模拟 v3.4 的顺序流写入）
-    private fun concat(vararg parts: ByteArray): ByteArray {
-        val total = parts.sumOf { it.size }
-        return ByteArray(total).also { result ->
-            var w = 0
-            for (p in parts) { p.copyInto(result, w); w += p.size }
+        val decrypted = decrypt(coreKey, encryptedKey)
+        require(decrypted.size > 17) { "NCM RC4 key payload is truncated" }
+        return decrypted.copyOfRange(17, decrypted.size).also {
+            require(it.isNotEmpty()) { "NCM RC4 key is empty" }
         }
     }
 
-    fun modifyHeader(
-        encryptedData: ByteArray, info: NcmFileInfo, coverData: ByteArray, bufferSize: Int
-    ): HeaderResult {
-        // 预取并解密第一个块
-        var preFetchChunk = encryptedData.copyOfRange(0, minOf(bufferSize, encryptedData.size))
-        RC4Decrypt.prgaDecrypt(preFetchChunk, preFetchChunk.size)
-
-        val musicName = info.musicName
-        val musicAlbum = info.musicAlbum
-        val musicArtist = info.musicArtists
-
-        if (preFetchChunk[0] == 0x49.toByte()) {
-            // ID3Length 使用同步安全整数
-            val ID3Length = LengthUtils.getSyncSafeInteger(preFetchChunk.copyOfRange(6, 10))
-
-            if (ID3Length > bufferSize) {
-                val expandSizeFactor = (ID3Length + bufferSize - 1) / bufferSize
-                val expandSize = expandSizeFactor * bufferSize
-                preFetchChunk = expandByteArray(preFetchChunk, expandSize - bufferSize)
-                val temp = encryptedData.copyOfRange(bufferSize, minOf(expandSize, encryptedData.size))
-                RC4Decrypt.prgaDecrypt(temp, temp.size)
-                temp.copyInto(preFetchChunk, bufferSize)
-            }
-
-            val ID3Header = ID3TagBuilder()
-            ID3Header.initDefaultTagHeader()
-            ID3Header.addTIT2(musicName)
-            ID3Header.addTPE1(musicArtist)
-            ID3Header.addTALB(musicAlbum)
-            ID3Header.addCover(coverData)
-
-            val mp3Header = ID3Header.outputHeader()
-            // header + 已解密的音频数据 (preFetchChunk 中 ID3Length 之后的部分)
-            val combined = ByteArray(mp3Header.size + (preFetchChunk.size - ID3Length))
-            mp3Header.copyInto(combined)
-            preFetchChunk.copyInto(combined, mp3Header.size, ID3Length, preFetchChunk.size)
-
-            // preFetchChunk 之后剩余的数据, 需要由调用方继续 RC4 解密
-            val remaining = if (preFetchChunk.size < encryptedData.size)
-                encryptedData.copyOfRange(preFetchChunk.size, encryptedData.size) else ByteArray(0)
-            return HeaderResult(combined, remaining)
-
-        } else if (preFetchChunk[0] == 0x66.toByte()) {
-            // FLAC: 一直读到找到最后一个 metadata block
-            while (!LengthUtils.hasLastBlock(preFetchChunk) && preFetchChunk.size < encryptedData.size) {
-                val start = preFetchChunk.size
-                val temp = encryptedData.copyOfRange(start, minOf(start + bufferSize, encryptedData.size))
-                RC4Decrypt.prgaDecrypt(temp, temp.size)
-                val oldLen = preFetchChunk.size
-                preFetchChunk = expandByteArray(preFetchChunk, temp.size)
-                temp.copyInto(preFetchChunk, oldLen)
-            }
-
-            val vorbisCommentBegin = LengthUtils.findVorbisComment(preFetchChunk)
-
-            // 读出原始 vendor 信息
-            val vendorLength = LengthUtils.getLittleEndianInteger(
-                preFetchChunk.copyOfRange(vorbisCommentBegin + 4, vorbisCommentBegin + 8))
-            val vendorBytes = preFetchChunk.copyOfRange(
-                vorbisCommentBegin + 8, vorbisCommentBegin + 8 + vendorLength)
-
-            val vorbisCommentSize = LengthUtils.getBigEndianInteger3bytes(
-                preFetchChunk.copyOfRange(vorbisCommentBegin + 1, vorbisCommentBegin + 4))
-            val vorbisCommentBlock = FLACMetadataGenerator.vorbisCommentBlockGen(
-                musicName, musicArtist, musicAlbum, vendorBytes)
-
-            val vorbisCommentEnd = vorbisCommentSize + vorbisCommentBegin + 4  // +4 跳过块头
-            val pictureBlockBegin = LengthUtils.findLastBlock(preFetchChunk)
-            val pictureBlock = FLACMetadataGenerator.pictureBlockGen(coverData)
-
-            // 按 v3.4 顺序流写入: 5 次 write
-            val combined = concat(
-                preFetchChunk.copyOfRange(0, vorbisCommentBegin),
-                vorbisCommentBlock,
-                preFetchChunk.copyOfRange(vorbisCommentEnd, pictureBlockBegin),
-                pictureBlock,
-                preFetchChunk.copyOfRange(pictureBlockBegin, preFetchChunk.size),
-            )
-
-            val remaining = if (preFetchChunk.size < encryptedData.size)
-                encryptedData.copyOfRange(preFetchChunk.size, encryptedData.size) else ByteArray(0)
-            return HeaderResult(combined, remaining)
-
-        } else {
-            return HeaderResult(ByteArray(0), encryptedData)
+    private fun readMetadata(input: BinaryInput): ByteArray {
+        val metadataLength = readLength(input, "metadata", minimum = 22, maximum = MAX_METADATA_LENGTH)
+        val raw = ByteArray(metadataLength)
+        input.readFully(raw)
+        for (index in raw.indices) {
+            raw[index] = (raw[index].toInt() xor 0x63).toByte()
         }
+
+        val encoded = raw.copyOfRange(22, raw.size)
+        require(encoded.isNotEmpty()) { "NCM metadata payload is empty" }
+        val decoded = Base64.decode(encoded.decodeToString())
+        return decrypt(metaKey, decoded)
+    }
+
+    private fun readCoverData(input: BinaryInput): ByteArray {
+        input.readFully(ByteArray(5))
+
+        val coverLength = readLength(input, "cover", minimum = 0, maximum = MAX_COVER_LENGTH)
+        val imageLength = readLength(input, "cover image", minimum = 0, maximum = coverLength)
+        val image = ByteArray(imageLength)
+        input.readFully(image)
+        input.skipFully((coverLength - imageLength).toLong())
+        return image
+    }
+
+    private fun readLength(
+        input: BinaryInput,
+        field: String,
+        minimum: Int,
+        maximum: Int
+    ): Int {
+        val bytes = ByteArray(4)
+        input.readFully(bytes)
+        val length = LengthUtils.readIntLEInline(bytes, 0)
+        require(length in minimum..maximum) {
+            "invalid $field length: $length (expected $minimum..$maximum)"
+        }
+        return length
+    }
+
+    private fun requiredField(values: List<String>, field: String): String {
+        val index = values.indexOf(field)
+        require(index >= 0 && index + 1 < values.size) {
+            "NCM metadata is missing field: $field"
+        }
+        return values[index + 1]
     }
 
     private fun combineArtistsString(artistsString: String): String {
-        val arr = artistsString.replace(Regex("[\\\\\\[\\]\"]"), "").split(",")
-        return arr.filterIndexed { i, _ -> i % 2 == 0 }.joinToString("/") { it.trim() }
+        val values = artistsString
+            .replace("\\", "")
+            .replace("[", "")
+            .replace("]", "")
+            .replace("\"", "")
+            .split(",")
+        return values.filterIndexed { index, _ -> index % 2 == 0 }
+            .joinToString("/") { it.trim() }
+    }
+
+    private data class FlacBlock(
+        val type: Int,
+        val isLast: Boolean,
+        val body: ByteArray,
+        val encoded: ByteArray
+    )
+
+    private fun readFlacMetadata(reader: DecryptedPayloadReader): List<FlacBlock> {
+        val blocks = ArrayList<FlacBlock>()
+        var totalLength = 4L // fLaC signature already consumed
+
+        while (true) {
+            val blockHeader = ByteArray(4)
+            reader.readFully(blockHeader)
+            val typeByte = blockHeader[0].toInt() and 0xFF
+            val type = typeByte and 0x7F
+            val isLast = (typeByte and 0x80) != 0
+            val bodyLength = LengthUtils.getBigEndianInteger3bytes(blockHeader.copyOfRange(1, 4))
+            require(bodyLength <= MAX_FLAC_METADATA_LENGTH) {
+                "FLAC metadata block is too large: $bodyLength"
+            }
+            totalLength += 4L + bodyLength
+            require(totalLength <= MAX_FLAC_METADATA_LENGTH) {
+                "FLAC metadata is too large: $totalLength"
+            }
+
+            val body = ByteArray(bodyLength)
+            reader.readFully(body)
+            val encoded = ByteArray(4 + bodyLength)
+            blockHeader.copyInto(encoded)
+            body.copyInto(encoded, 4)
+            blocks += FlacBlock(type, isLast, body, encoded)
+            if (isLast) return blocks
+        }
+    }
+
+    private fun writeFlacMetadata(
+        output: BinaryOutput,
+        blocks: List<FlacBlock>,
+        info: NcmFileInfo
+    ) {
+        require(blocks.isNotEmpty()) { "FLAC metadata is empty" }
+        output.write("fLaC".encodeToByteArray())
+
+        val lastIndex = blocks.indexOfFirst { it.isLast }
+        require(lastIndex >= 0) { "FLAC metadata has no last block" }
+        val vorbisIndex = blocks.indexOfFirst { it.type == 4 }
+        if (vorbisIndex < 0) {
+            blocks.forEach { output.write(it.encoded) }
+            return
+        }
+
+        val vorbisBody = blocks[vorbisIndex].body
+        require(vorbisBody.size >= 4) { "truncated FLAC Vorbis comment block" }
+        val vendorLength = LengthUtils.readIntLEInline(vorbisBody, 0)
+        require(vendorLength >= 0 && vendorLength <= vorbisBody.size - 4) {
+            "invalid FLAC Vorbis vendor length: $vendorLength"
+        }
+        val vendor = vorbisBody.copyOfRange(4, 4 + vendorLength)
+
+        val rewrittenVorbis = FLACMetadataGenerator.vorbisCommentBlockGen(
+            info.musicName, info.musicArtists, info.musicAlbum, vendor
+        )
+        val picture = FLACMetadataGenerator.pictureBlockGen(info.coverData)
+        blocks.forEachIndexed { index, block ->
+            when {
+                index == lastIndex && vorbisIndex == lastIndex -> {
+                    // A valid FLAC may end with Vorbis comments. In that case
+                    // the rewritten Vorbis block is followed by a new picture
+                    // block, which becomes the last metadata block.
+                    output.write(withFlacLastFlag(rewrittenVorbis, isLast = false))
+                    output.write(withFlacLastFlag(picture, isLast = true))
+                }
+                index == vorbisIndex -> {
+                    // The picture block is emitted after this block, so the
+                    // rewritten Vorbis block must not be marked as the last one.
+                    output.write(withFlacLastFlag(rewrittenVorbis, isLast = false))
+                }
+                index == lastIndex -> {
+                    output.write(withFlacLastFlag(picture, isLast = false))
+                    output.write(block.encoded)
+                }
+                else -> output.write(block.encoded)
+            }
+        }
+    }
+
+    private fun withFlacLastFlag(block: ByteArray, isLast: Boolean): ByteArray =
+        block.copyOf().also {
+            val lastBit = if (isLast) 0x80 else 0
+            it[0] = ((it[0].toInt() and 0x7F) or lastBit).toByte()
+        }
+
+    private class DecryptedPayloadReader(
+        private val input: BinaryInput,
+        private val bufferSize: Int
+    ) {
+        private val encryptedBuffer = ByteArray(bufferSize)
+        private var position = 0
+        private var limit = 0
+        private var endOfInput = false
+
+        fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            require(offset >= 0 && length >= 0 && offset <= buffer.size - length) {
+                "invalid payload read range"
+            }
+            if (length == 0) return 0
+
+            var total = 0
+            while (total < length) {
+                if (position == limit) {
+                    if (endOfInput) break
+                    val bytesRead = input.readAtMost(encryptedBuffer)
+                    if (bytesRead == 0) {
+                        endOfInput = true
+                        break
+                    }
+                    RC4Decrypt.prgaDecrypt(encryptedBuffer, bytesRead)
+                    position = 0
+                    limit = bytesRead
+                }
+
+                val copied = minOf(length - total, limit - position)
+                encryptedBuffer.copyInto(buffer, offset + total, position, position + copied)
+                position += copied
+                total += copied
+            }
+            return total
+        }
+
+        fun readFully(buffer: ByteArray) {
+            readFully(buffer, 0, buffer.size)
+        }
+
+        fun readFully(buffer: ByteArray, offset: Int, length: Int) {
+            require(offset >= 0 && length >= 0 && offset <= buffer.size - length) {
+                "invalid payload read range"
+            }
+            var position = offset
+            val end = offset + length
+            while (position < end) {
+                val bytesRead = read(buffer, position, end - position)
+                if (bytesRead <= 0) {
+                    throw IllegalArgumentException("unexpected end of decrypted NCM payload")
+                }
+                position += bytesRead
+            }
+        }
+
+        fun skipFully(bytes: Long) {
+            require(bytes >= 0) { "cannot skip a negative payload length" }
+            val scratch = ByteArray(minOf(bufferSize, 8192))
+            var remaining = bytes
+            while (remaining > 0) {
+                val bytesRead = read(scratch, 0, minOf(remaining, scratch.size.toLong()).toInt())
+                if (bytesRead <= 0) {
+                    throw IllegalArgumentException("unexpected end of decrypted NCM payload")
+                }
+                remaining -= bytesRead
+            }
+        }
+
+        fun copyTo(output: BinaryOutput) {
+            val buffer = ByteArray(bufferSize)
+            while (true) {
+                val bytesRead = read(buffer, 0, buffer.size)
+                if (bytesRead <= 0) return
+                output.write(buffer, 0, bytesRead)
+            }
+        }
     }
 }

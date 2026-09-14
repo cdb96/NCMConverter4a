@@ -23,7 +23,7 @@ object QmcCipher {
     }
 
     interface QmcStreamCipher {
-        fun decrypt(data: ByteArray, offset: Int = 0)
+        fun decrypt(data: ByteArray, offset: Long = 0L)
     }
 
     /**
@@ -69,7 +69,10 @@ object QmcCipher {
             }
         }
 
-        override fun decrypt(data: ByteArray, offset: Int) {
+        override fun decrypt(data: ByteArray, offset: Long) {
+            require(offset >= 0 && data.size.toLong() <= Long.MAX_VALUE - offset) {
+                "invalid QMC stream range"
+            }
             var currentOffset = offset
             var toProcess = data.size
             var processed = 0
@@ -82,10 +85,12 @@ object QmcCipher {
             }
 
             // 处理第一段
-            if (currentOffset < RC4_FIRST_SEGMENT_SIZE) {
+            if (currentOffset < RC4_FIRST_SEGMENT_SIZE.toLong()) {
                 var blockSize = toProcess
-                if (blockSize > RC4_FIRST_SEGMENT_SIZE - currentOffset) {
-                    blockSize = RC4_FIRST_SEGMENT_SIZE - currentOffset
+                val firstSegmentRemaining =
+                    (RC4_FIRST_SEGMENT_SIZE.toLong() - currentOffset).toInt()
+                if (blockSize > firstSegmentRemaining) {
+                    blockSize = firstSegmentRemaining
                 }
                 encFirstSegment(data, 0, blockSize, currentOffset)
                 if (markProcess(blockSize)) {
@@ -94,10 +99,13 @@ object QmcCipher {
             }
 
             // 处理不对齐的段
-            if (currentOffset % RC4_SEGMENT_SIZE != 0) {
+            if (currentOffset % RC4_SEGMENT_SIZE.toLong() != 0L) {
                 var blockSize = toProcess
-                if (blockSize > RC4_SEGMENT_SIZE - currentOffset % RC4_SEGMENT_SIZE) {
-                    blockSize = RC4_SEGMENT_SIZE - currentOffset % RC4_SEGMENT_SIZE
+                val segmentRemaining = (
+                    RC4_SEGMENT_SIZE.toLong() - currentOffset % RC4_SEGMENT_SIZE.toLong()
+                ).toInt()
+                if (blockSize > segmentRemaining) {
+                    blockSize = segmentRemaining
                 }
                 encASegment(data, processed, blockSize, currentOffset)
                 if (markProcess(blockSize)) {
@@ -117,18 +125,19 @@ object QmcCipher {
             }
         }
 
-        private fun encFirstSegment(buf: ByteArray, start: Int, length: Int, offset: Int) {
+        private fun encFirstSegment(buf: ByteArray, start: Int, length: Int, offset: Long) {
             for (i in 0 until length) {
-                buf[start + i] = (buf[start + i].toInt() xor key[getSegmentSkip(offset + i)].toInt()).toByte()
+                buf[start + i] = (buf[start + i].toInt() xor key[getSegmentSkip(offset + i.toLong())].toInt()).toByte()
             }
         }
 
-        private fun encASegment(buf: ByteArray, start: Int, length: Int, offset: Int) {
+        private fun encASegment(buf: ByteArray, start: Int, length: Int, offset: Long) {
             val box = this.box.copyOf()
             var j = 0
             var k = 0
 
-            val skipLen = (offset % RC4_SEGMENT_SIZE) + getSegmentSkip(offset / RC4_SEGMENT_SIZE)
+            val skipLen = (offset % RC4_SEGMENT_SIZE.toLong()).toInt() +
+                getSegmentSkip(offset / RC4_SEGMENT_SIZE.toLong())
 
             for (i in -skipLen until length) {
                 j = (j + 1) % n
@@ -145,9 +154,9 @@ object QmcCipher {
             }
         }
 
-        private fun getSegmentSkip(id: Int): Int {
-            val seed = key[id % n].toInt() and 0xFF
-            val idx = (hash.toDouble() / ((id + 1) * seed).toDouble() * 100.0).toLong()
+        private fun getSegmentSkip(id: Long): Int {
+            val seed = key[(id % n.toLong()).toInt()].toInt() and 0xFF
+            val idx = (hash.toDouble() / ((id + 1L) * seed).toDouble() * 100.0).toLong()
             return abs(idx % n.toLong()).toInt()
         }
 
@@ -161,12 +170,12 @@ object QmcCipher {
     private class QmcMapCipher(private val key: ByteArray) : QmcStreamCipher {
         private val size = key.size
 
-        private fun getMask(offset: Int): Byte {
+        private fun getMask(offset: Long): Byte {
             var o = offset
             if (o > 0x7FFF) {
-                o %= 0x7FFF
+                o %= 0x7FFFL
             }
-            val idx = (o * o + 71214) % size
+            val idx = ((o * o + 71214L) % size.toLong()).toInt()
             return rotate(key[idx], (idx and 0x7).toByte())
         }
 
@@ -177,7 +186,10 @@ object QmcCipher {
             return ((left or right) and 0xFF).toByte()
         }
 
-        override fun decrypt(data: ByteArray, offset: Int) {
+        override fun decrypt(data: ByteArray, offset: Long) {
+            require(offset >= 0 && data.size.toLong() <= Long.MAX_VALUE - offset) {
+                "invalid QMC stream range"
+            }
             for (i in data.indices) {
                 data[i] = data[i] xor getMask(offset + i)
             }
@@ -220,16 +232,19 @@ object QmcCipher {
             0xA5.toByte(), 0x47, 0xF7.toByte(), 0xF6.toByte(), 0x00, 0x79, 0x4A, 0x11, //0xF8
         )
 
-        private fun getMask(offset: Int): Int {
+        private fun getMask(offset: Long): Int {
             var off = offset
             if (off > 0x7FFF) {
-                off %= 0x7FFF
+                off %= 0x7FFFL
             }
-            val idx = (off * off + 27) and 0xFF
+            val idx = ((off * off + 27L) and 0xFFL).toInt()
             return staticCipherBox[idx].toInt() and 0xFF
         }
 
-        override fun decrypt(data: ByteArray, offset: Int) {
+        override fun decrypt(data: ByteArray, offset: Long) {
+            require(offset >= 0 && data.size.toLong() <= Long.MAX_VALUE - offset) {
+                "invalid QMC stream range"
+            }
             for (i in data.indices) {
                 data[i] = (data[i].toInt() xor getMask(offset + i)).toByte()
             }

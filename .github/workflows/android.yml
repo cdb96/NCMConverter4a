@@ -3,9 +3,9 @@ name: CI
 on:
   workflow_dispatch:
   push:
-    branches: ["master"]
+    branches: ["master", "cmp_preview"]
   pull_request:
-    branches: ["master"]
+    branches: ["master", "cmp_preview"]
   release:
     types: [published]
 
@@ -30,7 +30,7 @@ jobs:
         uses: android-actions/setup-android@v4
         with:
           # nativeLib 模块所需的 NDK 版本 (见 nativeLib/build.gradle.kts)
-          packages: ndk;30.0.15729638
+          packages: ndk;30.0.16248370
 
       - name: 授予 Gradlew 执行权限
         run: chmod +x gradlew
@@ -148,6 +148,10 @@ jobs:
             .gradle/configuration-cache
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle-
+
+      - name: 运行 Desktop/common 回归测试
+        shell: bash
+        run: ./gradlew :composeApp:desktopTest --configure-on-demand
 
       - name: 构建桌面安装包 (release)
         shell: bash

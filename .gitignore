@@ -20,6 +20,11 @@ local.properties
 /desktop-cmake/build/
 /androidApp/build/
 /nativeLib/build/
+/app/
 # 构建产物 (APK / 输出元数据), 避免 git add -A 误提交
 /composeApp/release/
 /androidApp/release/
+/.claude/settings.local.json
+/.idea/deploymentTargetSelector.xml
+/.idea/deviceManager.xml
+/.idea/artifacts/

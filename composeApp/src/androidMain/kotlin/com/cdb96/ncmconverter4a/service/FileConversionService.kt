@@ -10,28 +10,32 @@ import androidx.documentfile.provider.DocumentFile
 import com.cdb96.ncmconverter4a.converter.EncryptedFormat
 import com.cdb96.ncmconverter4a.converter.KGMConverter
 import com.cdb96.ncmconverter4a.converter.NCMConverter
-import com.cdb96.ncmconverter4a.jni.RC4Decrypt
+import com.cdb96.ncmconverter4a.converter.detectEncryptedFormat
+import com.cdb96.ncmconverter4a.io.InputStreamBinaryInput
+import com.cdb96.ncmconverter4a.io.OutputStreamBinaryOutput
+import com.cdb96.ncmconverter4a.io.readChunk
+import com.cdb96.ncmconverter4a.io.readFully
+import com.cdb96.ncmconverter4a.util.FileNameUtils
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
-import java.io.FileInputStream
-import java.io.FileOutputStream
+import java.io.BufferedInputStream
 import java.io.InputStream
+import java.io.OutputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.regex.Pattern
-
 
 class FileConversionService(private val context: Context) {
     companion object {
         private const val TAG = "FileConversionService"
-        private val EXTENSION_REGEX = Pattern.compile("(.kgm)|(.flac)", Pattern.CASE_INSENSITIVE)
+        private val MEDIA_RELATIVE_PATH = "${Environment.DIRECTORY_MUSIC}/NCMConverter4A/"
     }
 
-    // 第一步：扫描出来的表 — 基本名 → 已占用序号集合
+    // A sequence is reserved while holding the per-basename CHM compute lock.
     private val seqTable = ConcurrentHashMap<String, MutableSet<Int>>()
 
     suspend fun processFiles(
@@ -40,161 +44,163 @@ class FileConversionService(private val context: Context) {
         rawWriteMode: Boolean,
         duplicateConflictMitigation: Boolean = false,
         fileCoroutineDispatcher: CoroutineDispatcher,
-        onProgress: (processed: Int, total: Int, fileName: String) -> Unit
+        onProgress: suspend (processed: Int, total: Int, fileName: String) -> Unit
     ): ConversionResult {
-
         val startTime = System.currentTimeMillis()
-        val successCount = AtomicInteger(0)
-        val failureCount = AtomicInteger(0)
         val completedCount = AtomicInteger(0)
         val totalFiles = uris.size
-        val successfulFiles = mutableListOf<String>()
-        val failedFiles = mutableListOf<String>()
 
-        try {
-            if (duplicateConflictMitigation) {
-                withContext(Dispatchers.IO) { scanExistingFiles() }
-            }
-            val fileNameMap = uris.associateWith { uri ->
-                withContext(Dispatchers.IO) {
-                    uri.getFileName(context) ?: "未知文件"
-                }
-            }
-            // 并行处理所有文件
-            supervisorScope {
-                val jobs = uris.map { uri ->
-                    launch (fileCoroutineDispatcher) {
-                        val fileName = fileNameMap[uri] ?: "未知文件"
-                        try {
-                            val success = routeEncryptedFile(uri, rawWriteMode, duplicateConflictMitigation, fileName)
-                            if (success) {
-                                successfulFiles.add(fileName)
-                                successCount.incrementAndGet()
-                            } else {
-                                failedFiles.add(fileName)
-                                failureCount.incrementAndGet()
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "处理文件时出错: ${e.message}", e)
-                            failedFiles.add(fileName)
-                            failureCount.incrementAndGet()
-                        }
-                        val completed = completedCount.incrementAndGet()
-                        launch(Dispatchers.Main) {
-                            onProgress(completed, totalFiles, fileName)
-                        }
-                    }
-                }
-                jobs.joinAll()
-            }
-            val allFileNames = fileNameMap.values.joinToString(", ")
-            val duration = System.currentTimeMillis() - startTime
-            return ConversionResult(
-                successCount = successCount.get(),
-                failureCount = failureCount.get(),
-                durationMillis = duration,
-                allFileNames = allFileNames,
-                successfulFileNames = successfulFiles,
-                failedFileNames = failedFiles,
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "批量转换过程中发生错误: ${e.message}", e)
-            throw e
+        if (duplicateConflictMitigation) {
+            withContext(Dispatchers.IO) { scanExistingFiles() }
         }
+        val fileNameMap = uris.associateWith { uri ->
+            withContext(Dispatchers.IO) { uri.getFileName(context) ?: "未知文件" }
+        }
+
+        val results = supervisorScope {
+            uris.map { uri ->
+                async(fileCoroutineDispatcher) {
+                    val fileName = fileNameMap[uri] ?: "未知文件"
+                    val result = try {
+                        val success = routeEncryptedFile(
+                            uri,
+                            rawWriteMode,
+                            duplicateConflictMitigation,
+                            fileName
+                        )
+                        FileConversionResult(
+                            fileName = fileName,
+                            success = success,
+                            error = if (success) null else "转换失败"
+                        )
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        Log.e(TAG, "处理文件时出错: ${error.message}", error)
+                        FileConversionResult(
+                            fileName = fileName,
+                            success = false,
+                            error = error.message ?: error::class.simpleName
+                        )
+                    }
+
+                    val completed = completedCount.incrementAndGet()
+                    withContext(Dispatchers.Main.immediate) {
+                        onProgress(completed, totalFiles, fileName)
+                    }
+                    result
+                }
+            }.awaitAll()
+        }
+
+        return ConversionResult(
+            successCount = results.count { it.success },
+            failureCount = results.count { !it.success },
+            durationMillis = System.currentTimeMillis() - startTime,
+            allFileNames = fileNameMap.values.joinToString(", "),
+            successfulFileNames = results.filter { it.success }.map { it.fileName },
+            failedFileNames = results.filterNot { it.success }.map { it.fileName },
+        )
     }
 
     private suspend fun routeEncryptedFile(
         uri: Uri,
         rawWriteMode: Boolean,
         duplicateConflictMitigation: Boolean,
-        fileName: String?
-    ): Boolean = withContext(Dispatchers.IO) {
-        withFileInputStream(uri) { fis ->
-            val format = detectEncryptedFormat(fis)
-            Log.i(TAG,"使用${format}解密器")
-            when (format) {
-                EncryptedFormat.KGM -> processKGMFile(uri, fis, fileName, duplicateConflictMitigation)
-                EncryptedFormat.NCM -> processNCMFile(rawWriteMode, fis, duplicateConflictMitigation)
-            }
+        fileName: String
+    ): Boolean = withFileInputStream(uri) { input ->
+        val format = detectFormat(input)
+        Log.i(TAG, "使用${format}解密器")
+        when (format) {
+            EncryptedFormat.KGM -> processKGMFile(
+                input,
+                fileName,
+                duplicateConflictMitigation
+            )
+            EncryptedFormat.NCM -> processNCMFile(
+                input,
+                rawWriteMode,
+                duplicateConflictMitigation
+            )
+            EncryptedFormat.UNSUPPORTED ->
+                throw IllegalArgumentException("不支持的加密文件格式: $fileName")
         }
     }
 
     private suspend fun processNCMFile(
+        inputStream: InputStream,
         rawWriteMode: Boolean,
-        inputStream: FileInputStream,
-        duplicateConflictMitigation: Boolean = false
-    ): Boolean = withContext(Dispatchers.Default) {
-        try {
-            val fileData = inputStream.readBytes()
-            val (info, dataOffset) = NCMConverter.convert(fileData)
-            val fileName = "${info.musicArtists.replace(Regex("[/\\\\]"), ",")} - ${info.musicName}"
-            val format = info.format
+        duplicateConflictMitigation: Boolean
+    ): Boolean {
+        return try {
+            val binaryInput = InputStreamBinaryInput(inputStream)
+            val info = NCMConverter.readHeader(binaryInput)
+            val fileName = "${info.musicArtists} - ${info.musicName}"
 
-            withFileOutputStream(format, fileName, duplicateConflictMitigation) { fileOutputStream ->
-                RC4Decrypt.ksa(info.RC4key)
-                var remaining = fileData.copyOfRange(dataOffset, fileData.size)
-                if (!rawWriteMode) {
-                    val result = NCMConverter.modifyHeader(remaining, info, info.coverData, 512 * 1024)
-                    fileOutputStream.write(result.headerBytes)
-                    remaining = result.remainingData
-                }
-                val buf = ByteArray(256 * 1024)
-                var rpos = 0
-                var bytesRead: Int
-                while (rpos < remaining.size) {
-                    bytesRead = minOf(buf.size, remaining.size - rpos)
-                    remaining.copyInto(buf, 0, rpos, rpos + bytesRead)
-                    RC4Decrypt.prgaDecrypt(buf, bytesRead)
-                    fileOutputStream.write(buf, 0, bytesRead)
-                    rpos += bytesRead
-                }
+            withFileOutputStream(info.format, fileName, duplicateConflictMitigation) { output ->
+                NCMConverter.writeAudio(
+                    input = binaryInput,
+                    output = OutputStreamBinaryOutput(output),
+                    info = info,
+                    rawWriteMode = rawWriteMode
+                )
             }
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "NCM文件处理失败: ${e.message}", e)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Log.e(TAG, "NCM文件处理失败: ${error.message}", error)
             false
         }
     }
 
     private suspend fun processKGMFile(
-        uri: Uri,
-        inputStream: FileInputStream,
-        fileName: String?,
-        duplicateConflictMitigation: Boolean = false
-    ): Boolean = withContext(Dispatchers.Default) {
-        try {
-            val header = ByteArray(1022)
-            inputStream.read(header, 0, 1022)
+        inputStream: InputStream,
+        fileName: String,
+        duplicateConflictMitigation: Boolean
+    ): Boolean {
+        return try {
+            val header = ByteArray(KGMConverter.HEADER_LENGTH)
+            inputStream.readFully(header)
             val ownKeyBytes = KGMConverter.getOwnKeyBytes(header)
 
-            val first = ByteArray(256 * 1024)
-            var bytesRead = inputStream.read(first)
-            val musicFormat = KGMConverter.detectFormat(first[0], ownKeyBytes)
+            val firstChunk = ByteArray(NCMConverter.AUDIO_BUFFER_SIZE)
+            val firstSize = inputStream.readChunk(firstChunk)
+            require(firstSize > 0) { "KGM audio payload is empty" }
+            val musicFormat = KGMConverter.detectFormat(firstChunk[0], ownKeyBytes)
+            require(musicFormat.isNotEmpty()) { "无法识别 KGM 音频格式" }
 
-            var processedFileName = fileName ?: uri.getFileName(context) ?: "null"
-            processedFileName = EXTENSION_REGEX.matcher(processedFileName).replaceAll("")
-
-            withFileOutputStream(musicFormat, processedFileName, duplicateConflictMitigation) { fileOutputStream ->
+            val processedFileName = FileNameUtils.removeLastExtension(fileName)
+            withFileOutputStream(
+                musicFormat,
+                processedFileName,
+                duplicateConflictMitigation
+            ) { output ->
                 KGMConverter.decrypt(
-                    ownKeyBytes, first, bytesRead, 256 * 1024,
-                    read = { inputStream.read(it) },
-                    write = { buf, n -> fileOutputStream.write(buf, 0, n) }
+                    ownKeyBytes = ownKeyBytes,
+                    firstChunk = firstChunk,
+                    firstSize = firstSize,
+                    bufferSize = NCMConverter.AUDIO_BUFFER_SIZE,
+                    read = { buffer -> inputStream.readChunk(buffer) },
+                    write = { buffer, bytesToWrite -> output.write(buffer, 0, bytesToWrite) }
                 )
             }
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "KGM文件处理失败: ${e.message}", e)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Log.e(TAG, "KGM文件处理失败: ${error.message}", error)
             false
         }
     }
 
     private suspend fun withFileInputStream(
         uri: Uri,
-        block: suspend (FileInputStream) -> Boolean
-    ): Boolean = withContext(Dispatchers.IO) {
-        context.contentResolver.openFileDescriptor(uri, "r").use { pfd ->
-            FileInputStream(pfd?.fileDescriptor).use { fis ->
-                block(fis)
+        block: suspend (BufferedInputStream) -> Boolean
+    ): Boolean {
+        val rawInput = context.contentResolver.openInputStream(uri)
+            ?: throw IllegalStateException("无法打开输入文件: $uri")
+        return rawInput.use { raw ->
+            BufferedInputStream(raw, NCMConverter.AUDIO_BUFFER_SIZE).use { input ->
+                block(input)
             }
         }
     }
@@ -202,117 +208,109 @@ class FileConversionService(private val context: Context) {
     private suspend fun withFileOutputStream(
         format: String,
         fileName: String,
-        duplicateConflictMitigation: Boolean = false,
-        block: (FileOutputStream) -> Unit
-    ): Boolean = withContext(Dispatchers.IO) {
-        val mimeType = when (format.lowercase()) {
+        duplicateConflictMitigation: Boolean,
+        block: (OutputStream) -> Unit
+    ): Boolean {
+        val extension = format.removePrefix(".").lowercase()
+        require(extension.matches(Regex("[a-z0-9]+"))) { "非法输出格式: $format" }
+        val safeFileName = FileNameUtils.sanitizeFileName(fileName)
+        val displayName = if (duplicateConflictMitigation) {
+            assignSeq(safeFileName, extension)
+        } else {
+            "$safeFileName.$extension"
+        }
+        val mimeType = when (extension) {
             "flac" -> "audio/flac"
-            "mp3" -> "audio/mpeg"
+            "ogg" -> "audio/ogg"
             else -> "audio/mpeg"
         }
 
-        val extension = format.lowercase()
-        val musicName = if (duplicateConflictMitigation) {
-            assignSeq(fileName, extension)
-        } else {
-            "$fileName.$extension"
-        }
-
         val values = ContentValues().apply {
-            put(MediaStore.Audio.Media.DISPLAY_NAME, musicName)
+            put(MediaStore.Audio.Media.DISPLAY_NAME, displayName)
             put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
-            put(MediaStore.Audio.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/NCMConverter4A/")
+            put(MediaStore.Audio.Media.RELATIVE_PATH, MEDIA_RELATIVE_PATH)
         }
+        val outputUri = context.contentResolver.insert(
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            values
+        ) ?: return false
 
-        val uri = context.contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
-        if (uri != null) {
-            context.contentResolver.openFileDescriptor(uri, "w")?.use { pfd ->
-                FileOutputStream(pfd.fileDescriptor).use { fileOutputStream ->
-                    block(fileOutputStream)
-                    return@withContext true
+        return try {
+            val output = context.contentResolver.openOutputStream(outputUri, "w")
+                ?: run {
+                    context.contentResolver.delete(outputUri, null, null)
+                    return false
                 }
-            }
+            output.use(block)
+            true
+        } catch (error: Throwable) {
+            context.contentResolver.delete(outputUri, null, null)
+            throw error
         }
-        return@withContext false
     }
 
-    //第一步：扫描目录，提取序号，建表
+    private fun detectFormat(input: BufferedInputStream): EncryptedFormat {
+        input.mark(32)
+        val header = ByteArray(16)
+        val bytesRead = input.readChunk(header)
+        input.reset()
+        return detectEncryptedFormat(header.copyOf(if (bytesRead < 0) 0 else bytesRead))
+    }
+
     private fun scanExistingFiles() {
         seqTable.clear()
-        val relativePath = "${Environment.DIRECTORY_MUSIC}/NCMConverter4A/"
         context.contentResolver.query(
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
             arrayOf(MediaStore.Audio.Media.DISPLAY_NAME),
             "${MediaStore.Audio.Media.RELATIVE_PATH} = ?",
-            arrayOf(relativePath),
+            arrayOf(MEDIA_RELATIVE_PATH),
             null
         )?.use { cursor ->
-            val col = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+            val column = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
             while (cursor.moveToNext()) {
-                val (base, seq) = extractSeq(cursor.getString(col))
-                seqTable.getOrPut(base) { mutableSetOf() }.add(seq)
+                val (base, sequence) = extractSeq(cursor.getString(column))
+                seqTable.getOrPut(base) { mutableSetOf() }.add(sequence)
             }
         }
     }
 
     private fun extractSeq(fullName: String): Pair<String, Int> {
-        var dotIdx = fullName.length - 1
-        while (dotIdx >= 0 && fullName[dotIdx] != '.') {
-            dotIdx--
+        val dot = fullName.lastIndexOf('.')
+        val nameEnd = if (dot > 0) dot else fullName.length
+        val extension = if (dot > 0) fullName.substring(dot) else ""
+        if (nameEnd <= 0 || fullName.getOrNull(nameEnd - 1) != ')') {
+            return fullName to 0
         }
-        val hasExt = dotIdx > 0
-        val nameEnd = if (hasExt) dotIdx else fullName.length
-        val ext = if (hasExt) fullName.substring(dotIdx) else ""
-        if (nameEnd <= 0) return Pair(fullName, 0)
 
-        val lastCharIdx = nameEnd - 1
-        if (fullName[lastCharIdx] == ')') {
-            var p = lastCharIdx - 1
-            // 指针向左扫描，直到遇到非数字
-            while (p >= 0 && fullName[p].isDigit()) {
-                p--
-            }
-            if (p >= 0 && fullName[p] == '(' && p < lastCharIdx - 1) {
-                val seq = fullName.substring(p + 1, lastCharIdx).toIntOrNull() ?: 0
-                //p-1是因为系统给文件加序号的时候序号前都会带个空格
-                val base = fullName.substring(0, p - 1)
-                return Pair(base + ext, seq)
-            }
-        }
-        return Pair(fullName, 0)
+        val close = nameEnd - 1
+        val open = fullName.lastIndexOf('(', close - 1)
+        if (open < 0 || open == close - 1) return fullName to 0
+        val sequence = fullName.substring(open + 1, close).toIntOrNull()
+            ?: return fullName to 0
+        val baseEnd = if (open > 0 && fullName[open - 1] == ' ') open - 1 else open
+        return fullName.substring(0, baseEnd) + extension to sequence
     }
 
-    //查表 → 从 0 开始分配序号
     private fun assignSeq(fileName: String, extension: String): String {
-        val (baseMusicName, _) = extractSeq("$fileName.$extension")
+        val baseName = "$fileName.$extension"
         var assigned = -1
-        seqTable.compute(baseMusicName) { _, set ->
-            val s = set ?: mutableSetOf()
-            var n = 0
-            while (n in s) n++
-            s.add(n)
-            assigned = n
-            s
+        seqTable.compute(baseName) { _, existing ->
+            val sequences = existing ?: mutableSetOf()
+            var candidate = 0
+            while (candidate in sequences) candidate++
+            sequences.add(candidate)
+            assigned = candidate
+            sequences
         }
-        val dot = baseMusicName.lastIndexOf('.')
-        val baseWithoutExt = baseMusicName.substring(0, dot)
+        val dot = baseName.lastIndexOf('.')
+        val nameWithoutExtension = baseName.substring(0, dot)
         return if (assigned > 0) {
-            "$baseWithoutExt ($assigned).$extension"
+            "$nameWithoutExtension ($assigned).$extension"
         } else {
-            baseMusicName
+            baseName
         }
     }
 
-
-    private fun Uri.getFileName(context: Context): String? {
-        return DocumentFile.fromSingleUri(context, this)?.name
-    }
-
-    private fun detectEncryptedFormat(inputStream: InputStream): EncryptedFormat {
-        val truncatedKGMMagicHeader = byteArrayOf(0x7c, 0xd5.toByte())
-        val fileHeader = ByteArray(2)
-        inputStream.read(fileHeader, 0, 2)
-        //这里应该检测NCM的头来判断是否为NCM格式的，不过我懒得搞了，反正就两个格式
-        return if (fileHeader.contentEquals(truncatedKGMMagicHeader)) EncryptedFormat.KGM else EncryptedFormat.NCM
-    }
+    private fun Uri.getFileName(context: Context): String? =
+        DocumentFile.fromSingleUri(context, this)?.name
 }

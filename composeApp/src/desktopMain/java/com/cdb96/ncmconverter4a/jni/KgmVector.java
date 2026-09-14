@@ -308,6 +308,9 @@ public class KgmVector {
     private static final ThreadLocal<byte[]> maskBytesTL      = ThreadLocal.withInitial(() -> new byte[PRE_COMPUTED.length]);
 
     public static void init(byte[] ownKeyBytes) {
+        if (ownKeyBytes == null || ownKeyBytes.length < 17) {
+            throw new IllegalArgumentException("KGM key must contain at least 17 bytes");
+        }
         byte[] fileKeyBytes = fileKeyBytesTL.get();
         byte[] maskBytes    = maskBytesTL.get();
 
@@ -349,6 +352,15 @@ public class KgmVector {
     }
 
     public static int decrypt(byte[] cipherDataBytes, int offset, int bytesRead) {
+        if (cipherDataBytes == null) {
+            throw new IllegalArgumentException("KGM data must not be null");
+        }
+        // offset is the absolute position in the KGM stream; the byte array
+        // contains only the current chunk.
+        if (offset < 0 || bytesRead < 0 || bytesRead > cipherDataBytes.length) {
+            throw new IllegalArgumentException(
+                    "invalid KGM range: offset=" + offset + " bytesRead=" + bytesRead);
+        }
         byte[] fileKeyBytes = fileKeyBytesTL.get();
         byte[] maskBytes    = maskBytesTL.get();
 
@@ -361,34 +373,35 @@ public class KgmVector {
         // 防止 buffer 在位置恰好为 69632 字节整数倍切换数据时，下方 if 函数未生成 mask
         if (genMaskCounter == 0) genMask(i);
 
-        // SIMD: 每次处理 16 字节
-        for (; j + 16 <= bytesRead; i += 16, j += 16) {
-            // 简化取模运算
-            if (genMaskCounter == 69632) { genMask(i); genMaskCounter = 0; }
-            if (fileKeyCounter == 272) fileKeyCounter = 0;
-            if (j > 0 && (i & 15) == 0) {
-                maskBytesIndexCounter++;
-                if (maskBytesIndexCounter == 4352) maskBytesIndexCounter = 0;
+        while (j < bytesRead) {
+            if (fileKeyCounter == fileKeyBytes.length) fileKeyCounter = 0;
+
+            if (j + 16 <= bytesRead && fileKeyCounter + 16 <= fileKeyBytes.length) {
+                // 简化取模运算
+                if (genMaskCounter == 69632) { genMask(i); genMaskCounter = 0; }
+                if (j > 0 && (i & 15) == 0) {
+                    maskBytesIndexCounter++;
+                    if (maskBytesIndexCounter == 4352) maskBytesIndexCounter = 0;
+                }
+
+                ByteVector vCipher = ByteVector.fromArray(SPECIES, cipherDataBytes, j);
+                ByteVector vMed8   = ByteVector.fromArray(SPECIES, fileKeyBytes, fileKeyCounter);
+                ByteVector vMsk8   = ByteVector.broadcast(SPECIES, maskBytes[maskBytesIndexCounter]);
+                vMed8 = vMed8.lanewise(VectorOperators.XOR, vCipher);
+                vMed8 = vMed8.lanewise(VectorOperators.XOR, vMsk8);
+                vMsk8 = vMed8.lanewise(VectorOperators.LSHL, 4);
+                vMsk8 = vMed8.lanewise(VectorOperators.XOR, vMsk8);
+                // vMsk8 已为最终结果
+                vMsk8.intoArray(cipherDataBytes, j);
+
+                genMaskCounter += 16;
+                fileKeyCounter += 16;
+                i += 16;
+                j += 16;
+                continue;
             }
 
-            ByteVector vCipher = ByteVector.fromArray(SPECIES, cipherDataBytes, j);
-            ByteVector vMed8   = ByteVector.fromArray(SPECIES, fileKeyBytes, fileKeyCounter);
-            ByteVector vMsk8   = ByteVector.broadcast(SPECIES, maskBytes[maskBytesIndexCounter]);
-            vMed8 = vMed8.lanewise(VectorOperators.XOR, vCipher);
-            vMed8 = vMed8.lanewise(VectorOperators.XOR, vMsk8);
-            vMsk8 = vMed8.lanewise(VectorOperators.LSHL, 4);
-            vMsk8 = vMed8.lanewise(VectorOperators.XOR, vMsk8);
-            // vMsk8 已为最终结果
-            vMsk8.intoArray(cipherDataBytes, j);
-
-            genMaskCounter += 16;
-            fileKeyCounter += 16;
-        }
-
-        // 标量尾部
-        for (; j < bytesRead; ++i, ++j) {
             if (genMaskCounter == 69632) { genMask(i); genMaskCounter = 0; }
-            if (fileKeyCounter == 272) fileKeyCounter = 0;
             if (j > 0 && (i & 15) == 0) {
                 maskBytesIndexCounter++;
                 if (maskBytesIndexCounter == 4352) maskBytesIndexCounter = 0;
@@ -401,6 +414,8 @@ public class KgmVector {
 
             genMaskCounter++;
             fileKeyCounter++;
+            i++;
+            j++;
         }
 
         return i;
