@@ -71,7 +71,6 @@ class MainActivity : ComponentActivity() {
                     try {
                         val result = fileConversionService.processFiles(
                             uris = selectedUris,
-                            threadCount = selectedSettings.threadCount,
                             rawWriteMode = selectedSettings.rawWriteMode,
                             duplicateConflictMitigation = selectedSettings.duplicateConflictMitigation,
                             fileCoroutineDispatcher = fileProcessingDispatcher,

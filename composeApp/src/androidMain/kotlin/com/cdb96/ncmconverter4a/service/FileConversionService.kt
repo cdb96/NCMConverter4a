@@ -40,7 +40,6 @@ class FileConversionService(private val context: Context) {
 
     suspend fun processFiles(
         uris: List<Uri>,
-        threadCount: Int,
         rawWriteMode: Boolean,
         duplicateConflictMitigation: Boolean = false,
         fileCoroutineDispatcher: CoroutineDispatcher,
@@ -169,10 +168,12 @@ class FileConversionService(private val context: Context) {
             val musicFormat = KGMConverter.detectFormat(firstChunk[0], ownKeyBytes)
             require(musicFormat.isNotEmpty()) { "无法识别 KGM 音频格式" }
 
-            val processedFileName = FileNameUtils.removeLastExtension(fileName)
+            // fileName is the real source file name (e.g. song.kgm): strip its
+            // extension before it becomes the output basename.
+            val outputBaseName = FileNameUtils.removeLastExtension(fileName)
             withFileOutputStream(
                 musicFormat,
-                processedFileName,
+                outputBaseName,
                 duplicateConflictMitigation
             ) { output ->
                 KGMConverter.decrypt(

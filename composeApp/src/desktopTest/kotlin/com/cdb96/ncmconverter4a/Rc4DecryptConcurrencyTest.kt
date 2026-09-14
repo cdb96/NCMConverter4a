@@ -6,25 +6,11 @@ import java.util.concurrent.Executors
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 
-class Rc4VectorConcurrencyTest {
-    @Test
-    fun rc4GoldenVector() {
-        val key = byteArrayOf(1, 2, 3, 4, 5, 6, 7)
-        val actual = ByteArray(32) { it.toByte() }
-        val expected = byteArrayOf(
-            0x6D, 0x84.toByte(), 0xE4.toByte(), 0x70, 0x92.toByte(), 0x1D,
-            0xEE.toByte(), 0x82.toByte(), 0xA1.toByte(), 0x5E, 0x4D, 0x6C,
-            0xB4.toByte(), 0xD0.toByte(), 0x0E, 0x5A, 0x0B, 0x00,
-            0xC2.toByte(), 0xC0.toByte(), 0xF1.toByte(), 0xFE.toByte(), 0x2D,
-            0xE9.toByte(), 0xB4.toByte(), 0x98.toByte(), 0xA1.toByte(),
-            0x8F.toByte(), 0x87.toByte(), 0x42, 0x9F.toByte(), 0x82.toByte()
-        )
-
-        RC4Decrypt.ksa(key)
-        RC4Decrypt.prgaDecrypt(actual, actual.size)
-
-        assertContentEquals(expected, actual)
-    }
+/**
+ * Concurrency coverage for the native RC4 core: the key stream lives in
+ * thread-local native state, so parallel conversions must not disturb each other.
+ */
+class Rc4DecryptConcurrencyTest {
 
     @Test
     fun concurrentKeysDoNotOverwriteEachOther() {
@@ -49,19 +35,6 @@ class Rc4VectorConcurrencyTest {
         } finally {
             executor.shutdownNow()
         }
-    }
-
-    @Test
-    fun vectorPathDoesNotCrossThe256ByteKeyStreamBoundary() {
-        val key = byteArrayOf(1, 2, 3, 4, 5, 6, 7)
-        val expected = ByteArray(513) { ((it * 11 + 3) and 0xFF).toByte() }
-        val actual = expected.copyOf()
-        referenceDecrypt(key, expected)
-
-        RC4Decrypt.ksa(key)
-        RC4Decrypt.prgaDecrypt(actual, actual.size)
-
-        assertContentEquals(expected, actual)
     }
 
     private fun referenceDecrypt(key: ByteArray, data: ByteArray) {

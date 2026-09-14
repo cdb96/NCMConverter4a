@@ -20,11 +20,16 @@ local.properties
 /desktop-cmake/build/
 /androidApp/build/
 /nativeLib/build/
+/native/build/
+# Shared native core bundled for the Desktop JVM; built by :composeApp:nativeBuild
+/composeApp/src/desktopMain/resources/ncmc4a/
 /app/
 # 构建产物 (APK / 输出元数据), 避免 git add -A 误提交
 /composeApp/release/
 /androidApp/release/
 /.claude/settings.local.json
+# DSH 插件运行时状态, 非项目文件
+/thinking-effort-loaded.json
 /.idea/deploymentTargetSelector.xml
 /.idea/deviceManager.xml
 /.idea/artifacts/

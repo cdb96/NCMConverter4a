@@ -88,9 +88,9 @@ object NCMConverter {
             "NCM buffer size must be a positive multiple of 256"
         }
 
-        // Rc4Vector starts each call at the beginning of its 256-byte stream.
-        // Filling every non-final chunk to a multiple of 256 preserves the
-        // stream position across calls without retaining the whole file.
+        // Each RC4 decrypt call starts again at the beginning of the 256-byte
+        // keystream. Filling every non-final chunk to a multiple of 256 keeps the
+        // stream position consistent across calls without buffering the whole file.
         RC4Decrypt.ksa(info.RC4key)
         val reader = DecryptedPayloadReader(input, bufferSize)
 

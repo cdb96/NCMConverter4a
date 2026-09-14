@@ -10,8 +10,30 @@ on:
     types: [published]
 
 jobs:
+  # Decides the scope of the run. cmp_preview is a development preview branch,
+  # so it only gets test/compile checks. Full release packaging (Android signed
+  # release, MSI/DMG/DEB, Uber Jar, artifacts, GitHub Release) is reserved for
+  # master pushes and published releases.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      full_build: ${{ steps.scope.outputs.full_build }}
+    steps:
+      - id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "${EVENT_NAME}" = "release" ] || { [ "${EVENT_NAME}" = "push" ] && [ "${REF_NAME}" = "master" ]; }; then
+            full_build=true
+          else
+            full_build=false
+          fi
+          echo "full_build=${full_build}" >> "$GITHUB_OUTPUT"
+
   # ======================== Android Build ========================
   android:
+    needs: changes
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -45,13 +67,17 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle-
 
-      - name: 设置 Keystore 文件
-        if: ${{ github.event_name != 'pull_request' }}
+      - name: 构建 Debug APK (preview / PR check)
+        if: ${{ needs.changes.outputs.full_build != 'true' }}
+        run: ./gradlew :androidApp:assembleDebug
+
+      - name: 设置 Keystore 文件 (release)
+        if: ${{ needs.changes.outputs.full_build == 'true' }}
         run: |
           echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > androidApp/release.keystore
 
-      - name: 构建发布版 APK
-        if: ${{ github.event_name != 'pull_request' }}
+      - name: 构建发布版 APK (release)
+        if: ${{ needs.changes.outputs.full_build == 'true' }}
         run: ./gradlew :androidApp:assembleRelease
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -59,13 +85,8 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           SIGNING_STORE_FILE: release.keystore
 
-      - name: 构建 Debug APK (PR check)
-        if: ${{ github.event_name == 'pull_request' }}
-        run: ./gradlew :androidApp:assembleDebug
-
       - name: 上传 APK
-        # PR 只构建 debug APK (release/ 目录不存在), 跳过上传避免 upload-artifact 报错
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ needs.changes.outputs.full_build == 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: app-release-apk
@@ -79,8 +100,55 @@ jobs:
           prerelease: false
           files: androidApp/build/outputs/apk/release/*.apk
 
-  # ======================== Desktop Build ========================
+  # Runs on every push/PR: tests plus a JVM compile check, on one OS only.
+  # No installers, no jmods, no artifacts.
+  desktop-check:
+    needs: changes
+    if: ${{ needs.changes.outputs.full_build != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: 设置 submodules
+        run: git submodule update --init --recursive
+
+      - name: 设置 JDK 25
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+
+      - name: 授予 Gradlew 执行权限
+        run: chmod +x gradlew
+
+      - name: 缓存 Gradle 依赖
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            .gradle/configuration-cache
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      # The shared C++ core has a JVM-free self-test: it pins the RC4 golden
+      # vector and compares KGM byte-for-byte against the retired implementation.
+      - name: 安装 native 构建工具
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: 校验共享 native core
+        run: bash native/check.sh
+
+      - name: 运行 Desktop/common 回归测试
+        run: ./gradlew :composeApp:desktopTest --configure-on-demand
+
+      - name: 桌面编译检查
+        run: ./gradlew :composeApp:compileKotlinDesktop --configure-on-demand
+
+  # ======================== Desktop Release Build ========================
+  # master push / published release only: multi-OS installers and Uber Jar.
   desktop:
+    needs: changes
+    if: ${{ always() && !cancelled() && needs.changes.outputs.full_build == 'true' }}
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write  # softprops/action-gh-release 发布 Release 需要
@@ -97,44 +165,6 @@ jobs:
         with:
           java-version: '25'
           distribution: 'temurin'
-
-      - name: 补齐 JDK 25 jmods (Linux/macOS)
-        if: ${{ runner.os != 'Windows' }}
-        shell: bash
-        run: |
-          case "${RUNNER_OS}" in
-            Linux) adoptium_os=linux ;;
-            macOS) adoptium_os=mac ;;
-            *) echo "Unsupported runner OS: ${RUNNER_OS}"; exit 1 ;;
-          esac
-          jmods_archive="${RUNNER_TEMP}/jdk25-jmods.tar.gz"
-          jmods_stage="${RUNNER_TEMP}/jdk25-jmods"
-          curl --fail --location --retry 3 \
-            "https://api.adoptium.net/v3/binary/latest/25/ga/${adoptium_os}/x64/jmods/hotspot/normal/eclipse?project=jdk" \
-            --output "${jmods_archive}"
-          mkdir -p "${jmods_stage}"
-          tar -xzf "${jmods_archive}" -C "${jmods_stage}"
-          jmods_source="$(find "${jmods_stage}" -type d -name '*-jmods' -print -quit)"
-          test -n "${jmods_source}"
-          mkdir -p "${JAVA_HOME}/jmods"
-          cp -R "${jmods_source}/." "${JAVA_HOME}/jmods/"
-
-      - name: 补齐 JDK 25 jmods (Windows)
-        if: ${{ runner.os == 'Windows' }}
-        shell: pwsh
-        run: |
-          $jmodsArchive = Join-Path $env:RUNNER_TEMP 'jdk25-jmods.zip'
-          $jmodsStage = Join-Path $env:RUNNER_TEMP 'jdk25-jmods'
-          $jmodsUrl = 'https://api.adoptium.net/v3/binary/latest/25/ga/windows/x64/jmods/hotspot/normal/eclipse?project=jdk'
-          Invoke-WebRequest -Uri $jmodsUrl -OutFile $jmodsArchive
-          Expand-Archive -LiteralPath $jmodsArchive -DestinationPath $jmodsStage
-          $jmodsSource = Get-ChildItem -LiteralPath $jmodsStage -Directory |
-            Where-Object { $_.Name -like '*-jmods' } |
-            Select-Object -First 1
-          if ($null -eq $jmodsSource) { throw 'JDK 25 jmods directory was not found' }
-          $jmodsTarget = Join-Path $env:JAVA_HOME 'jmods'
-          New-Item -ItemType Directory -Force -Path $jmodsTarget | Out-Null
-          Copy-Item -Path (Join-Path $jmodsSource.FullName '*') -Destination $jmodsTarget -Recurse -Force
 
       - name: 授予 Gradlew 执行权限
         run: chmod +x gradlew

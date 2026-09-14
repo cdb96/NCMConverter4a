@@ -13,14 +13,14 @@ import com.cdb96.ncmconverter4a.service.ConversionResult
 import com.cdb96.ncmconverter4a.service.FileConversionResult
 import com.cdb96.ncmconverter4a.util.FileNameUtils
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.supervisorScope
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
-import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
 class DesktopConversionFacade {
@@ -29,6 +29,7 @@ class DesktopConversionFacade {
         File(System.getProperty("user.home"), "Music/NCMConverter4A")
     )
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun processFiles(
         filePaths: List<String>,
         threadCount: Int,
@@ -39,46 +40,42 @@ class DesktopConversionFacade {
         val startTime = System.currentTimeMillis()
         val completedCount = AtomicInteger(0)
         val sourceNames = filePaths.map { File(it).name }
-        val dispatcher = Executors.newFixedThreadPool(threadCount.coerceAtLeast(1)).asCoroutineDispatcher()
+        val dispatcher = Dispatchers.Default.limitedParallelism(threadCount.coerceAtLeast(1))
 
-        try {
-            val results = supervisorScope {
-                filePaths.mapIndexed { index, path ->
-                    async(dispatcher) {
-                        val fileName = sourceNames[index]
-                        val result = try {
-                            convertFile(path, rawWriteMode, duplicateConflictMitigation)
-                            FileConversionResult(fileName = fileName, success = true)
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (error: Exception) {
-                            log.e("处理文件时出错: ${error.message}", error)
-                            FileConversionResult(
-                                fileName = fileName,
-                                success = false,
-                                error = error.message ?: error::class.simpleName
-                            )
-                        }
-
-                        val completed = completedCount.incrementAndGet()
-                        onProgress(completed, filePaths.size, fileName)
-                        result
+        val results = supervisorScope {
+            filePaths.mapIndexed { index, path ->
+                async(dispatcher) {
+                    val fileName = sourceNames[index]
+                    val result = try {
+                        convertFile(path, rawWriteMode, duplicateConflictMitigation)
+                        FileConversionResult(fileName = fileName, success = true)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        log.e("处理文件时出错: ${error.message}", error)
+                        FileConversionResult(
+                            fileName = fileName,
+                            success = false,
+                            error = error.message ?: error::class.simpleName
+                        )
                     }
-                }.awaitAll()
-            }
 
-            val duration = System.currentTimeMillis() - startTime
-            return ConversionResult(
-                successCount = results.count { it.success },
-                failureCount = results.count { !it.success },
-                durationMillis = duration,
-                allFileNames = sourceNames.joinToString(", "),
-                successfulFileNames = results.filter { it.success }.map { it.fileName },
-                failedFileNames = results.filterNot { it.success }.map { it.fileName },
-            )
-        } finally {
-            dispatcher.close()
+                    val completed = completedCount.incrementAndGet()
+                    onProgress(completed, filePaths.size, fileName)
+                    result
+                }
+            }.awaitAll()
         }
+
+        val duration = System.currentTimeMillis() - startTime
+        return ConversionResult(
+            successCount = results.count { it.success },
+            failureCount = results.count { !it.success },
+            durationMillis = duration,
+            allFileNames = sourceNames.joinToString(", "),
+            successfulFileNames = results.filter { it.success }.map { it.fileName },
+            failedFileNames = results.filterNot { it.success }.map { it.fileName },
+        )
     }
 
     private fun convertFile(
@@ -154,9 +151,11 @@ class DesktopConversionFacade {
         val musicFormat = KGMConverter.detectFormat(firstChunk[0], ownKeyBytes)
         require(musicFormat.isNotEmpty()) { "无法识别 KGM 音频格式" }
 
-        val requestedName = FileNameUtils.removeLastExtension(sourceName)
+        // sourceName is the real source file name (e.g. song.kgm): strip its
+        // extension before it becomes the output basename.
+        val outputBaseName = FileNameUtils.removeLastExtension(sourceName)
         outputAllocator.withUniqueOutput(
-            requestedName = requestedName,
+            requestedName = outputBaseName,
             extension = musicFormat,
             mitigateConflicts = duplicateConflictMitigation
         ) { output ->

@@ -1,10 +1,8 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.compose.desktop.application.tasks.AbstractProguardTask
-import org.gradle.jvm.tasks.Jar
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JavaToolchainService
 import org.gradle.jvm.toolchain.JvmVendorSpec
-import org.gradle.api.tasks.testing.Test
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -81,24 +79,181 @@ kotlin {
     }
 }
 
-// Java 编译启用 Vector API 模块（Kotlin 无法直接解析 Vector API，用 Java 封装）
-tasks.withType<JavaCompile>().configureEach {
-    sourceCompatibility = JavaVersion.VERSION_25.toString()
-    targetCompatibility = JavaVersion.VERSION_25.toString()
-    options.compilerArgs.add("--add-modules=jdk.incubator.vector")
+// ---------------------------------------------------------------------------
+// Desktop native core
+//
+// native/ holds the single C++ implementation of RC4 and KGM. nativeLib builds
+// it for Android; this task builds the same sources into the Desktop JVM library
+// and bundles it as a resource, so both platforms share one bridge as well.
+//
+// Needs cmake plus a C++ compiler. Skipped with -PncmSkipNativeBuild=true, or
+// automatically when cmake is not installed; the desktop native tests then fail
+// with an explicit "native core 不可用" message.
+// ---------------------------------------------------------------------------
+val nativeSourceDir = rootProject.layout.projectDirectory.dir("native")
+val nativeBuildDir = nativeSourceDir.dir("build")
+val ncmHostOs = org.gradle.internal.os.OperatingSystem.current()
+val ncmNativeOsName = when {
+    ncmHostOs.isWindows -> "windows"
+    ncmHostOs.isMacOsX -> "macos"
+    else -> "linux"
+}
+val ncmNativeArchName = when (System.getProperty("os.arch").lowercase()) {
+    "aarch64", "arm64" -> "aarch64"
+    else -> "x86_64"
+}
+val ncmNativeExtension = when (ncmNativeOsName) {
+    "windows" -> "dll"
+    "macos" -> "dylib"
+    else -> "so"
+}
+val ncmNativeResourceDir = layout.projectDirectory
+    .dir("src/desktopMain/resources/ncmc4a/$ncmNativeOsName-$ncmNativeArchName")
+
+private fun findOnPath(executable: String): File? =
+    System.getenv("PATH")
+        ?.split(File.pathSeparator)
+        ?.asSequence()
+        ?.map { File(it, executable) }
+        ?.firstOrNull { it.isFile }
+
+/** Ninja shipped with the Android SDK, so a JDK-only machine still works. */
+private fun findBundledNinja(): File? {
+    val localProperties = rootProject.file("local.properties")
+    if (!localProperties.isFile) return null
+    val sdkDir = localProperties.readLines()
+        .firstOrNull { it.startsWith("sdk.dir=") }
+        ?.removePrefix("sdk.dir=")
+        ?.replace("\\:", ":")
+        ?.replace("\\\\", "\\")
+        ?.trim()
+        ?: return null
+    val cmakeDir = File(sdkDir, "cmake")
+    return cmakeDir.listFiles()
+        ?.asSequence()
+        ?.map { File(File(it, "bin"), "ninja.exe") }
+        ?.firstOrNull { it.isFile }
 }
 
-tasks.withType<Test>().configureEach {
-    jvmArgs("--add-modules=jdk.incubator.vector")
+val ncmCmake = findOnPath("cmake")
+    ?: findBundledNinja()?.let { ninja ->
+        // The SDK CMake sits next to the bundled Ninja.
+        File(ninja.parentFile.parentFile, "bin/cmake.exe").takeIf { it.isFile }
+    }
+val ncmNinja = findBundledNinja() ?: findOnPath("ninja")
+
+// Resolved eagerly: a task holding the toolchain provider would not be
+// serializable for the configuration cache.
+val ncmJniIncludeDir = File(desktopJdk25Home.get(), "include")
+
+/** Runs a build command from the project root and fails the build on error. */
+private fun runNativeCommand(command: List<String>, workingDirectory: File) {
+    val process = ProcessBuilder(command)
+        .directory(workingDirectory)
+        .inheritIO()
+        .start()
+    val exitCode = process.waitFor()
+    require(exitCode == 0) {
+        "命令失败 (exit=$exitCode): ${command.joinToString(" ")}"
+    }
 }
+
+/**
+ * The native tasks shell out to cmake, so they are exempt from configuration
+ * cache serialization.
+ */
+private fun Task.disableConfigurationCache() {
+    notCompatibleWithConfigurationCache("shells out to cmake")
+}
+
+private val ncmCmakeGeneratorArgs = ncmNinja
+    ?.let { listOf("-G", "Ninja", "-DCMAKE_MAKE_PROGRAM=${it.absolutePath}") }
+    ?: emptyList()
+
+val nativeConfigure by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Configures the shared native core build for the Desktop JVM"
+    onlyIf { providers.gradleProperty("ncmSkipNativeBuild").orNull != "true" && ncmCmake != null }
+    disableConfigurationCache()
+    workingDir = rootProject.projectDir
+    commandLine(
+        listOf(
+            requireNotNull(ncmCmake) { "cmake 不可用" }.absolutePath,
+            "-S", nativeSourceDir.asFile.absolutePath,
+            "-B", nativeBuildDir.asFile.absolutePath,
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DNCM_JNI_INCLUDE_DIR=" + ncmJniIncludeDir.absolutePath,
+            "-DNCM_BUILD_JNI=ON",
+            "-DNCM_BUILD_SELFTEST=ON"
+        ) + ncmCmakeGeneratorArgs
+    )
+    // Declared so a deleted build directory triggers a fresh configure instead of
+    // being skipped as up to date.
+    outputs.dir(nativeBuildDir)
+    outputs.file(nativeBuildDir.file("CMakeCache.txt"))
+}
+
+val nativeBuild by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Builds the shared native core for the Desktop JVM and bundles it as a resource"
+    dependsOn(nativeConfigure)
+    onlyIf { providers.gradleProperty("ncmSkipNativeBuild").orNull != "true" && ncmCmake != null }
+    disableConfigurationCache()
+    workingDir = rootProject.projectDir
+    commandLine(
+        requireNotNull(ncmCmake) { "cmake 不可用" }.absolutePath,
+        "--build", nativeBuildDir.asFile.absolutePath,
+        "--config", "Release"
+    )
+
+    val projectDirectory = rootProject.projectDir
+    val buildDirectory = nativeBuildDir.asFile
+    val resourceDirectory = ncmNativeResourceDir.asFile
+    val nativeFileName = "ncmc4a.$ncmNativeExtension"
+
+    inputs.dir(nativeSourceDir)
+    outputs.file(ncmNativeResourceDir.file(nativeFileName))
+
+    doLast {
+        val cmake = requireNotNull(ncmCmake) { "cmake 不可用" }
+        runNativeCommand(
+            listOf(
+                cmake.absolutePath, "--build", buildDirectory.absolutePath,
+                "--config", "Release", "--target", "ncm_core_selftest"
+            ),
+            projectDirectory
+        )
+        val built = listOf(
+            File(buildDirectory, nativeFileName),
+            File(buildDirectory, "Release/$nativeFileName")
+        ).firstOrNull { it.isFile } ?: throw GradleException("native 库未生成: $nativeFileName")
+
+        resourceDirectory.mkdirs()
+        built.copyTo(File(resourceDirectory, nativeFileName), overwrite = true)
+        logger.lifecycle("native core 已打包: ${File(resourceDirectory, nativeFileName)}")
+    }
+}
+
+// The library is produced straight into a source directory, so declare it as a
+// processResources input; otherwise packaging treats the old resource set as up
+// to date and can ship a jar without the native core.
+tasks.named("desktopProcessResources") {
+    dependsOn(nativeBuild)
+    inputs.dir(ncmNativeResourceDir)
+}
+
+tasks.named("desktopTest") {
+    dependsOn(nativeBuild)
+}
+
+// ---------------------------------------------------------------------------
 
 compose.desktop {
     application {
         // Compose packaging tasks default to the Gradle process JDK. Use the
-        // full JDK 25 toolchain because Android Studio's JBR omits jdk.incubator.vector.
+        // JDK 25 toolchain so the packaged runtime matches the compiled target.
         javaHome = desktopJdk25Home.get()
         mainClass = "com.cdb96.ncmconverter4a.MainKt"
-        jvmArgs += "--add-modules=jdk.incubator.vector"
         buildTypes.release {
             proguard {
                 isEnabled = true
@@ -117,22 +272,7 @@ compose.desktop {
                 "java.desktop",
                 "java.logging",
                 "jdk.crypto.ec",
-                "jdk.incubator.vector",
             )
-        }
-    }
-}
-
-// A Jar manifest cannot carry the JVM's --add-modules option. Use the small
-// relauncher above for the published Uber Jar; jpackage launchers continue to
-// receive the option directly through application.jvmArgs.
-tasks.withType<Jar>().configureEach {
-    if (name.endsWith("UberJarForCurrentOS")) {
-        // The Compose plugin assigns Main-Class in its own task action. Set
-        // ours immediately before the Jar task runs so that action cannot
-        // overwrite the launcher manifest.
-        doFirst {
-            manifest.attributes["Main-Class"] = "com.cdb96.ncmconverter4a.UberJarLauncherKt"
         }
     }
 }

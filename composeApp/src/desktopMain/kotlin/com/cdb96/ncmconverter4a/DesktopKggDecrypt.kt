@@ -49,10 +49,12 @@ class DesktopKggDecrypt {
             val audioFormat = detectAudioFormat(audioStream, cipher)
             val outputDir = File(System.getProperty("user.home"), "Music/NCMConverter4A")
             val outputAllocator = DesktopOutputAllocator(outputDir)
-            val requestedName = FileNameUtils.removeLastExtension(audioFile.name)
+            // audioFile.name is the real source file name (e.g. song.kgg): strip
+            // its extension before it becomes the output basename.
+            val outputBaseName = FileNameUtils.removeLastExtension(audioFile.name)
 
             outputAllocator.withUniqueOutput(
-                requestedName = requestedName,
+                requestedName = outputBaseName,
                 extension = audioFormat,
                 mitigateConflicts = true
             ) { outputStream ->

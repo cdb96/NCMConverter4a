@@ -117,7 +117,9 @@ class KggDecoder(context: Context) {
             "ogg" -> "audio/ogg"
             else -> "audio/mpeg"
         }
-        val safeName = FileNameUtils.sanitizeFileName(FileNameUtils.removeLastExtension(fileName))
+        val safeName = FileNameUtils.sanitizeFileName(
+            FileNameUtils.removeLastExtension(fileName)
+        )
         val values = ContentValues().apply {
             put(MediaStore.Audio.Media.DISPLAY_NAME, "$safeName.$audioFormat")
             put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
