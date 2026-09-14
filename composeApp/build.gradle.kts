@@ -254,6 +254,13 @@ compose.desktop {
         // JDK 25 toolchain so the packaged runtime matches the compiled target.
         javaHome = desktopJdk25Home.get()
         mainClass = "com.cdb96.ncmconverter4a.MainKt"
+        // Loading the bundled native core goes through System.load, which JDK 25
+        // reports as a restricted method and a future release blocks outright.
+        // jvmArgs must live on the application: there it becomes jpackage's
+        // --java-options and lands in the launcher config. The Uber Jar cannot
+        // carry this, because ProGuard rewrites its manifest, so running the jar
+        // directly still prints the (harmless) warning.
+        jvmArgs += listOf("--enable-native-access=ALL-UNNAMED")
         buildTypes.release {
             proguard {
                 isEnabled = true

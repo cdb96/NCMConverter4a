@@ -92,6 +92,13 @@ jobs:
           name: app-release-apk
           path: androidApp/build/outputs/apk/release/*.apk
 
+      - name: 上传 Debug APK (preview / PR check)
+        if: ${{ needs.changes.outputs.full_build != 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-debug-apk
+          path: androidApp/build/outputs/apk/debug/*.apk
+
       - name: 创建 GitHub Release (Android)
         if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
         uses: softprops/action-gh-release@v3
