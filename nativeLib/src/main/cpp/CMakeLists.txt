@@ -1,7 +1,6 @@
 
 # For more information about using CMake with Android Studio, read the
 # documentation: https://d.android.com/studio/projects/add-native-code.html.
-# For more examples on how to use CMake, see: https://github.com/android/ndk-samples.
 
 # Sets the minimum CMake version required for this project.
 cmake_minimum_required(VERSION 3.22.1)
@@ -13,26 +12,19 @@ cmake_minimum_required(VERSION 3.22.1)
 project("ncmc4a")
 
 # Shared implementation. The Android APK and the Desktop JVM link the exact same
-# RC4Core.cpp / KGMCore.cpp; JniBridge.cpp is the per-platform glue. Keep this
-# source list in sync with native/CMakeLists.txt, which defines the `ncmc4a`
-# target for the Desktop JVM.
+# RC4Core.cpp / KGMCore.cpp; JniBridge.cpp is the per-platform glue.
 #
-# include() resolves the relative path at parse time against the real source
-# directory, which survives AGP copying these CMake files into an intermediate
-# build directory (add_subdirectory with a computed path does not). The trailing
-# .. must be resolved explicitly: include() does not normalise it.
+# NCM_SHARED_DIR comes from nativeLib/build.gradle.kts as an absolute path: AGP
+# copies these CMake files into an intermediate directory, so a path computed
+# here with '..' segments resolves against the wrong tree.
 set(NCM_BUILD_JNI ON)
 set(NCM_BUILD_SELFTEST OFF)
-# Resolve the shared sources. CMake collapses consecutive '..' segments in one
-# normalization pass, so a plain relative path silently lands on nativeLib/native;
-# resolving level by level avoids that. CMAKE_CURRENT_LIST_DIR is used because AGP
-# copies these CMake files into an intermediate directory.
-cmake_path(ABSOLUTE_PATH CMAKE_CURRENT_LIST_DIR NORMALIZE)
-cmake_path(GET CMAKE_CURRENT_LIST_DIR PARENT_PATH NCM_SHARED_DIR)   # cpp -> main
-cmake_path(GET NCM_SHARED_DIR PARENT_PATH NCM_SHARED_DIR)           # main -> src
-cmake_path(GET NCM_SHARED_DIR PARENT_PATH NCM_SHARED_DIR)           # src -> nativeLib
-cmake_path(GET NCM_SHARED_DIR PARENT_PATH NCM_SHARED_DIR)           # nativeLib -> repo root
-cmake_path(APPEND NCM_SHARED_DIR "native")
+if(NOT NCM_SHARED_DIR)
+    message(FATAL_ERROR "NCM_SHARED_DIR is not set; nativeLib/build.gradle.kts must pass -DNCM_SHARED_DIR=<repo>/native")
+endif()
+if(NOT EXISTS "${NCM_SHARED_DIR}/CMakeLists.txt")
+    message(FATAL_ERROR "NCM_SHARED_DIR does not contain the shared native core: ${NCM_SHARED_DIR}")
+endif()
 include("${NCM_SHARED_DIR}/CMakeLists.txt")
 
 # Specifies libraries CMake should link to your target library. You
