@@ -4,6 +4,7 @@
 // byte-for-byte behaviour (including the mask-table cursor arithmetic) is kept
 // on purpose so that both platforms keep producing identical output.
 #include "NativeApi.h"
+#include "SimdCompat.h"
 
 #include <array>
 #include <cstdint>
@@ -25,6 +26,39 @@ thread_local std::array<std::uint8_t, 16 * 17> fileKeyBytes{};
 // Expands the pre-computed byte table into 16-byte masks for one 69632 byte
 // period starting at absolute stream position `startPos`.
 void genMask(int startPos) {
+#if NCM_HAS_SIMD
+    // Intentionally almost a direct copy of the historical SIMD genMask():
+    // 17 iterations, each expanding 256 pre-computed bytes into 16 mask blocks
+    // of 16 bytes, then XORing a single byte into all of them.
+    uint8x16_t chunk[16];
+
+    for (int pos = 0; pos < kMaskBytePeriod * kMaskBlock; pos += 16 * 16 * 16) {
+        int i = startPos + pos;
+        i >>= 4;
+        const int chunkPreTablePos = i % kMaskBytePeriod;
+
+        for (int k = 0; k < 16; ++k) {
+            chunk[k] = vld1q_u8(PRE_COMPUTED_TABLE + chunkPreTablePos + k * 16);
+        }
+
+        i >>= 8;
+        // Valid once startPos >= 69632; smaller positions are handled by the
+        // caller sending a zeroed cursor.
+        do {
+            const uint8x16_t xorData =
+                vld1q_dup_u8(PRE_COMPUTED_TABLE + (i % kMaskBytePeriod));
+            for (uint8x16_t& value : chunk) {
+                value = veorq_u8(value, xorData);
+            }
+            i >>= 8;
+        } while (i >= 0x11);
+
+        const int storePos = pos >> 4;
+        for (int k = 0; k < 16; ++k) {
+            vst1q_u8(maskBytes.data() + storePos + k * 16, chunk[k]);
+        }
+    }
+#else
     for (int pos = 0; pos < kMaskBytePeriod * kMaskBlock; pos += 16 * 16 * 16) {
         int i = startPos + pos;
         i >>= 4;
@@ -56,6 +90,7 @@ void genMask(int startPos) {
                         kMaskBlock);
         }
     }
+#endif
 }
 
 std::uint8_t decryptByte(std::uint8_t cipher) {
