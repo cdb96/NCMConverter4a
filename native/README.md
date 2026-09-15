@@ -33,8 +33,10 @@ arm_neon.h   NEON_2_SSE.h
 ```
 
 There is no scalar build variant to keep in sync: the intrinsics *are* the
-implementation on both backends, with a scalar prefix/tail only where the data
-length or stream offset is not a multiple of the vector width. There is also no
+implementation on both backends, with a scalar tail only for the final partial
+block (RC4 restarts its 256-byte cycle per call, so callers pass 256-byte aligned
+chunks; KGM requires a 16-byte aligned `offset` — see `NativeApi.h`, whose
+contracts the converters satisfy by filling 256 KiB buffers). There is also no
 hand-written SSE/AVX2 implementation and no runtime CPUID dispatch, so a build for
 an architecture that has neither backend fails at compile time instead of silently
 producing a second code path.
@@ -61,8 +63,9 @@ It must print `ALL CHECKS PASSED`. On Windows a multi-config generator puts the
 binary in `native/build/Release/ncm_core_selftest.exe`.
 
 The checks compare the SIMD implementation against an independent byte-level
-reference for RC4 and KGM, covering the 16, 272 and 69632 byte period boundaries,
-arbitrary (unaligned) KGM offsets, and chunked decoding.
+reference for RC4 and KGM, covering the 16, 272, 4352 and 69632 byte period
+boundaries, 16-byte aligned KGM offsets and chunk sizes, and a final partial
+chunk.
 
 JVM-level check (needs a JDK as well):
 

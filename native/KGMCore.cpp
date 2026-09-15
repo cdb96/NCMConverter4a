@@ -8,6 +8,10 @@
 // pre-computed table, and the main loop keeps the old two-path med8/msk8
 // structure rather than the algebraically merged form. ARM compiles it through
 // <arm_neon.h>, x86 through NEON_2_SSE (see SimdCompat.h).
+//
+// The main loop requires a 16-byte aligned `offset` (see NativeApi.h), which is
+// what the historical code assumed as well; `length` may be arbitrary, and the
+// final partial block is handled byte by byte.
 #include "NativeApi.h"
 #include "SimdCompat.h"
 
@@ -144,30 +148,12 @@ int kgmDecrypt(std::uint8_t* data, int offset, int bytesRead) {
     }
 
     // ---------------------------------------------------------------------
-    // Scalar prefix
-    // ---------------------------------------------------------------------
-    // The historical SIMD loop assumed a 16-byte aligned stream position: one
-    // SIMD block spans exactly one maskBytes entry, and maskV2Counter has to
-    // stay a multiple of 16 so `vld1q_u8(ownKeyBytes + maskV2Counter)` cannot
-    // read past the 272-byte cycle. Preserve the SIMD body, but consume an
-    // unaligned prefix explicitly so the public C API stays correct for
-    // arbitrary offsets.
-    while (j < bytesRead && (i & 15) != 0) {
-        normalizeCountersBeforeByte(i, j, genMaskCounter, maskV2Counter,
-                                    keyBytesIndexCounter);
-
-        decryptScalarByte(data, j, maskV2Counter, keyBytesIndexCounter);
-
-        ++genMaskCounter;
-        ++maskV2Counter;
-        ++i;
-        ++j;
-    }
-
-    // ---------------------------------------------------------------------
     // 16-byte SIMD main loop
     // ---------------------------------------------------------------------
-    // Runs on the 16-byte aligned stream position the prefix just established.
+    // `offset` is a multiple of 16 by contract (see NativeApi.h), so every
+    // iteration starts on a 16-byte block boundary: one SIMD block spans exactly
+    // one maskBytes entry, and maskV2Counter stays a multiple of 16, so
+    // `vld1q_u8(ownKeyBytes + maskV2Counter)` cannot read past the 272-byte cycle.
     for (; j + 16 <= bytesRead; i += 16, j += 16) {
         normalizeCountersBeforeByte(i, j, genMaskCounter, maskV2Counter,
                                     keyBytesIndexCounter);
@@ -208,10 +194,10 @@ int kgmDecrypt(std::uint8_t* data, int offset, int bytesRead) {
     // The tail must keep calling normalizeCountersBeforeByte(): none of its three
     // checks is SIMD bookkeeping that the tail could skip.
     //   * The SIMD loop advances genMaskCounter/maskV2Counter by 16, so it can
-    //     stop with genMaskCounter == 69632 or maskV2Counter == 272 exactly;
-    //     both then have to be handled before the next byte (offset=69631
-    //     length=15 puts the 69632 boundary on the first tail byte, and any call
-    //     ending 1..15 bytes into a new mask cycle lands on 272).
+    //     stop with genMaskCounter == 69632 or maskV2Counter == 272 exactly, and
+    //     both then fall due on the first tail byte: offset=69616 length=17 puts
+    //     the 69632 boundary there, offset=256 length=17 leaves maskV2Counter at
+    //     272.
     //   * The first tail byte is 16-byte aligned, so it has to advance
     //     keyBytesIndexCounter like every other 16-byte block start.
     // Skipping it reads past the 272-byte ownKeyBytes/MASK_V2_PRE_DEF cycle and

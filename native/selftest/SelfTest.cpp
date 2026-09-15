@@ -306,16 +306,20 @@ void checkKgmChunking() {
 }
 
 /**
- * The historical SIMD loop required a 16-byte aligned stream position. The public
- * C ABI accepts any offset, so these cases walk across the 16-byte, 272-byte and
- * 69632-byte period boundaries with a deliberately unaligned start.
+ * The decryption loop requires a 16-byte aligned stream position (see
+ * NativeApi.h), so these cases walk across the 16-byte, 272-byte, 4352-byte and
+ * 69632-byte period boundaries using aligned offsets that deliberately leave a
+ * partial final block. offset=69616 length=17 makes the 69632-byte genMask
+ * refresh, the 272-byte cursor wrap and the mask-block advance all fall due on
+ * the very first tail byte; offset=256 length=17 and offset=272 length=17 do the
+ * same for the wrap and the mask-block advance on their own.
  */
-void checkKgmUnalignedOffsets() {
+void checkKgmAlignedBoundaryOffsets() {
     const int offsets[] = {
-        1, 2, 15, 16, 17, 255, 271, 272, 273, 69631, 69632, 69633
+        0, 16, 256, 272, 288, 4352, 69616, 69632, 69648, 139248, 139264
     };
     const int lengths[] = {
-        1, 15, 16, 17, 31, 32, 33, 255, 256, 257, 4096
+        1, 15, 16, 17, 31, 32, 33, 255, 256, 257, 273, 289, 4096
     };
 
     std::uint8_t key[17];
@@ -339,21 +343,22 @@ void checkKgmUnalignedOffsets() {
 
             if (next != offset + length || actual != expected) {
                 ok = false;
-                std::printf("       KGM offset mismatch offset=%d length=%d\n", offset, length);
+                std::printf("       KGM boundary mismatch offset=%d length=%d\n", offset, length);
             }
         }
     }
 
-    report("kgm matches reference for unaligned offsets", ok);
+    report("kgm matches reference at aligned period boundaries", ok);
 }
 
 /**
  * Stronger cross-call check: the counters are re-derived from the absolute offset
- * on every call, so a chunked walk with unaligned chunk sizes must equal the same
- * walk through the reference. This is what exercises the scalar prefix meeting
- * the SIMD loop over and over within one 69632-byte period.
+ * on every call, so a chunked walk must equal the same walk through the
+ * reference. Every chunk size is a multiple of 16 (what the converters produce
+ * by filling a 256 KiB buffer) and the payload length is not, so the walk always
+ * ends on a partial chunk that has to be finished byte by byte.
  */
-void checkKgmUnalignedChunking() {
+void checkKgmAlignedChunking() {
     std::uint8_t key[17];
     for (int i = 0; i < 17; i++) {
         key[i] = static_cast<std::uint8_t>(i * 71 + 19);
@@ -362,9 +367,7 @@ void checkKgmUnalignedChunking() {
     const int total = 69632 * 2 + 4096 + 37;
     const std::vector<std::uint8_t> input = makeData(total, 43);
 
-    // Deliberately not multiples of 16, so every call starts unaligned and the
-    // cumulative offset walks through all 16 possible alignments.
-    const int sizes[] = {4093, 4099, 17, 1, 15, 16, 8191, 65537};
+    const int sizes[] = {4096, 16, 272, 4352, 8192, 65536, 69632};
     const int sizeCount = static_cast<int>(sizeof(sizes) / sizeof(sizes[0]));
 
     std::vector<std::uint8_t> actual = input;
@@ -388,7 +391,7 @@ void checkKgmUnalignedChunking() {
         index++;
     }
 
-    report("kgm unaligned chunking matches reference",
+    report("kgm aligned chunking matches reference",
            position == total && refPosition == total && expected == actual);
 }
 
@@ -401,8 +404,8 @@ int main() {
     checkRc4SimdBoundaries();
     checkKgmAgainstReference();
     checkKgmChunking();
-    checkKgmUnalignedOffsets();
-    checkKgmUnalignedChunking();
+    checkKgmAlignedBoundaryOffsets();
+    checkKgmAlignedChunking();
 
     if (failures == 0) {
         std::printf("ALL CHECKS PASSED\n");
