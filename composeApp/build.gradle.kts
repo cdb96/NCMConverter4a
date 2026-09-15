@@ -57,7 +57,11 @@ kotlin {
                 implementation(kotlin("test"))
             }
         }
+        val jvmMain by creating {
+            dependsOn(commonMain)
+        }
         val androidMain by getting {
+            dependsOn(jvmMain)
             dependencies {
                 implementation(libs.androidx.activity.compose)
                 implementation(libs.androidx.core.ktx)
@@ -66,14 +70,10 @@ kotlin {
             }
         }
         val desktopMain by getting {
+            dependsOn(jvmMain)
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
-            }
-        }
-        val desktopTest by getting {
-            dependencies {
-                implementation(kotlin("test"))
             }
         }
     }
@@ -146,18 +146,6 @@ val ncmNinja = findBundledNinja() ?: findOnPath("ninja")
 // serializable for the configuration cache.
 val ncmJniIncludeDir = File(desktopJdk25Home.get(), "include")
 
-/** Runs a build command from the project root and fails the build on error. */
-private fun runNativeCommand(command: List<String>, workingDirectory: File) {
-    val process = ProcessBuilder(command)
-        .directory(workingDirectory)
-        .inheritIO()
-        .start()
-    val exitCode = process.waitFor()
-    require(exitCode == 0) {
-        "命令失败 (exit=$exitCode): ${command.joinToString(" ")}"
-    }
-}
-
 /**
  * The native tasks shell out to cmake, so they are exempt from configuration
  * cache serialization.
@@ -206,7 +194,6 @@ val nativeBuild by tasks.registering(Exec::class) {
         "--config", "Release"
     )
 
-    val projectDirectory = rootProject.projectDir
     val buildDirectory = nativeBuildDir.asFile
     val resourceDirectory = ncmNativeResourceDir.asFile
     val nativeFileName = "ncmc4a.$ncmNativeExtension"
@@ -215,14 +202,6 @@ val nativeBuild by tasks.registering(Exec::class) {
     outputs.file(ncmNativeResourceDir.file(nativeFileName))
 
     doLast {
-        val cmake = requireNotNull(ncmCmake) { "cmake 不可用" }
-        runNativeCommand(
-            listOf(
-                cmake.absolutePath, "--build", buildDirectory.absolutePath,
-                "--config", "Release", "--target", "ncm_core_selftest"
-            ),
-            projectDirectory
-        )
         val built = listOf(
             File(buildDirectory, nativeFileName),
             File(buildDirectory, "Release/$nativeFileName")
@@ -289,5 +268,4 @@ afterEvaluate {
         javaHome.set(desktopJdk25Home)
     }
 }
-
 

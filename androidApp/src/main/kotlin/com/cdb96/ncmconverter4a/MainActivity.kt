@@ -31,6 +31,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
+    private fun getDisplayName(uri: Uri): String? = runCatching {
+        contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+        }
+    }.getOrNull()
+
     private var threadCount by mutableIntStateOf(4)
     private val pendingIntentUris = mutableStateOf<List<Uri>>(emptyList())
 
@@ -61,12 +68,7 @@ class MainActivity : ComponentActivity() {
             fun startConversion(selectedUris: List<Uri>) {
                 if (selectedUris.isEmpty()) return
                 val selectedSettings = settingsState
-                conversionState = conversionState.copy(
-                    isProcessing = true, hasConversionStarted = true,
-                    totalCount = selectedUris.size, processedCount = 0,
-                    successCount = 0, failureCount = 0,
-                    currentFile = "", convertResult = null,
-                )
+                conversionState = conversionState.start(selectedUris.size)
                 scope.launch {
                     try {
                         val result = fileConversionService.processFiles(
@@ -81,14 +83,7 @@ class MainActivity : ComponentActivity() {
                                 currentFile = fileName,
                             )
                         }
-                        conversionState = conversionState.copy(
-                            isProcessing = false, convertResult = "done",
-                            successCount = result.successCount, failureCount = result.failureCount,
-                            successfulFileNames = result.successfulFileNames,
-                            failedFileNames = result.failedFileNames,
-                            conversionDurationMillis = result.durationMillis,
-                            currentFile = result.allFileNames,
-                        )
+                        conversionState = conversionState.complete(result)
                     } catch (e: Exception) {
                         Toast.makeText(context, "转换失败: ${e.message}", Toast.LENGTH_SHORT).show()
                         conversionState = conversionState.copy(isProcessing = false)
@@ -103,12 +98,12 @@ class MainActivity : ComponentActivity() {
                 val dbPicker = rememberLauncherForActivityResult(
                     ActivityResultContracts.GetContent()
                 ) { uri ->
-                    if (uri != null) kggState = kggState.copy(dbFileName = uri.toString())
+                    if (uri != null) kggState = kggState.copy(dbFileName = uri.toString(), dbDisplayName = getDisplayName(uri), decryptResult = null)
                 }
                 val audioPicker = rememberLauncherForActivityResult(
                     ActivityResultContracts.GetContent()
                 ) { uri ->
-                    if (uri != null) kggState = kggState.copy(audioFileName = uri.toString())
+                    if (uri != null) kggState = kggState.copy(audioFileName = uri.toString(), audioDisplayName = getDisplayName(uri), decryptResult = null)
                 }
 
                 KggScreen(
@@ -120,8 +115,8 @@ class MainActivity : ComponentActivity() {
                         val audioFileName = kggState.audioFileName
                         val dbFileName = kggState.dbFileName
                         val isRooted = kggState.isRooted
-                        if (audioFileName != null) {
-                            kggState = kggState.copy(isProcessing = true, decryptResult = "正在解密文件...")
+                        if (!kggState.isProcessing && audioFileName != null && (isRooted || dbFileName != null)) {
+                            kggState = kggState.copy(isProcessing = true, resultIsError = false, decryptResult = "正在解密文件...")
                             scope.launch {
                                 try {
                                     val audioUri = android.net.Uri.parse(audioFileName)
@@ -131,12 +126,12 @@ class MainActivity : ComponentActivity() {
                                     }
                                     kggState = kggState.copy(isProcessing = false, decryptResult = "文件解密完成！")
                                 } catch (e: Exception) {
-                                    kggState = kggState.copy(isProcessing = false, decryptResult = "文件解密失败: ${e.message}")
+                                    kggState = kggState.copy(isProcessing = false, resultIsError = true, decryptResult = "文件解密失败: ${e.message}")
                                 }
                             }
                         }
                     },
-                    onRootedChange = { kggState = kggState.copy(isRooted = it) },
+                    onRootedChange = { kggState = kggState.copy(isRooted = it, decryptResult = null) },
                 )
                 return@setContent
             }

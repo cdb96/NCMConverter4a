@@ -73,16 +73,7 @@ fun DesktopMainScreen(onNavigateToKGG: () -> Unit) {
 
                 val selectedSettings = settingsState
                 withContext(Dispatchers.Swing) {
-                    conversionState = conversionState.copy(
-                        isProcessing = true,
-                        hasConversionStarted = true,
-                        totalCount = files.size,
-                        processedCount = 0,
-                        successCount = 0,
-                        failureCount = 0,
-                        currentFile = "",
-                        convertResult = null,
-                    )
+                    conversionState = conversionState.start(files.size)
                 }
 
                 try {
@@ -103,16 +94,7 @@ fun DesktopMainScreen(onNavigateToKGG: () -> Unit) {
                         }
                     }
                     withContext(Dispatchers.Swing) {
-                        conversionState = conversionState.copy(
-                            isProcessing = false,
-                            convertResult = "done",
-                            successCount = result.successCount,
-                            failureCount = result.failureCount,
-                            successfulFileNames = result.successfulFileNames,
-                            failedFileNames = result.failedFileNames,
-                            conversionDurationMillis = result.durationMillis,
-                            currentFile = result.allFileNames,
-                        )
+                        conversionState = conversionState.complete(result)
                     }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Swing) {
@@ -153,6 +135,7 @@ fun DesktopKggScreen(onNavigateBack: () -> Unit) {
 
     KggScreen(
         state = state,
+        supportsRoot = false,
         onNavigateBack = onNavigateBack,
         onSelectDbFile = {
             scope.launch {
@@ -161,7 +144,7 @@ fun DesktopKggScreen(onNavigateBack: () -> Unit) {
                 }
                 if (files.isNotEmpty()) {
                     withContext(Dispatchers.Swing) {
-                        state = state.copy(dbFileName = files.first())
+                        state = state.copy(dbFileName = files.first(), decryptResult = null)
                     }
                 }
             }
@@ -173,7 +156,7 @@ fun DesktopKggScreen(onNavigateBack: () -> Unit) {
                 }
                 if (files.isNotEmpty()) {
                     withContext(Dispatchers.Swing) {
-                        state = state.copy(audioFileName = files.first())
+                        state = state.copy(audioFileName = files.first(), decryptResult = null)
                     }
                 }
             }
@@ -181,8 +164,8 @@ fun DesktopKggScreen(onNavigateBack: () -> Unit) {
         onDecrypt = {
             val audioFileName = state.audioFileName
             val dbFileName = state.dbFileName
-            if (audioFileName != null) {
-                state = state.copy(isProcessing = true, decryptResult = "正在解密文件...")
+            if (!state.isProcessing && audioFileName != null && dbFileName != null) {
+                state = state.copy(isProcessing = true, resultIsError = false, decryptResult = "正在解密文件...")
                 scope.launch(Dispatchers.IO) {
                     try {
                         val decrypter = DesktopKggDecrypt()
@@ -193,12 +176,12 @@ fun DesktopKggScreen(onNavigateBack: () -> Unit) {
                         }
                     } catch (e: Exception) {
                         withContext(Dispatchers.Swing) {
-                            state = state.copy(isProcessing = false, decryptResult = "文件解密失败: ${e.message}")
+                            state = state.copy(isProcessing = false, resultIsError = true, decryptResult = "文件解密失败: ${e.message}")
                         }
                     }
                 }
             }
         },
-        onRootedChange = { state = state.copy(isRooted = it) },
+        onRootedChange = { state = state.copy(isRooted = it, decryptResult = null) },
     )
 }

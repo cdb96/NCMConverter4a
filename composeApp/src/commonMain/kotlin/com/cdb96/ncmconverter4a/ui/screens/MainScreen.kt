@@ -1,5 +1,6 @@
 package com.cdb96.ncmconverter4a.ui.screens
 
+import com.cdb96.ncmconverter4a.service.ConversionResult
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
@@ -96,7 +97,29 @@ data class ConversionUiState(
     val successfulFileNames: List<String> = emptyList(),
     val failedFileNames: List<String> = emptyList(),
     val hasConversionStarted: Boolean = false,
-)
+) {
+    fun start(total: Int) = copy(
+        isProcessing = true,
+        hasConversionStarted = true,
+        totalCount = total,
+        processedCount = 0,
+        successCount = 0,
+        failureCount = 0,
+        currentFile = "",
+        convertResult = null,
+    )
+
+    fun complete(result: ConversionResult) = copy(
+        isProcessing = false,
+        convertResult = "done",
+        successCount = result.successCount,
+        failureCount = result.failureCount,
+        successfulFileNames = result.successfulFileNames,
+        failedFileNames = result.failedFileNames,
+        conversionDurationMillis = result.durationMillis,
+        currentFile = result.allFileNames,
+    )
+}
 
 data class SettingsUiState(
     val isExpanded: Boolean = false,

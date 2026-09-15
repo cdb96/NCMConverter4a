@@ -1,7 +1,19 @@
 package com.cdb96.ncmconverter4a.io
 
+import com.cdb96.ncmconverter4a.converter.EncryptedFormat
+import com.cdb96.ncmconverter4a.converter.detectEncryptedFormat
+import java.io.BufferedInputStream
 import java.io.InputStream
 import java.io.OutputStream
+
+/** Detects the encrypted format without consuming the stream header. */
+fun BufferedInputStream.detectEncryptedFormat(): EncryptedFormat {
+    mark(32)
+    val header = ByteArray(16)
+    val bytesRead = readChunk(header)
+    reset()
+    return detectEncryptedFormat(header.copyOf(bytesRead.coerceAtLeast(0)))
+}
 
 class InputStreamBinaryInput(private val input: InputStream) : BinaryInput {
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int =

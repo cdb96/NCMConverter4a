@@ -3,7 +3,7 @@ package com.cdb96.ncmconverter4a
 import com.cdb96.ncmconverter4a.converter.EncryptedFormat
 import com.cdb96.ncmconverter4a.converter.KGMConverter
 import com.cdb96.ncmconverter4a.converter.NCMConverter
-import com.cdb96.ncmconverter4a.converter.detectEncryptedFormat
+import com.cdb96.ncmconverter4a.io.detectEncryptedFormat
 import com.cdb96.ncmconverter4a.io.InputStreamBinaryInput
 import com.cdb96.ncmconverter4a.io.OutputStreamBinaryOutput
 import com.cdb96.ncmconverter4a.io.readChunk
@@ -67,14 +67,10 @@ class DesktopConversionFacade {
             }.awaitAll()
         }
 
-        val duration = System.currentTimeMillis() - startTime
-        return ConversionResult(
-            successCount = results.count { it.success },
-            failureCount = results.count { !it.success },
-            durationMillis = duration,
-            allFileNames = sourceNames.joinToString(", "),
-            successfulFileNames = results.filter { it.success }.map { it.fileName },
-            failedFileNames = results.filterNot { it.success }.map { it.fileName },
+        return ConversionResult.from(
+            results = results,
+            durationMillis = System.currentTimeMillis() - startTime,
+            sourceNames = sourceNames,
         )
     }
 
@@ -87,7 +83,7 @@ class DesktopConversionFacade {
         require(file.isFile) { "输入文件不存在: $path" }
 
         BufferedInputStream(FileInputStream(file), NCMConverter.AUDIO_BUFFER_SIZE).use { input ->
-            val format = detectFormat(input)
+            val format = input.detectEncryptedFormat()
             when (format) {
                 EncryptedFormat.KGM -> convertKGM(
                     input,
@@ -103,14 +99,6 @@ class DesktopConversionFacade {
                     throw IllegalArgumentException("不支持的加密文件格式: ${file.name}")
             }
         }
-    }
-
-    private fun detectFormat(input: BufferedInputStream): EncryptedFormat {
-        input.mark(32)
-        val header = ByteArray(16)
-        val bytesRead = input.readChunk(header)
-        input.reset()
-        return detectEncryptedFormat(header.copyOf(if (bytesRead < 0) 0 else bytesRead))
     }
 
     private fun convertNCM(

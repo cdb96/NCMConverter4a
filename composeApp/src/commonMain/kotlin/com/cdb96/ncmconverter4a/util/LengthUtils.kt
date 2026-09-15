@@ -10,11 +10,6 @@ object LengthUtils {
             (data[offset + 3].toInt() and 0xFF)
     }
 
-    fun readIntLE(data: ByteArray, offset: Int): Int {
-        require(offset >= 0 && offset <= data.size - 4) { "invalid little-endian integer offset" }
-        return readIntLEInline(data, offset)
-    }
-
     fun readIntLEInline(data: ByteArray, offset: Int): Int {
         require(offset >= 0 && offset <= data.size - 4) { "invalid little-endian integer offset" }
         return (data[offset].toInt() and 0xFF) or
@@ -55,11 +50,6 @@ object LengthUtils {
         )
     }
 
-    fun getLittleEndianInteger(bytes: ByteArray): Int {
-        require(bytes.size >= 4) { "need four bytes for a little-endian integer" }
-        return readIntLEInline(bytes, 0)
-    }
-
     fun toBigEndianBytes(value: Int): ByteArray = byteArrayOf(
         (value shr 24).toByte(),
         (value shr 16).toByte(),
@@ -94,46 +84,4 @@ object LengthUtils {
             (bytes[3].toInt() and 0x7F)
     }
 
-    fun findVorbisComment(flacBytes: ByteArray): Int {
-        require(flacBytes.size >= 8) { "truncated FLAC metadata" }
-        var pivot = 4
-        while (true) {
-            require(pivot + 4 <= flacBytes.size) { "truncated FLAC metadata block header" }
-            if ((flacBytes[pivot].toInt() and 0x7F) == 4) return pivot
-            val blockSize = getBigEndianInteger3bytes(flacBytes.copyOfRange(pivot + 1, pivot + 4))
-            val blockEnd = pivot + blockSize + 4
-            require(blockEnd > pivot && blockEnd <= flacBytes.size) {
-                "invalid FLAC metadata block length"
-            }
-            pivot = blockEnd
-        }
-    }
-
-    fun findLastBlock(flacBytes: ByteArray): Int {
-        require(flacBytes.size >= 8) { "truncated FLAC metadata" }
-        var pivot = 4
-        while (true) {
-            require(pivot + 4 <= flacBytes.size) { "truncated FLAC metadata block header" }
-            if ((flacBytes[pivot].toInt() and 0x80) != 0) return pivot
-            val blockSize = getBigEndianInteger3bytes(flacBytes.copyOfRange(pivot + 1, pivot + 4))
-            val blockEnd = pivot + blockSize + 4
-            require(blockEnd > pivot && blockEnd <= flacBytes.size) {
-                "invalid FLAC metadata block length"
-            }
-            pivot = blockEnd
-        }
-    }
-
-    fun hasLastBlock(flacBytes: ByteArray): Boolean {
-        if (flacBytes.size < 8) return false
-        var pivot = 4
-        while (true) {
-            if (pivot + 4 > flacBytes.size) return false
-            val blockSize = getBigEndianInteger3bytes(flacBytes.copyOfRange(pivot + 1, pivot + 4))
-            val blockEnd = pivot + blockSize + 4
-            if (blockEnd <= pivot || blockEnd > flacBytes.size) return false
-            if ((flacBytes[pivot].toInt() and 0x80) != 0) return true
-            pivot = blockEnd
-        }
-    }
 }
