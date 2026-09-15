@@ -124,6 +124,42 @@ void checkRc4Chunking() {
     report("rc4 256-byte chunking (documented contract)", expected == chunked);
 }
 
+/**
+ * The SIMD keystream XOR consumes a whole 256-byte cycle per iteration and hands
+ * the remainder to the scalar tail. These lengths sit on either side of that
+ * boundary, so a wrong loop condition or a bad tail start would show up here.
+ */
+void checkRc4SimdBoundaries() {
+    const int lengths[] = {
+        1, 15, 16, 17, 255, 256, 257, 511, 512, 513, 4096 + 137
+    };
+
+    std::vector<std::uint8_t> key(17);
+    for (int i = 0; i < 17; i++) {
+        key[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(i * 13 + 7);
+    }
+
+    bool ok = true;
+
+    for (int length : lengths) {
+        const std::vector<std::uint8_t> input = makeData(length, 19);
+
+        std::vector<std::uint8_t> expected = input;
+        referenceRc4(key, expected);
+
+        std::vector<std::uint8_t> actual = input;
+        ncm_rc4_init(key.data(), static_cast<int>(key.size()));
+        ncm_rc4_decrypt(actual.data(), length);
+
+        if (actual != expected) {
+            ok = false;
+            std::printf("       RC4 SIMD boundary mismatch length=%d\n", length);
+        }
+    }
+
+    report("rc4 SIMD 256-byte cycle boundaries", ok);
+}
+
 // ---------------------------------------------------------------- KGM checks
 
 /** Byte-level copy of the pre-existing KGM implementation. */
@@ -269,14 +305,104 @@ void checkKgmChunking() {
     report("kgm 16-aligned chunking matches reference", expected == chunked);
 }
 
+/**
+ * The historical SIMD loop required a 16-byte aligned stream position. The public
+ * C ABI accepts any offset, so these cases walk across the 16-byte, 272-byte and
+ * 69632-byte period boundaries with a deliberately unaligned start.
+ */
+void checkKgmUnalignedOffsets() {
+    const int offsets[] = {
+        1, 2, 15, 16, 17, 255, 271, 272, 273, 69631, 69632, 69633
+    };
+    const int lengths[] = {
+        1, 15, 16, 17, 31, 32, 33, 255, 256, 257, 4096
+    };
+
+    std::uint8_t key[17];
+    for (int i = 0; i < 17; i++) {
+        key[i] = static_cast<std::uint8_t>(i * 29 + 3);
+    }
+
+    bool ok = true;
+
+    for (int offset : offsets) {
+        for (int length : lengths) {
+            const std::vector<std::uint8_t> input = makeData(length, 37);
+
+            std::vector<std::uint8_t> expected = input;
+            ReferenceKgm reference(key);
+            reference.decrypt(expected.data(), offset, length);
+
+            std::vector<std::uint8_t> actual = input;
+            ncm_kgm_init(key, 17);
+            const int next = ncm_kgm_decrypt(actual.data(), offset, length);
+
+            if (next != offset + length || actual != expected) {
+                ok = false;
+                std::printf("       KGM offset mismatch offset=%d length=%d\n", offset, length);
+            }
+        }
+    }
+
+    report("kgm matches reference for unaligned offsets", ok);
+}
+
+/**
+ * Stronger cross-call check: the counters are re-derived from the absolute offset
+ * on every call, so a chunked walk with unaligned chunk sizes must equal the same
+ * walk through the reference. This is what exercises the scalar prefix meeting
+ * the SIMD loop over and over within one 69632-byte period.
+ */
+void checkKgmUnalignedChunking() {
+    std::uint8_t key[17];
+    for (int i = 0; i < 17; i++) {
+        key[i] = static_cast<std::uint8_t>(i * 71 + 19);
+    }
+
+    const int total = 69632 * 2 + 4096 + 37;
+    const std::vector<std::uint8_t> input = makeData(total, 43);
+
+    // Deliberately not multiples of 16, so every call starts unaligned and the
+    // cumulative offset walks through all 16 possible alignments.
+    const int sizes[] = {4093, 4099, 17, 1, 15, 16, 8191, 65537};
+    const int sizeCount = static_cast<int>(sizeof(sizes) / sizeof(sizes[0]));
+
+    std::vector<std::uint8_t> actual = input;
+    ncm_kgm_init(key, 17);
+    int position = 0;
+    int index = 0;
+    while (position < total) {
+        const int length = std::min(sizes[index % sizeCount], total - position);
+        position = ncm_kgm_decrypt(actual.data() + position, position, length);
+        index++;
+    }
+
+    std::vector<std::uint8_t> expected = input;
+    ReferenceKgm reference(key);
+    int refPosition = 0;
+    index = 0;
+    while (refPosition < total) {
+        const int length = std::min(sizes[index % sizeCount], total - refPosition);
+        reference.decrypt(expected.data() + refPosition, refPosition, length);
+        refPosition += length;
+        index++;
+    }
+
+    report("kgm unaligned chunking matches reference",
+           position == total && refPosition == total && expected == actual);
+}
+
 }  // namespace
 
 int main() {
     checkRc4GoldenVector();
     checkRc4AgainstReference();
     checkRc4Chunking();
+    checkRc4SimdBoundaries();
     checkKgmAgainstReference();
     checkKgmChunking();
+    checkKgmUnalignedOffsets();
+    checkKgmUnalignedChunking();
 
     if (failures == 0) {
         std::printf("ALL CHECKS PASSED\n");
