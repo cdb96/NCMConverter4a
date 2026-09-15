@@ -13,6 +13,27 @@ import kotlin.test.assertTrue
 
 class NcmFlacMetadataTest {
     @Test
+    fun rawStreamingWritesMultipleDecryptedChunksWithoutLosingThePrefix() {
+        val key = byteArrayOf(3, 1, 4, 1, 5)
+        val plainPayload = ByteArray(1027) { (it * 29 + 7).toByte() }
+        val output = ByteArrayOutputStream()
+
+        NCMConverter.writeAudio(
+            input = InputStreamBinaryInput(ByteArrayInputStream(rc4(plainPayload, key))),
+            output = object : BinaryOutput {
+                override fun write(buffer: ByteArray, offset: Int, length: Int) {
+                    output.write(buffer, offset, length)
+                }
+            },
+            info = NcmFileInfo(key, byteArrayOf(), "Title", "Album", "Artist", "mp3"),
+            rawWriteMode = true,
+            bufferSize = 256,
+        )
+
+        assertContentEquals(plainPayload, output.toByteArray())
+    }
+
+    @Test
     fun addsLastPictureWhenVorbisCommentWasTheLastMetadataBlock() {
         val audioTail = byteArrayOf(0x11, 0x22, 0x33, 0x44)
         val plainPayload = flacPayload(audioTail)

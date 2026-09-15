@@ -3,12 +3,8 @@ package com.cdb96.ncmconverter4a
 import androidx.compose.foundation.border
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,7 +30,6 @@ internal fun droppedFiles(transferable: Transferable): List<File> = runCatching 
 @Composable
 internal fun DesktopFileDropArea(
     enabled: Boolean,
-    hint: String,
     onFiles: (List<File>) -> Unit,
     content: @Composable () -> Unit,
 ) {
@@ -56,7 +51,7 @@ internal fun DesktopFileDropArea(
             }
         }
     }
-    Column(
+    Box(
         Modifier.fillMaxSize().dragAndDropTarget(
             shouldStartDragAndDrop = {
                 currentEnabled && it.awtTransferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)
@@ -64,12 +59,6 @@ internal fun DesktopFileDropArea(
             target = target,
         ).then(if (hovering && enabled) Modifier.border(2.dp, MaterialTheme.colorScheme.primary) else Modifier)
     ) {
-        Text(
-            text = if (!enabled) "处理中，暂不接受拖入文件" else if (hovering) "松开鼠标导入文件" else hint,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Box(Modifier.weight(1f)) { content() }
+        content()
     }
 }

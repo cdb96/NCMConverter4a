@@ -58,7 +58,6 @@ fun KggScreen(
     onDecrypt: () -> Unit,
     onRootedChange: (Boolean) -> Unit,
     supportsRoot: Boolean = true,
-    databaseHint: String? = null,
 ) {
     val automaticDb = supportsRoot && state.isRooted
     val ready = state.audioFileName != null && (automaticDb || state.dbFileName != null)
@@ -112,11 +111,6 @@ fun KggScreen(
                             color = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                     }
-                }
-
-                if (databaseHint != null) {
-                    Text(databaseHint, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
 
                 if (supportsRoot) {

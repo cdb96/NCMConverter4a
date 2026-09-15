@@ -382,11 +382,18 @@ object NCMConverter {
         }
 
         fun copyTo(output: BinaryOutput) {
-            val buffer = ByteArray(bufferSize)
+            if (position < limit) {
+                output.write(encryptedBuffer, position, limit - position)
+                position = limit
+            }
             while (true) {
-                val bytesRead = read(buffer, 0, buffer.size)
-                if (bytesRead <= 0) return
-                output.write(buffer, 0, bytesRead)
+                val bytesRead = input.readAtMost(encryptedBuffer)
+                if (bytesRead == 0) {
+                    endOfInput = true
+                    return
+                }
+                RC4Decrypt.prgaDecrypt(encryptedBuffer, bytesRead)
+                output.write(encryptedBuffer, 0, bytesRead)
             }
         }
     }

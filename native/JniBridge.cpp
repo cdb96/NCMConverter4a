@@ -34,10 +34,10 @@ void withByteArray(JNIEnv* env, jbyteArray source, int minimumLength, const char
         throwIllegalArgument(env, shortMessage);
         return;
     }
-    jbyte* bytes = env->GetByteArrayElements(source, nullptr);
+    jbyte* bytes = static_cast<jbyte*>(env->GetPrimitiveArrayCritical(source, nullptr));
     if (bytes == nullptr) return;
     copy(reinterpret_cast<std::uint8_t*>(bytes), static_cast<int>(length));
-    env->ReleaseByteArrayElements(source, bytes, 0);
+    env->ReleasePrimitiveArrayCritical(source, bytes, JNI_ABORT);
 }
 
 }  // namespace
@@ -66,10 +66,10 @@ Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_prgaDecryptByteArray(JNIEnv* env, j
         throwIllegalArgument(env, "bytesRead is outside the byte array bounds");
         return;
     }
-    jbyte* bytes = env->GetByteArrayElements(cipherData, nullptr);
+    jbyte* bytes = static_cast<jbyte*>(env->GetPrimitiveArrayCritical(cipherData, nullptr));
     if (bytes == nullptr) return;
     ncm_rc4_decrypt(reinterpret_cast<std::uint8_t*>(bytes), static_cast<int>(bytesRead));
-    env->ReleaseByteArrayElements(cipherData, bytes, 0);
+    env->ReleasePrimitiveArrayCritical(cipherData, bytes, 0);
 }
 
 JNIEXPORT void JNICALL
@@ -95,11 +95,11 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv* env, jclass, jbyteA
         throwIllegalArgument(env, "invalid KGM byte array range");
         return offset;
     }
-    jbyte* bytes = env->GetByteArrayElements(cipherData, nullptr);
+    jbyte* bytes = static_cast<jbyte*>(env->GetPrimitiveArrayCritical(cipherData, nullptr));
     if (bytes == nullptr) return offset;
     const int nextOffset = ncm_kgm_decrypt(reinterpret_cast<std::uint8_t*>(bytes),
                                           static_cast<int>(offset), static_cast<int>(bytesRead));
-    env->ReleaseByteArrayElements(cipherData, bytes, 0);
+    env->ReleasePrimitiveArrayCritical(cipherData, bytes, 0);
     return nextOffset;
 }
 

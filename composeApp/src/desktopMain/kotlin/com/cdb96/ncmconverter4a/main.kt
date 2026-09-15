@@ -87,7 +87,6 @@ fun DesktopMainScreen(onNavigateToKGG: () -> Unit, onImportKgg: (List<File>) -> 
 
     DesktopFileDropArea(
         enabled = !conversionState.isProcessing && !showBenchmark,
-        hint = "拖入 NCM / KGM 文件即可批量转换；拖入 KGG 文件进入解密页",
         onFiles = { files ->
             if (files.any { it.extension.equals("kgg", ignoreCase = true) }) onImportKgg(files)
             else startConversion(files.map { it.absolutePath })
@@ -122,7 +121,6 @@ fun DesktopMainScreen(onNavigateToKGG: () -> Unit, onImportKgg: (List<File>) -> 
 fun DesktopKggScreen(onNavigateBack: () -> Unit, initialFiles: List<File> = emptyList()) {
     var state by remember { mutableStateOf(KggUiState()) }
     val scope = rememberCoroutineScope()
-    var databaseHint by remember { mutableStateOf("正在查找桌面版酷狗的默认数据库…") }
 
     // Auto-detect Kugou database file on Windows
     LaunchedEffect(Unit) {
@@ -133,9 +131,6 @@ fun DesktopKggScreen(onNavigateBack: () -> Unit, initialFiles: List<File> = empt
         if (detected != null && state.dbFileName == null) {
             state = state.copy(dbFileName = detected.absolutePath)
         }
-        databaseHint = "进入此页会自动选取桌面版酷狗的默认数据库。" +
-            if (detected != null) "已找到 ${detected.name}，也可以手动更换或拖入数据库。"
-            else "未找到默认数据库，请手动选择或拖入 DB / MMKV 文件。"
     }
 
     LaunchedEffect(initialFiles) {
@@ -144,13 +139,11 @@ fun DesktopKggScreen(onNavigateBack: () -> Unit, initialFiles: List<File> = empt
 
     DesktopFileDropArea(
         enabled = !state.isProcessing,
-        hint = "拖入一个 KGG 音频和 / 或一个 DB、MMKV 数据库文件",
         onFiles = { state = state.importKggFiles(it) },
     ) {
         KggScreen(
             state = state,
             supportsRoot = false,
-            databaseHint = databaseHint,
             onNavigateBack = onNavigateBack,
             onSelectDbFile = {
                 scope.launch {
