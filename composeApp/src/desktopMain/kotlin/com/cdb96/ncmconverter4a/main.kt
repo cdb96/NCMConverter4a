@@ -31,21 +31,24 @@ fun main() = application {
 @Composable
 fun NCMConverter4aDesktopApp() {
     var currentScreen by remember { mutableStateOf("main") }
+    var kggFiles by remember { mutableStateOf<List<File>>(emptyList()) }
 
     App {
         when (currentScreen) {
             "main" -> DesktopMainScreen(
-                onNavigateToKGG = { currentScreen = "kgg" }
+                onNavigateToKGG = { currentScreen = "kgg" },
+                onImportKgg = { kggFiles = it; currentScreen = "kgg" },
             )
             "kgg" -> DesktopKggScreen(
-                onNavigateBack = { currentScreen = "main" }
+                onNavigateBack = { kggFiles = emptyList(); currentScreen = "main" },
+                initialFiles = kggFiles,
             )
         }
     }
 }
 
 @Composable
-fun DesktopMainScreen(onNavigateToKGG: () -> Unit) {
+fun DesktopMainScreen(onNavigateToKGG: () -> Unit, onImportKgg: (List<File>) -> Unit) {
     val scope = rememberCoroutineScope()
     var conversionState by remember { mutableStateOf(ConversionUiState()) }
     var settingsState by remember { mutableStateOf(SettingsUiState()) }
@@ -53,62 +56,59 @@ fun DesktopMainScreen(onNavigateToKGG: () -> Unit) {
     val desktopFacade = remember { DesktopConversionFacade() }
     val benchmarkService = remember { BenchmarkService() }
 
-    MainScreen(
-        conversionState = conversionState,
-        settingsState = settingsState,
-        onSettingsExpandedToggle = {
-            settingsState = settingsState.copy(isExpanded = !settingsState.isExpanded)
-        },
-        onRawWriteModeChange = { settingsState = settingsState.copy(rawWriteMode = it) },
-        onDuplicateConflictMitigationChange = {
-            settingsState = settingsState.copy(duplicateConflictMitigation = it)
-        },
-        onThreadCountChange = { settingsState = settingsState.copy(threadCount = it) },
-        onPickFiles = {
-            scope.launch {
-                val files = withContext(Dispatchers.Swing) {
-                    DesktopFilePicker.pickFiles()
-                }
-                if (files.isEmpty()) return@launch
-
-                val selectedSettings = settingsState
-                withContext(Dispatchers.Swing) {
-                    conversionState = conversionState.start(files.size)
-                }
-
-                try {
-                    val result = withContext(Dispatchers.IO) {
-                        desktopFacade.processFiles(
-                            filePaths = files,
-                            threadCount = selectedSettings.threadCount,
-                            rawWriteMode = selectedSettings.rawWriteMode,
-                            duplicateConflictMitigation = selectedSettings.duplicateConflictMitigation,
-                        ) { processed, total, fileName ->
-                            withContext(Dispatchers.Swing) {
-                                conversionState = conversionState.copy(
-                                    processedCount = processed,
-                                    totalCount = total,
-                                    currentFile = fileName,
-                                )
-                            }
+    fun startConversion(files: List<String>) {
+        if (files.isEmpty() || conversionState.isProcessing) return
+        val selectedSettings = settingsState
+        conversionState = conversionState.start(files.size)
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    desktopFacade.processFiles(
+                        filePaths = files,
+                        threadCount = selectedSettings.threadCount,
+                        rawWriteMode = selectedSettings.rawWriteMode,
+                        duplicateConflictMitigation = selectedSettings.duplicateConflictMitigation,
+                    ) { processed, total, fileName ->
+                        withContext(Dispatchers.Swing) {
+                            conversionState = conversionState.copy(
+                                processedCount = processed, totalCount = total, currentFile = fileName,
+                            )
                         }
                     }
-                    withContext(Dispatchers.Swing) {
-                        conversionState = conversionState.complete(result)
-                    }
-                } catch (e: Exception) {
-                    withContext(Dispatchers.Swing) {
-                        conversionState = conversionState.copy(
-                            isProcessing = false,
-                            convertResult = "处理过程中发生错误: ${e.message}",
-                        )
-                    }
                 }
+                conversionState = conversionState.complete(result)
+            } catch (e: Exception) {
+                conversionState = conversionState.copy(
+                    isProcessing = false, convertResult = "处理过程中发生错误: ${e.message}",
+                )
             }
+        }
+    }
+
+    DesktopFileDropArea(
+        enabled = !conversionState.isProcessing && !showBenchmark,
+        hint = "拖入 NCM / KGM 文件即可批量转换；拖入 KGG 文件进入解密页",
+        onFiles = { files ->
+            if (files.any { it.extension.equals("kgg", ignoreCase = true) }) onImportKgg(files)
+            else startConversion(files.map { it.absolutePath })
         },
-        onBenchmark = { showBenchmark = true },
-        onNavigateToKGG = onNavigateToKGG,
-    )
+    ) {
+        MainScreen(
+            conversionState = conversionState,
+            settingsState = settingsState,
+            onSettingsExpandedToggle = {
+                settingsState = settingsState.copy(isExpanded = !settingsState.isExpanded)
+            },
+            onRawWriteModeChange = { settingsState = settingsState.copy(rawWriteMode = it) },
+            onDuplicateConflictMitigationChange = {
+                settingsState = settingsState.copy(duplicateConflictMitigation = it)
+            },
+            onThreadCountChange = { settingsState = settingsState.copy(threadCount = it) },
+            onPickFiles = { startConversion(DesktopFilePicker.pickFiles()) },
+            onBenchmark = { showBenchmark = true },
+            onNavigateToKGG = onNavigateToKGG,
+        )
+    }
 
     if (showBenchmark) {
         BenchmarkDialog(
@@ -119,69 +119,85 @@ fun DesktopMainScreen(onNavigateToKGG: () -> Unit) {
 }
 
 @Composable
-fun DesktopKggScreen(onNavigateBack: () -> Unit) {
+fun DesktopKggScreen(onNavigateBack: () -> Unit, initialFiles: List<File> = emptyList()) {
     var state by remember { mutableStateOf(KggUiState()) }
     val scope = rememberCoroutineScope()
+    var databaseHint by remember { mutableStateOf("正在查找桌面版酷狗的默认数据库…") }
 
     // Auto-detect Kugou database file on Windows
     LaunchedEffect(Unit) {
         val kgDbPath = System.getenv("APPDATA")?.let { appData ->
             File(appData, "Kugou8/KGMusicV3.db")
         }
-        if (kgDbPath != null && kgDbPath.exists()) {
-            state = state.copy(dbFileName = kgDbPath.absolutePath)
+        val detected = withContext(Dispatchers.IO) { kgDbPath?.takeIf { it.isFile } }
+        if (detected != null && state.dbFileName == null) {
+            state = state.copy(dbFileName = detected.absolutePath)
         }
+        databaseHint = "进入此页会自动选取桌面版酷狗的默认数据库。" +
+            if (detected != null) "已找到 ${detected.name}，也可以手动更换或拖入数据库。"
+            else "未找到默认数据库，请手动选择或拖入 DB / MMKV 文件。"
     }
 
-    KggScreen(
-        state = state,
-        supportsRoot = false,
-        onNavigateBack = onNavigateBack,
-        onSelectDbFile = {
-            scope.launch {
-                val files = withContext(Dispatchers.Swing) {
-                    DesktopFilePicker.pickFiles(multiSelect = false)
-                }
-                if (files.isNotEmpty()) {
-                    withContext(Dispatchers.Swing) {
-                        state = state.copy(dbFileName = files.first(), decryptResult = null)
+    LaunchedEffect(initialFiles) {
+        if (initialFiles.isNotEmpty()) state = state.importKggFiles(initialFiles)
+    }
+
+    DesktopFileDropArea(
+        enabled = !state.isProcessing,
+        hint = "拖入一个 KGG 音频和 / 或一个 DB、MMKV 数据库文件",
+        onFiles = { state = state.importKggFiles(it) },
+    ) {
+        KggScreen(
+            state = state,
+            supportsRoot = false,
+            databaseHint = databaseHint,
+            onNavigateBack = onNavigateBack,
+            onSelectDbFile = {
+                scope.launch {
+                    val files = withContext(Dispatchers.Swing) {
+                        DesktopFilePicker.pickFiles(multiSelect = false)
                     }
-                }
-            }
-        },
-        onSelectAudioFile = {
-            scope.launch {
-                val files = withContext(Dispatchers.Swing) {
-                    DesktopFilePicker.pickFiles(multiSelect = false)
-                }
-                if (files.isNotEmpty()) {
-                    withContext(Dispatchers.Swing) {
-                        state = state.copy(audioFileName = files.first(), decryptResult = null)
-                    }
-                }
-            }
-        },
-        onDecrypt = {
-            val audioFileName = state.audioFileName
-            val dbFileName = state.dbFileName
-            if (!state.isProcessing && audioFileName != null && dbFileName != null) {
-                state = state.copy(isProcessing = true, resultIsError = false, decryptResult = "正在解密文件...")
-                scope.launch(Dispatchers.IO) {
-                    try {
-                        val decrypter = DesktopKggDecrypt()
-                        // Desktop KGG decrypt - simplified since root mode not available
-                        decrypter.decrypt(audioFileName, dbFileName)
+                    if (files.isNotEmpty()) {
                         withContext(Dispatchers.Swing) {
-                            state = state.copy(isProcessing = false, decryptResult = "文件解密完成！")
-                        }
-                    } catch (e: Exception) {
-                        withContext(Dispatchers.Swing) {
-                            state = state.copy(isProcessing = false, resultIsError = true, decryptResult = "文件解密失败: ${e.message}")
+                            state = state.copy(dbFileName = files.first(), dbDisplayName = null, decryptResult = null)
                         }
                     }
                 }
-            }
-        },
-        onRootedChange = { state = state.copy(isRooted = it, decryptResult = null) },
-    )
+            },
+            onSelectAudioFile = {
+                scope.launch {
+                    val files = withContext(Dispatchers.Swing) {
+                        DesktopFilePicker.pickFiles(multiSelect = false)
+                    }
+                    if (files.isNotEmpty()) {
+                        withContext(Dispatchers.Swing) {
+                            state = state.copy(audioFileName = files.first(), audioDisplayName = null, decryptResult = null)
+                        }
+                    }
+                }
+            },
+            onDecrypt = {
+                val audioFileName = state.audioFileName
+                val dbFileName = state.dbFileName
+                if (!state.isProcessing && audioFileName != null && dbFileName != null) {
+                    state = state.copy(isProcessing = true, resultIsError = false, decryptResult = "正在解密文件...")
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            val decrypter = DesktopKggDecrypt()
+                            // Desktop KGG decrypt - simplified since root mode not available
+                            decrypter.decrypt(audioFileName, dbFileName)
+                            withContext(Dispatchers.Swing) {
+                                state = state.copy(isProcessing = false, decryptResult = "文件解密完成！")
+                            }
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Swing) {
+                                state = state.copy(isProcessing = false, resultIsError = true, decryptResult = "文件解密失败: ${e.message}")
+                            }
+                        }
+                    }
+                }
+            },
+            onRootedChange = { state = state.copy(isRooted = it, decryptResult = null) },
+        )
+    }
 }
