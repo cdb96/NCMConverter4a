@@ -205,6 +205,17 @@ int kgmDecrypt(std::uint8_t* data, int offset, int bytesRead) {
     // ---------------------------------------------------------------------
     // Scalar tail for the last bytes of the chunk
     // ---------------------------------------------------------------------
+    // The tail must keep calling normalizeCountersBeforeByte(): none of its three
+    // checks is SIMD bookkeeping that the tail could skip.
+    //   * The SIMD loop advances genMaskCounter/maskV2Counter by 16, so it can
+    //     stop with genMaskCounter == 69632 or maskV2Counter == 272 exactly;
+    //     both then have to be handled before the next byte (offset=69631
+    //     length=15 puts the 69632 boundary on the first tail byte, and any call
+    //     ending 1..15 bytes into a new mask cycle lands on 272).
+    //   * The first tail byte is 16-byte aligned, so it has to advance
+    //     keyBytesIndexCounter like every other 16-byte block start.
+    // Skipping it reads past the 272-byte ownKeyBytes/MASK_V2_PRE_DEF cycle and
+    // decodes the tail with a stale mask block.
     while (j < bytesRead) {
         normalizeCountersBeforeByte(i, j, genMaskCounter, maskV2Counter,
                                     keyBytesIndexCounter);
