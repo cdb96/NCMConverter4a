@@ -21,9 +21,6 @@ local.properties
 /androidApp/build/
 /nativeLib/build/
 /native/build/
-# 本地 SIMD/scalar 一致性对比用的独立构建目录 (见 native/CMakeLists.txt)
-/native/build-simd/
-/native/build-scalar/
 # Shared native core bundled for the Desktop JVM; built by :composeApp:nativeBuild
 /composeApp/src/desktopMain/resources/ncmc4a/
 /app/

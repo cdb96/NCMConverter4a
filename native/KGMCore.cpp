@@ -31,14 +31,11 @@ thread_local std::array<std::uint8_t, kMaskBytePeriod> maskBytes{};
 // structure is what makes the migration comparable to the old implementation.
 thread_local std::array<std::uint8_t, 16 * 17> ownKeyBytes{};
 
-#if NCM_HAS_SIMD
 const uint8x16_t andVec = vdupq_n_u8(0x0f);
-#endif
 
 // Expands the pre-computed byte table into 16-byte masks for one 69632 byte
 // period starting at absolute stream position `startPos`.
 void genMask(int startPos) {
-#if NCM_HAS_SIMD
     // Intentionally almost a direct copy of the historical SIMD genMask():
     // 17 iterations, each expanding 256 pre-computed bytes into 16 mask blocks
     // of 16 bytes, then XORing a single byte into all of them.
@@ -70,39 +67,6 @@ void genMask(int startPos) {
             vst1q_u8(maskBytes.data() + storePos + k * 16, chunk[k]);
         }
     }
-#else
-    for (int pos = 0; pos < kMaskBytePeriod * kMaskBlock; pos += 16 * 16 * 16) {
-        int i = startPos + pos;
-        i >>= 4;
-        const int chunkPreTablePos = i % kMaskBytePeriod;
-
-        std::array<std::uint8_t, kMaskBlock * kMaskBlock> chunk{};
-        for (int k = 0; k < kMaskBlock; ++k) {
-            std::memcpy(chunk.data() + k * kMaskBlock,
-                        PRE_COMPUTED_TABLE + chunkPreTablePos + k * kMaskBlock,
-                        kMaskBlock);
-        }
-
-        i >>= 8;
-        // Valid once startPos >= 69632; smaller positions are handled by the
-        // caller sending a zeroed cursor.
-        do {
-            const std::uint8_t xorByte =
-                PRE_COMPUTED_TABLE[static_cast<std::size_t>(i) % kMaskBytePeriod];
-            for (std::uint8_t& value : chunk) {
-                value ^= xorByte;
-            }
-            i >>= 8;
-        } while (i >= 0x11);
-
-        const int storePos = pos >> 4;
-        for (int k = 0; k < kMaskBlock; ++k) {
-            std::memcpy(maskBytes.data() + storePos + k * kMaskBlock,
-                        chunk.data() + k * kMaskBlock,
-                        kMaskBlock);
-        }
-    }
-#endif
 }
 
 // Advances the per-byte cursors just before a byte is consumed. The historical
@@ -179,7 +143,6 @@ int kgmDecrypt(std::uint8_t* data, int offset, int bytesRead) {
         genMask(i);
     }
 
-#if NCM_HAS_SIMD
     // ---------------------------------------------------------------------
     // Scalar prefix
     // ---------------------------------------------------------------------
@@ -239,10 +202,8 @@ int kgmDecrypt(std::uint8_t* data, int offset, int bytesRead) {
         genMaskCounter += 16;
         maskV2Counter += 16;
     }
-#endif
-
     // ---------------------------------------------------------------------
-    // Scalar tail (and the whole implementation when NCM_HAS_SIMD == 0)
+    // Scalar tail for the last bytes of the chunk
     // ---------------------------------------------------------------------
     while (j < bytesRead) {
         normalizeCountersBeforeByte(i, j, genMaskCounter, maskV2Counter,

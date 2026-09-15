@@ -23,15 +23,12 @@ namespace {
 
 thread_local std::array<std::uint8_t, 256> keyStreamBytes{};
 
-#if NCM_HAS_SIMD
 // The whole keystream, held as 16 x 128-bit chunks (16 * 16 = 256 bytes).
 thread_local uint8x16_t keys[16];
-#endif
 
 void applyKeyStream(std::uint8_t* data, int bytesRead) {
     int i = 0;
 
-#if NCM_HAS_SIMD
     // Keep the old implementation structure almost unchanged:
     // 16 loads -> 16 XORs -> 16 stores = one complete 256-byte RC4 period.
     uint8x16_t chunk[16];
@@ -51,11 +48,9 @@ void applyKeyStream(std::uint8_t* data, int bytesRead) {
             vst1q_u8(data + offset, chunk[k]);
         }
     }
-#endif
 
-    // Scalar tail: same rule as before, and it is also the whole implementation
-    // when NCM_HAS_SIMD == 0. `i` is a multiple of 256 here, so the cycle index
-    // is simply `i & 0xFF`.
+    // Scalar tail for the remainder of the final, incomplete 256-byte cycle.
+    // `i` is a multiple of 256 here, so the cycle index is simply `i & 0xFF`.
     for (; i < bytesRead; ++i) {
         const int j = i & 0xFF;
         data[i] ^= keyStreamBytes[static_cast<std::size_t>(j)];
@@ -85,14 +80,12 @@ void rc4Init(const std::uint8_t* key, int keyLength) {
     }
     keyStreamBytes[255] = sBox[(sBox[0] + sBox[(sBox[0] + 0) & 0xFF]) & 0xFF];
 
-#if NCM_HAS_SIMD
     // Directly inherited from the old RC4Decrypt.cpp: the keystream is loaded
     // into the vector registers once, right after the key schedule.
     for (int i = 0; i < 16; ++i) {
         const uint8x16_t keyChunk = vld1q_u8(keyStreamBytes.data() + i * 16);
         keys[i] = keyChunk;
     }
-#endif
 }
 
 void rc4DecryptAt(std::uint8_t* data, int length) {

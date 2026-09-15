@@ -18,8 +18,8 @@ the same three sources; only the way the library is loaded differs.
 
 ## SIMD
 
-The algorithms are written once, in NEON intrinsics, and `SimdCompat.h` routes them
-to a backend per architecture — so Android and Desktop keep compiling the same two
+The algorithms are written in NEON intrinsics and `SimdCompat.h` routes them to a
+backend per architecture — so Android and Desktop keep compiling the same two
 `.cpp` files:
 
 ```text
@@ -32,9 +32,12 @@ RC4Core.cpp / KGMCore.cpp
 arm_neon.h   NEON_2_SSE.h
 ```
 
-`NCM_ENABLE_SIMD` (default `ON`) selects the backend. `OFF` keeps the scalar
-implementations, which exist so that both builds can be compared byte for byte;
-there is no hand-written SSE/AVX2 implementation and no runtime CPUID dispatch.
+There is no scalar build variant to keep in sync: the intrinsics *are* the
+implementation on both backends, with a scalar prefix/tail only where the data
+length or stream offset is not a multiple of the vector width. There is also no
+hand-written SSE/AVX2 implementation and no runtime CPUID dispatch, so a build for
+an architecture that has neither backend fails at compile time instead of silently
+producing a second code path.
 
 Consumers:
 
@@ -46,23 +49,20 @@ Consumers:
 
 ## Verify
 
-The self-test needs only a C++ compiler. Run it in **both** builds: the SIMD and the
-scalar backend must agree byte for byte.
+The self-test needs only a C++ compiler:
 
 ```bash
-# SIMD backend (NEON on ARM, NEON_2_SSE on x86)
-cmake -S native -B native/build-simd -DNCM_BUILD_JNI=OFF -DNCM_ENABLE_SIMD=ON
-cmake --build native/build-simd
-./native/build-simd/ncm_core_selftest
-
-# Scalar backend
-cmake -S native -B native/build-scalar -DNCM_BUILD_JNI=OFF -DNCM_ENABLE_SIMD=OFF
-cmake --build native/build-scalar
-./native/build-scalar/ncm_core_selftest
+cmake -S native -B native/build -DNCM_BUILD_JNI=OFF
+cmake --build native/build
+./native/build/ncm_core_selftest
 ```
 
-Both must print `ALL CHECKS PASSED`. On Windows a multi-config generator puts the
-binary in `native/build-simd/Release/ncm_core_selftest.exe`.
+It must print `ALL CHECKS PASSED`. On Windows a multi-config generator puts the
+binary in `native/build/Release/ncm_core_selftest.exe`.
+
+The checks compare the SIMD implementation against an independent byte-level
+reference for RC4 and KGM, covering the 16, 272 and 69632 byte period boundaries,
+arbitrary (unaligned) KGM offsets, and chunked decoding.
 
 JVM-level check (needs a JDK as well):
 

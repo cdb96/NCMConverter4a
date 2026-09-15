@@ -22,19 +22,10 @@ endif()
 
 option(NCM_BUILD_JNI "Build the JNI bridge (needs a JDK)" ON)
 option(NCM_BUILD_SELFTEST "Build the standalone core self-test" ON)
-option(NCM_ENABLE_SIMD "Enable the historical NEON / NEON_2_SSE SIMD paths" ON)
 
 set(NCM_CORE_SOURCES
     "${CMAKE_CURRENT_LIST_DIR}/RC4Core.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/KGMCore.cpp")
-
-# SimdCompat.h uses this to pick the SIMD backend. NCM_ENABLE_SIMD=OFF selects
-# the scalar fallbacks, which exist so both builds can be compared byte for byte.
-if(NCM_ENABLE_SIMD)
-    set(NCM_SIMD_DEFINITION NCM_ENABLE_SIMD=1)
-else()
-    set(NCM_SIMD_DEFINITION NCM_ENABLE_SIMD=0)
-endif()
 
 if(NCM_BUILD_JNI)
     add_library(ncmc4a SHARED
@@ -42,7 +33,6 @@ if(NCM_BUILD_JNI)
         "${CMAKE_CURRENT_LIST_DIR}/JniBridge.cpp")
 
     target_include_directories(ncmc4a PUBLIC "${CMAKE_CURRENT_LIST_DIR}")
-    target_compile_definitions(ncmc4a PRIVATE ${NCM_SIMD_DEFINITION})
     if(NCM_JNI_INCLUDE_DIR AND EXISTS "${NCM_JNI_INCLUDE_DIR}/jni.h")
         target_include_directories(ncmc4a PRIVATE
             "${NCM_JNI_INCLUDE_DIR}"
@@ -72,6 +62,5 @@ if(NCM_BUILD_SELFTEST)
         "${CMAKE_CURRENT_LIST_DIR}/selftest/SelfTest.cpp"
         ${NCM_CORE_SOURCES})
     target_include_directories(ncm_core_selftest PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
-    target_compile_definitions(ncm_core_selftest PRIVATE ${NCM_SIMD_DEFINITION})
     target_compile_features(ncm_core_selftest PRIVATE cxx_std_17)
 endif()

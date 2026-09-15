@@ -11,45 +11,34 @@
 // That is why Android and Desktop can compile one and the same RC4Core.cpp /
 // KGMCore.cpp without keeping separate NEON and SSE implementations.
 //
-// NCM_ENABLE_SIMD comes from native/CMakeLists.txt. Building with
-// -DNCM_ENABLE_SIMD=OFF keeps the scalar paths, which exist purely so the
-// self-test can prove SIMD and scalar builds agree byte for byte.
+// There is no scalar build variant: the intrinsics are the implementation, so an
+// architecture without a backend is rejected here instead of silently compiling a
+// second, slower code path that could drift from the real one.
 #ifndef NCM_SIMD_COMPAT_H
 #define NCM_SIMD_COMPAT_H
 
-#if defined(NCM_ENABLE_SIMD) && NCM_ENABLE_SIMD
+#if defined(__ARM_NEON__) || defined(__ARM_NEON) || defined(__aarch64__) || defined(_M_ARM64)
 
-    #if defined(__ARM_NEON__) || defined(__ARM_NEON) || defined(__aarch64__) || defined(_M_ARM64)
+    #include <arm_neon.h>
 
-        #include <arm_neon.h>
+    #define NCM_SIMD_NEON 1
 
-        #define NCM_HAS_SIMD 1
-        #define NCM_SIMD_NEON 1
+#elif defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
 
-    #elif defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
-
-        // The historical project already compiled this code through NEON_2_SSE.
-        // The compatibility/performance warnings are silenced here so the
-        // Desktop build does not need Android-specific -Wno-deprecated flags.
-        #ifndef NEON2SSE_DISABLE_PERFORMANCE_WARNING
-        #define NEON2SSE_DISABLE_PERFORMANCE_WARNING
-        #endif
-
-        #include "third_party/NEON_2_SSE/NEON_2_SSE.h"
-
-        #define NCM_HAS_SIMD 1
-        #define NCM_SIMD_NEON2SSE 1
-
-    #else
-
-        // Unknown architecture: fall back to the scalar implementations.
-        #define NCM_HAS_SIMD 0
-
+    // The historical project already compiled this code through NEON_2_SSE.
+    // The compatibility/performance warnings are silenced here so the Desktop
+    // build does not need Android-specific -Wno-deprecated flags.
+    #ifndef NEON2SSE_DISABLE_PERFORMANCE_WARNING
+    #define NEON2SSE_DISABLE_PERFORMANCE_WARNING
     #endif
+
+    #include "third_party/NEON_2_SSE/NEON_2_SSE.h"
+
+    #define NCM_SIMD_NEON2SSE 1
 
 #else
 
-    #define NCM_HAS_SIMD 0
+    #error "NCM: no SIMD backend for this architecture (expected NEON or NEON_2_SSE)"
 
 #endif
 

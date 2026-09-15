@@ -30,9 +30,7 @@ case "$os" in
 esac
 
 echo "== compiling $lib =="
-# NCM_ENABLE_SIMD matches the CMake default so this gate also compiles the
-# NEON / NEON_2_SSE paths (see native/SimdCompat.h).
-"$cxx" -std=c++17 -O2 -shared -fPIC -DNCM_ENABLE_SIMD=1 \
+"$cxx" -std=c++17 -O2 -shared -fPIC \
     -I"$root" -I"$jdk/include" -I"$jdk/include/win32" -I"$jdk/include/darwin" -I"$jdk/include/linux" \
     -o "$build/bin/$lib" \
     "$root/RC4Core.cpp" "$root/KGMCore.cpp" "$root/JniBridge.cpp"
