@@ -181,48 +181,63 @@ int kgmDecrypt(std::uint8_t* data, int offset, int bytesRead) {
 
 #if NCM_HAS_SIMD
     // ---------------------------------------------------------------------
+    // Scalar prefix
+    // ---------------------------------------------------------------------
+    // The historical SIMD loop assumed a 16-byte aligned stream position: one
+    // SIMD block spans exactly one maskBytes entry, and maskV2Counter has to
+    // stay a multiple of 16 so `vld1q_u8(ownKeyBytes + maskV2Counter)` cannot
+    // read past the 272-byte cycle. Preserve the SIMD body, but consume an
+    // unaligned prefix explicitly so the public C API stays correct for
+    // arbitrary offsets.
+    while (j < bytesRead && (i & 15) != 0) {
+        normalizeCountersBeforeByte(i, j, genMaskCounter, maskV2Counter,
+                                    keyBytesIndexCounter);
+
+        decryptScalarByte(data, j, maskV2Counter, keyBytesIndexCounter);
+
+        ++genMaskCounter;
+        ++maskV2Counter;
+        ++i;
+        ++j;
+    }
+
+    // ---------------------------------------------------------------------
     // 16-byte SIMD main loop
     // ---------------------------------------------------------------------
-    // The historical loop assumes a 16-byte aligned stream position: one SIMD
-    // block spans exactly one maskBytes entry, and maskV2Counter stays a
-    // multiple of 16 so `vld1q_u8(ownKeyBytes + maskV2Counter)` cannot read past
-    // the 272-byte cycle. Offset 0 and the chunking used by the converters meet
-    // that precondition; anything else stays on the scalar path below.
-    if ((i & 15) == 0) {
-        for (; j + 16 <= bytesRead; i += 16, j += 16) {
-            normalizeCountersBeforeByte(i, j, genMaskCounter, maskV2Counter,
-                                        keyBytesIndexCounter);
+    // Runs on the 16-byte aligned stream position the prefix just established.
+    for (; j + 16 <= bytesRead; i += 16, j += 16) {
+        normalizeCountersBeforeByte(i, j, genMaskCounter, maskV2Counter,
+                                    keyBytesIndexCounter);
 
-            uint8x16_t cipherDataBytesChunk = vld1q_u8(data + j);
+        uint8x16_t cipherDataBytesChunk = vld1q_u8(data + j);
 
-            // ---- med8 ----------------------------------------------------
-            uint8x16_t med8DataChunkOriginal = vld1q_u8(ownKeyBytes.data() + maskV2Counter);
-            uint8x16_t med8DataChunkTemp;
+        // ---- med8 --------------------------------------------------------
+        uint8x16_t med8DataChunkOriginal = vld1q_u8(ownKeyBytes.data() + maskV2Counter);
+        uint8x16_t med8DataChunkTemp;
 
-            med8DataChunkOriginal = veorq_u8(med8DataChunkOriginal, cipherDataBytesChunk);
-            med8DataChunkTemp = vandq_u8(med8DataChunkOriginal, andVec);
-            med8DataChunkTemp = vshlq_n_u8(med8DataChunkTemp, 4);
-            med8DataChunkOriginal = veorq_u8(med8DataChunkOriginal, med8DataChunkTemp);
+        med8DataChunkOriginal = veorq_u8(med8DataChunkOriginal, cipherDataBytesChunk);
+        med8DataChunkTemp = vandq_u8(med8DataChunkOriginal, andVec);
+        med8DataChunkTemp = vshlq_n_u8(med8DataChunkTemp, 4);
+        med8DataChunkOriginal = veorq_u8(med8DataChunkOriginal, med8DataChunkTemp);
 
-            // ---- msk8 ----------------------------------------------------
-            uint8x16_t msk8DataChunkOriginal =
-                vld1q_dup_u8(maskBytes.data() + keyBytesIndexCounter);
-            uint8x16_t msk8DataChunkTemp;
+        // ---- msk8 --------------------------------------------------------
+        uint8x16_t msk8DataChunkOriginal =
+            vld1q_dup_u8(maskBytes.data() + keyBytesIndexCounter);
+        uint8x16_t msk8DataChunkTemp;
 
-            const uint8x16_t maskV2Data = vld1q_u8(MASK_V2_PRE_DEF + maskV2Counter);
+        const uint8x16_t maskV2Data = vld1q_u8(MASK_V2_PRE_DEF + maskV2Counter);
 
-            msk8DataChunkOriginal = veorq_u8(msk8DataChunkOriginal, maskV2Data);
-            msk8DataChunkTemp = vandq_u8(msk8DataChunkOriginal, andVec);
-            msk8DataChunkTemp = vshlq_n_u8(msk8DataChunkTemp, 4);
-            msk8DataChunkOriginal = veorq_u8(msk8DataChunkOriginal, msk8DataChunkTemp);
+        msk8DataChunkOriginal = veorq_u8(msk8DataChunkOriginal, maskV2Data);
+        msk8DataChunkTemp = vandq_u8(msk8DataChunkOriginal, andVec);
+        msk8DataChunkTemp = vshlq_n_u8(msk8DataChunkTemp, 4);
+        msk8DataChunkOriginal = veorq_u8(msk8DataChunkOriginal, msk8DataChunkTemp);
 
-            // ---- output --------------------------------------------------
-            cipherDataBytesChunk = veorq_u8(msk8DataChunkOriginal, med8DataChunkOriginal);
-            vst1q_u8(data + j, cipherDataBytesChunk);
+        // ---- output ------------------------------------------------------
+        cipherDataBytesChunk = veorq_u8(msk8DataChunkOriginal, med8DataChunkOriginal);
+        vst1q_u8(data + j, cipherDataBytesChunk);
 
-            genMaskCounter += 16;
-            maskV2Counter += 16;
-        }
+        genMaskCounter += 16;
+        maskV2Counter += 16;
     }
 #endif
 
