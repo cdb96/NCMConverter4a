@@ -5,8 +5,36 @@ import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class DesktopOutputAllocatorTest {
+    @Test
+    fun existingOutputExplainsConflictAndPreservesOriginal() {
+        val directory = Files.createTempDirectory("ncm-existing-output-test").toFile()
+        val existing = directory.resolve("song.mp3").apply { writeText("original audio") }
+        try {
+            val allocator = DesktopOutputAllocator(directory)
+            val error = assertFailsWith<DesktopOutputExistsException> {
+                allocator.withUniqueOutput("song", "mp3", false) {
+                    error("Conversion must not start when the destination exists")
+                }
+            }
+            assertTrue(error.message.orEmpty().contains(existing.absolutePath))
+            assertTrue(error.message.orEmpty().contains("重名文件冲突缓解"))
+            assertEquals("original audio", existing.readText())
+
+            val (newFile, _) = allocator.withUniqueOutput("song", "mp3", true) {
+                it.write("new audio".toByteArray())
+            }
+            assertEquals("song (1).mp3", newFile.name)
+            assertEquals("new audio", newFile.readText())
+            assertEquals("original audio", existing.readText())
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
     @Test
     fun concurrentReservationsGetDistinctSequentialNames() {
         val directory = Files.createTempDirectory("ncm-output-test").toFile()

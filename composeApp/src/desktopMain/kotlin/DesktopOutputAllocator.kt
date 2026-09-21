@@ -2,6 +2,7 @@ package com.cdb96.ncmconverter4a
 
 import com.cdb96.ncmconverter4a.util.FileNameUtils
 import java.io.File
+import java.io.IOException
 import java.io.OutputStream
 import java.nio.file.Files
 import java.nio.file.FileAlreadyExistsException
@@ -10,6 +11,11 @@ import java.nio.file.StandardOpenOption
 internal data class ReservedDesktopOutput(
     val file: File,
     val stream: OutputStream
+)
+
+internal class DesktopOutputExistsException(file: File) : IOException(
+    "目标文件已存在，原文件未覆盖：${file.absolutePath}。" +
+        "可开启“重名文件冲突缓解”后重试，自动添加序号另存。"
 )
 
 /**
@@ -42,7 +48,7 @@ internal class DesktopOutputAllocator(private val directory: File) {
                 )
                 return ReservedDesktopOutput(path.toFile(), stream)
             } catch (error: FileAlreadyExistsException) {
-                if (!mitigateConflicts) throw error
+                if (!mitigateConflicts) throw DesktopOutputExistsException(path.toFile())
                 sequence++
             }
         }

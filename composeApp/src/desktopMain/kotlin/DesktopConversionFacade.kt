@@ -62,6 +62,13 @@ class DesktopConversionFacade {
                             FileConversionResult(fileName = fileName, success = true)
                         } catch (cancelled: CancellationException) {
                             throw cancelled
+                        } catch (error: DesktopOutputExistsException) {
+                            FileConversionResult(
+                                fileName = fileName,
+                                success = false,
+                                error = error.message,
+                                outputAlreadyExists = true,
+                            )
                         } catch (error: Exception) {
                             log.e("处理文件时出错: ${error.message}", error)
                             FileConversionResult(

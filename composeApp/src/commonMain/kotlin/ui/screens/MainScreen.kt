@@ -1,6 +1,7 @@
 package com.cdb96.ncmconverter4a.ui.screens
 
 import com.cdb96.ncmconverter4a.service.ConversionResult
+import com.cdb96.ncmconverter4a.service.FileConversionResult
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
@@ -23,8 +24,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -34,7 +33,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Folder
@@ -47,7 +45,6 @@ import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material.icons.outlined.Key
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -64,7 +61,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.ripple
@@ -97,7 +93,10 @@ data class ConversionUiState(
     val successfulFileNames: List<String> = emptyList(),
     val failedFileNames: List<String> = emptyList(),
     val hasConversionStarted: Boolean = false,
+    val failedFiles: List<FileConversionResult> = emptyList(),
 ) {
+    val existingFileCount: Int get() = failedFiles.count { it.outputAlreadyExists }
+
     fun start(total: Int) = copy(
         isProcessing = true,
         hasConversionStarted = true,
@@ -107,6 +106,9 @@ data class ConversionUiState(
         failureCount = 0,
         currentFile = "",
         convertResult = null,
+        successfulFileNames = emptyList(),
+        failedFileNames = emptyList(),
+        failedFiles = emptyList(),
     )
 
     fun complete(result: ConversionResult) = copy(
@@ -116,6 +118,7 @@ data class ConversionUiState(
         failureCount = result.failureCount,
         successfulFileNames = result.successfulFileNames,
         failedFileNames = result.failedFileNames,
+        failedFiles = result.failedFiles,
         conversionDurationMillis = result.durationMillis,
         currentFile = result.allFileNames,
     )
@@ -219,7 +222,7 @@ fun MainScreen(
                 Column {
                     Spacer(modifier = Modifier.height(12.dp))
                     ConversionStatusCard(
-                        conversionState = conversionState
+                        conversionState = conversionState,
                     )
                 }
             }
@@ -319,7 +322,9 @@ fun WelcomeCard(
 // ======================== Conversion Status Card ========================
 
 @Composable
-fun ConversionStatusCard(conversionState: ConversionUiState) {
+fun ConversionStatusCard(
+    conversionState: ConversionUiState,
+) {
     val isError = conversionState.convertResult != null &&
             conversionState.convertResult != "done" &&
             !conversionState.isProcessing
@@ -329,7 +334,7 @@ fun ConversionStatusCard(conversionState: ConversionUiState) {
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = when {
-                isError -> MaterialTheme.colorScheme.errorContainer
+                isError -> MaterialTheme.colorScheme.surfaceVariant
                 isDone -> MaterialTheme.colorScheme.secondaryContainer
                 else -> MaterialTheme.colorScheme.surfaceVariant
             }
@@ -355,6 +360,12 @@ fun ConversionStatusCard(conversionState: ConversionUiState) {
                 )
                 isDone && conversionState.failureCount == 0 -> Triple(
                     Icons.Outlined.CheckCircle, "转换完成", MaterialTheme.colorScheme.primary
+                )
+                isDone && conversionState.successCount == 0 -> Triple(
+                    Icons.Outlined.Warning,
+                    if (conversionState.existingFileCount == conversionState.failureCount)
+                        "目标文件已存在" else "转换未完成",
+                    MaterialTheme.colorScheme.tertiary
                 )
                 else -> Triple(
                     Icons.Outlined.Warning, "部分完成", MaterialTheme.colorScheme.tertiary
@@ -420,9 +431,10 @@ fun ConversionStatusCard(conversionState: ConversionUiState) {
             // Error state
             if (isError) {
                 Text(
-                    conversionState.convertResult,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onErrorContainer
+                    text = conversionState.convertResult.orEmpty(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.heightIn(max = 120.dp).verticalScroll(rememberScrollState()),
                 )
             }
 
@@ -437,18 +449,20 @@ fun ConversionStatusCard(conversionState: ConversionUiState) {
                         fileNames = conversionState.successfulFileNames
                     )
                     StatChip(
-                        icon = Icons.Outlined.Cancel, label = "失败",
+                        icon = Icons.Outlined.Warning, label = "未转换 · 查看原因",
                         value = "${conversionState.failureCount}",
-                        tint = if (conversionState.failureCount > 0)
+                        tint = if (conversionState.existingFileCount == conversionState.failureCount && conversionState.failureCount > 0)
+                            MaterialTheme.colorScheme.tertiary
+                        else if (conversionState.failureCount > 0)
                             MaterialTheme.colorScheme.error
                         else
                             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         modifier = Modifier.weight(1f),
-                        fileNames = conversionState.failedFileNames
+                        fileNames = conversionState.failedFileNames,
+                        fileResults = conversionState.failedFiles,
                     )
                 }
                 conversionState.conversionDurationMillis?.let { duration ->
-                    Spacer(modifier = Modifier.height(12.dp))
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
@@ -498,13 +512,14 @@ fun StatChip(
     tint: Color,
     modifier: Modifier = Modifier,
     fileNames: List<String>,
+    fileResults: List<FileConversionResult> = emptyList(),
 ) {
     var showDialog by remember { mutableStateOf(false) }
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = tint.copy(alpha = 0.1f),
         modifier = modifier,
-        onClick = { showDialog = true }
+        onClick = { showDialog = fileNames.isNotEmpty() }
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -519,18 +534,10 @@ fun StatChip(
         }
     }
     if (showDialog && fileNames.isNotEmpty()) {
-        AlertDialog(
-            onDismissRequest = { showDialog = false },
-            confirmButton = { TextButton(onClick = { showDialog = false }) { Text("确定") } },
-            title = { Text("详细内容") },
-            text = {
-                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
-                    items(fileNames) { fileName ->
-                        Text(fileName, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 4.dp))
-                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f))
-                    }
-                }
-            }
+        ConversionFilesDialog(
+            fileNames = fileNames,
+            fileResults = fileResults,
+            onDismiss = { showDialog = false },
         )
     }
 }

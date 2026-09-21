@@ -26,7 +26,8 @@ data class ConversionResult(
     val durationMillis: Long,
     val allFileNames: String,
     val successfulFileNames: List<String>,
-    val failedFileNames: List<String>
+    val failedFileNames: List<String>,
+    val failedFiles: List<FileConversionResult> = emptyList(),
 ) {
     companion object {
         fun from(
@@ -42,6 +43,7 @@ data class ConversionResult(
                 allFileNames = sourceNames.joinToString(", "),
                 successfulFileNames = successful.map { it.fileName },
                 failedFileNames = failed.map { it.fileName },
+                failedFiles = failed,
             )
         }
     }
@@ -50,5 +52,6 @@ data class ConversionResult(
 data class FileConversionResult(
     val fileName: String,
     val success: Boolean,
-    val error: String? = null
+    val error: String? = null,
+    val outputAlreadyExists: Boolean = false,
 )
