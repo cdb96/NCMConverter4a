@@ -1,86 +1,69 @@
 package com.cdb96.ncmconverter4a.tag
 
+import com.cdb96.ncmconverter4a.io.BinaryOutput
+import com.cdb96.ncmconverter4a.io.write
 import com.cdb96.ncmconverter4a.util.LengthUtils.toBigEndianInteger3Bytes
 import com.cdb96.ncmconverter4a.util.LengthUtils.writeIntBE
 import com.cdb96.ncmconverter4a.util.LengthUtils.writeIntLE
 
 object FLACMetadataGenerator {
+    private const val MAX_BLOCK_SIZE = 0xFFFFFF
 
-    fun pictureBlockGen(coverData: ByteArray): ByteArray {
+    /** Emits the small picture header followed by the original cover array. */
+    fun writePictureBlock(output: BinaryOutput, coverData: ByteArray, isLast: Boolean) {
         val mimeTypeBytes = "image/jpeg".encodeToByteArray()
-        val descriptionBytes = "".encodeToByteArray()
+        val headerSize = 4 + 4 + 4 + mimeTypeBytes.size + 4 + 4 * 4 + 4
+        val bodyHeaderSize = headerSize - 4
+        require(coverData.size <= MAX_BLOCK_SIZE - bodyHeaderSize) {
+            "FLAC picture block is too large: ${coverData.size}"
+        }
 
-        val blockSize = 4 + 4 + mimeTypeBytes.size + 4 + descriptionBytes.size +
-            4 + 4 + 4 + 4 + 4 + coverData.size
-        val totalSize = blockSize + 4
-        var pos = 0
-        val buf = ByteArray(totalSize)
+        val header = ByteArray(headerSize)
+        header[0] = (6 or if (isLast) 0x80 else 0).toByte()
+        toBigEndianInteger3Bytes(bodyHeaderSize + coverData.size).copyInto(header, 1)
+        writeIntBE(header, 4, 3) // front cover
+        writeIntBE(header, 8, mimeTypeBytes.size)
+        mimeTypeBytes.copyInto(header, 12)
+        // Empty description and unspecified dimensions remain zero.
+        writeIntBE(header, header.size - 4, coverData.size)
 
-        // 块类型 + size (big-endian 3 bytes)
-        buf[pos++] = 0x06.toByte()
-        val sizeBytes = toBigEndianInteger3Bytes(blockSize)
-        sizeBytes.copyInto(buf, pos); pos += 3
-
-        // 图片类型
-        writeIntBE(buf, pos, 3); pos += 4
-
-        // MIME type
-        writeIntBE(buf, pos, mimeTypeBytes.size); pos += 4
-        mimeTypeBytes.copyInto(buf, pos); pos += mimeTypeBytes.size
-
-        // Description
-        writeIntBE(buf, pos, descriptionBytes.size); pos += 4
-        descriptionBytes.copyInto(buf, pos); pos += descriptionBytes.size
-
-        // 宽/高/颜色深度/索引颜色
-        writeIntBE(buf, pos, 0); pos += 4
-        writeIntBE(buf, pos, 0); pos += 4
-        writeIntBE(buf, pos, 0); pos += 4
-        writeIntBE(buf, pos, 0); pos += 4
-
-        // 封面数据
-        writeIntBE(buf, pos, coverData.size); pos += 4
-        coverData.copyInto(buf, pos)
-
-        return buf
+        output.write(header)
+        output.write(coverData)
     }
 
-    fun vorbisCommentBlockGen(
-        title: String, artist: String, album: String, vendorBytes: ByteArray
-    ): ByteArray {
-        val titleBytes = "TITLE=$title".encodeToByteArray()
-        val artistBytes = "ARTIST=$artist".encodeToByteArray()
-        val albumBytes = "ALBUM=$album".encodeToByteArray()
-        val blockSize = 4 + vendorBytes.size + 4 + 4 + artistBytes.size +
-            4 + titleBytes.size + 4 + albumBytes.size
-        val totalSize = blockSize + 4
-        var pos = 0
-        val buf = ByteArray(totalSize)
+    /** [writeVendor] copies exactly [vendorLength] bytes from the original block. */
+    fun writeVorbisCommentBlock(
+        output: BinaryOutput,
+        title: String,
+        artist: String,
+        album: String,
+        vendorLength: Int,
+        writeVendor: (BinaryOutput) -> Unit
+    ) {
+        val comments = arrayOf(
+            "ARTIST=$artist".encodeToByteArray(),
+            "TITLE=$title".encodeToByteArray(),
+            "ALBUM=$album".encodeToByteArray()
+        )
+        val blockSize = 8L + vendorLength + comments.sumOf { 4L + it.size }
+        require(vendorLength >= 0 && blockSize <= MAX_BLOCK_SIZE) {
+            "FLAC Vorbis comment block is too large: $blockSize"
+        }
 
-        // 块类型 + size
-        buf[pos++] = 0x04.toByte()
-        val sizeBytes = toBigEndianInteger3Bytes(blockSize)
-        sizeBytes.copyInto(buf, pos); pos += 3
+        val header = ByteArray(8)
+        header[0] = 4 // a picture block will follow, so this is never the last block
+        toBigEndianInteger3Bytes(blockSize.toInt()).copyInto(header, 1)
+        writeIntLE(header, 4, vendorLength)
+        output.write(header)
+        writeVendor(output)
 
-        // Vendor (little-endian length + data)
-        writeIntLE(buf, pos, vendorBytes.size); pos += 4
-        vendorBytes.copyInto(buf, pos); pos += vendorBytes.size
-
-        // 注释数
-        writeIntLE(buf, pos, 3); pos += 4
-
-        // Artist
-        writeIntLE(buf, pos, artistBytes.size); pos += 4
-        artistBytes.copyInto(buf, pos); pos += artistBytes.size
-
-        // Title
-        writeIntLE(buf, pos, titleBytes.size); pos += 4
-        titleBytes.copyInto(buf, pos); pos += titleBytes.size
-
-        // Album
-        writeIntLE(buf, pos, albumBytes.size); pos += 4
-        albumBytes.copyInto(buf, pos)
-
-        return buf
+        val lengthBytes = ByteArray(4)
+        writeIntLE(lengthBytes, 0, comments.size)
+        output.write(lengthBytes)
+        for (comment in comments) {
+            writeIntLE(lengthBytes, 0, comment.size)
+            output.write(lengthBytes)
+            output.write(comment)
+        }
     }
 }

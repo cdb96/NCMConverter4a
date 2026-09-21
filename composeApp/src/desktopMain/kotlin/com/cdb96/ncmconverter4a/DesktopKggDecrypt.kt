@@ -20,6 +20,14 @@ class DesktopKggDecrypt {
     private val log = Logger("DesktopKggDecrypt")
 
     fun decrypt(audioFilePath: String, dbFilePath: String?) {
+        try {
+            decryptFile(audioFilePath, dbFilePath)
+        } finally {
+            releaseIdleDesktopHeap()
+        }
+    }
+
+    private fun decryptFile(audioFilePath: String, dbFilePath: String?) {
         val audioFile = File(audioFilePath)
         require(audioFile.isFile) { "音频文件不存在: $audioFilePath" }
 

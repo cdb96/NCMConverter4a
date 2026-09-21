@@ -130,7 +130,7 @@ class FileConversionService(private val context: Context) {
     ): Boolean {
         return try {
             val binaryInput = InputStreamBinaryInput(inputStream)
-            val info = NCMConverter.readHeader(binaryInput)
+            val info = NCMConverter.readHeader(binaryInput, includeCover = !rawWriteMode)
             val fileName = "${info.musicArtists} - ${info.musicName}"
 
             withFileOutputStream(info.format, fileName, duplicateConflictMitigation) { output ->
@@ -197,7 +197,7 @@ class FileConversionService(private val context: Context) {
         val rawInput = context.contentResolver.openInputStream(uri)
             ?: throw IllegalStateException("无法打开输入文件: $uri")
         return rawInput.use { raw ->
-            BufferedInputStream(raw, NCMConverter.AUDIO_BUFFER_SIZE).use { input ->
+            BufferedInputStream(raw).use { input ->
                 block(input)
             }
         }

@@ -1,9 +1,14 @@
 package com.cdb96.ncmconverter4a
 
+import com.cdb96.ncmconverter4a.converter.KGMConverter
+import com.cdb96.ncmconverter4a.io.readChunk
 import com.cdb96.ncmconverter4a.jni.KGMDecrypt
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertSame
 
 /**
  * KGM decrypts a stream chunk by chunk: the native cursor is threaded through the
@@ -50,5 +55,33 @@ class KgmDecryptTest {
 
         assertEquals(payload.size, end)
         assertContentEquals(decryptWhole(), chunked)
+    }
+
+    @Test
+    fun converterReusesMatchingFirstBufferAndPreservesTheShortFinalChunk() {
+        val source = payload.copyOf(payload.size + 7)
+        val expected = source.copyOf()
+        KGMDecrypt.init(key)
+        KGMDecrypt.decrypt(expected, 0, expected.size)
+
+        for (firstBufferSize in listOf(256, 4096)) {
+            val input = ByteArrayInputStream(source)
+            val firstChunk = ByteArray(firstBufferSize)
+            val firstSize = input.readChunk(firstChunk)
+            val output = ByteArrayOutputStream()
+            KGMConverter.decrypt(
+                ownKeyBytes = key,
+                firstChunk = firstChunk,
+                firstSize = firstSize,
+                bufferSize = 4096,
+                read = { buffer ->
+                    assertEquals(4096, buffer.size)
+                    if (firstBufferSize == 4096) assertSame(firstChunk, buffer)
+                    input.readChunk(buffer)
+                },
+                write = { buffer, length -> output.write(buffer, 0, length) }
+            )
+            assertContentEquals(expected, output.toByteArray())
+        }
     }
 }

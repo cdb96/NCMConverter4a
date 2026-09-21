@@ -39,7 +39,7 @@ object KGMConverter {
      * @param ownKeyBytes 文件密钥
      * @param firstChunk  已读取的第一个数据块（就地解密）
      * @param firstSize   第一块有效字节数
-     * @param bufferSize  后续读取缓冲区大小
+     * @param bufferSize  后续读取缓冲区大小；大小相同时复用 firstChunk
      * @param read  读取下一块: (buffer) -> bytesRead, 返回 -1 表示 EOF
      * @param write 写出已解密数据: (buffer, bytesToWrite) -> Unit
      */
@@ -63,7 +63,7 @@ object KGMConverter {
         fileOffset = KGMDecrypt.decrypt(firstChunk, fileOffset, firstSize)
         write(firstChunk, firstSize)
 
-        val buf = ByteArray(bufferSize)
+        val buf = if (firstChunk.size == bufferSize) firstChunk else ByteArray(bufferSize)
         while (true) {
             val bytesRead = read(buf)
             if (bytesRead < 0) break

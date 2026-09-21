@@ -85,6 +85,7 @@ class DesktopConversionFacade {
             )
         } finally {
             dispatcher.close()
+            releaseIdleDesktopHeap()
         }
     }
 
@@ -97,7 +98,7 @@ class DesktopConversionFacade {
         val file = File(path)
         require(file.isFile) { "输入文件不存在: $path" }
 
-        BufferedInputStream(FileInputStream(file), bufferSize).use { input ->
+        BufferedInputStream(FileInputStream(file)).use { input ->
             val format = input.detectEncryptedFormat()
             when (format) {
                 EncryptedFormat.KGM -> convertKGM(
@@ -125,7 +126,7 @@ class DesktopConversionFacade {
         bufferSize: Int,
     ) {
         val binaryInput = InputStreamBinaryInput(input)
-        val info = NCMConverter.readHeader(binaryInput)
+        val info = NCMConverter.readHeader(binaryInput, includeCover = !rawWriteMode)
         val requestedName = "${info.musicArtists} - ${info.musicName}"
 
         outputAllocator.withUniqueOutput(

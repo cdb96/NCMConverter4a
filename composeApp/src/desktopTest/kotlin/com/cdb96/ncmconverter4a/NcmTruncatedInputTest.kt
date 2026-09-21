@@ -1,14 +1,19 @@
 package com.cdb96.ncmconverter4a
 
 import com.cdb96.ncmconverter4a.converter.NCMConverter
+import com.cdb96.ncmconverter4a.io.BinaryInput
 import com.cdb96.ncmconverter4a.io.InputStreamBinaryInput
+import com.cdb96.ncmconverter4a.io.readFully
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class NcmTruncatedInputTest {
     @Test
@@ -40,6 +45,85 @@ class NcmTruncatedInputTest {
         }
         assertFailsWith<IllegalArgumentException> { parse(output.toByteArray()) }
     }
+
+    @Test
+    fun skippingLargeCoverUsesSmallBuffersAndLeavesInputAtAudio() {
+        val imageLength = 2 * 1024 * 1024
+        val coverLength = imageLength + 17
+        val prefix = coverHeader(coverLength, imageLength)
+        val audio = byteArrayOf(0x12, 0x34, 0x56)
+        val audioStart = prefix.size + coverLength
+        val total = audioStart + audio.size
+        val input = object : BinaryInput {
+            var position = 0
+
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                assertTrue(buffer.size <= 8192, "unused cover must not be allocated")
+                if (position == total) return -1
+                val count = minOf(length, total - position, 1021)
+                repeat(count) { index ->
+                    buffer[offset + index] = when {
+                        position < prefix.size -> prefix[position]
+                        position < audioStart -> 0x5A.toByte()
+                        else -> audio[position - audioStart]
+                    }
+                    position++
+                }
+                return count
+            }
+        }
+
+        val info = NCMConverter.readHeader(input, includeCover = false)
+
+        assertTrue(info.coverData.isEmpty())
+        assertEquals("Song", info.musicName)
+        assertEquals("Album", info.musicAlbum)
+        assertEquals("Artist", info.musicArtists)
+        assertEquals("mp3", info.format)
+        assertEquals(audioStart, input.position)
+        val actualAudio = ByteArray(audio.size)
+        input.readFully(actualAudio)
+        assertContentEquals(audio, actualAudio)
+    }
+
+    @Test
+    fun coverIsRetainedByDefaultWhilePaddingIsSkipped() {
+        val cover = byteArrayOf(9, 8, 7, 6)
+        val audio = byteArrayOf(1, 2, 3)
+        val stream = ByteArrayInputStream(coverHeader(9, cover.size) + cover + ByteArray(5) + audio)
+        val input = InputStreamBinaryInput(stream)
+
+        assertContentEquals(cover, NCMConverter.readHeader(input).coverData)
+        assertContentEquals(audio, stream.readBytes())
+    }
+
+    @Test
+    fun skippedCoverStillRejectsInvalidLengthsAndTruncatedImageOrPadding() {
+        val invalidCovers = listOf(
+            coverHeader(4, 5) + ByteArray(4),
+            coverHeader(4, -1) + ByteArray(4),
+            coverHeader(4, 4) + ByteArray(3),
+            coverHeader(8, 4) + ByteArray(6),
+            coverHeader(64 * 1024 * 1024 + 1, 0)
+        )
+        for (bytes in invalidCovers) {
+            for (includeCover in listOf(true, false)) {
+                assertFailsWith<IllegalArgumentException> {
+                    NCMConverter.readHeader(
+                        InputStreamBinaryInput(ByteArrayInputStream(bytes)), includeCover
+                    )
+                }
+            }
+        }
+    }
+
+    private fun coverHeader(coverLength: Int, imageLength: Int): ByteArray =
+        ByteArrayOutputStream().apply {
+            write(validHeader())
+            write(ByteArray(5))
+            writeLittleEndian(this, coverLength)
+            writeLittleEndian(this, imageLength)
+        }.toByteArray()
 
     private fun parse(bytes: ByteArray) {
         NCMConverter.readHeader(InputStreamBinaryInput(ByteArrayInputStream(bytes)))

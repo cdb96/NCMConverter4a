@@ -233,13 +233,25 @@ compose.desktop {
         // JDK 25 toolchain so the packaged runtime matches the compiled target.
         javaHome = desktopJdk25Home.get()
         mainClass = "com.cdb96.ncmconverter4a.MainKt"
-        // Loading the bundled native core goes through System.load, which JDK 25
-        // reports as a restricted method and a future release blocks outright.
-        // jvmArgs must live on the application: there it becomes jpackage's
-        // --java-options and lands in the launcher config. The Uber Jar cannot
-        // carry this, because ProGuard rewrites its manifest, so running the jar
-        // directly still prints the (harmless) warning.
-        jvmArgs += listOf("--enable-native-access=ALL-UNNAMED")
+        // These options reach both Gradle run and the installed launcher. A raw
+        // `java -jar` invocation needs to supply its own JVM options.
+        // The UI has a small live heap; reserve room for concurrent conversions
+        // without sizing the initial heap and GC infrastructure from host RAM.
+        jvmArgs += listOf(
+            "--enable-native-access=ALL-UNNAMED",
+            "-Xms32m",
+            "-Xmx768m",
+            "-XX:+UseSerialGC",
+            "-XX:MinHeapFreeRatio=10",
+            "-XX:MaxHeapFreeRatio=20",
+            "-XX:-ShrinkHeapInSteps",
+            "-XX:CICompilerCount=2",
+        )
+        if (ncmHostOs.isWindows) {
+            // This small form-based UI does not need a persistent Direct3D
+            // device. Skiko's native software renderer also avoids driver RAM.
+            jvmArgs += listOf("-Dskiko.renderApi=SOFTWARE", "-Dsun.java2d.d3d=false")
+        }
         buildTypes.release {
             proguard {
                 isEnabled = true
@@ -268,4 +280,3 @@ afterEvaluate {
         javaHome.set(desktopJdk25Home)
     }
 }
-
