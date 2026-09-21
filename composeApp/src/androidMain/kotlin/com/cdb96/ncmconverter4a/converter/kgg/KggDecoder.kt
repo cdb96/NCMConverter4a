@@ -22,7 +22,7 @@ class KggDecoder(context: Context) {
         val rawStream = contentResolver.openInputStream(audioFileUri)
             ?: throw IllegalStateException("无法打开音频文件，Uri: $audioFileUri")
         rawStream.use { raw ->
-            BufferedInputStream(raw, 256 * 1024).use { audioStream ->
+            BufferedInputStream(raw).use { audioStream ->
                 val headerChunk = ByteArray(KGMConverter.HEADER_LENGTH)
                 audioStream.readFully(headerChunk)
                 val header = parseKgmHeader(headerChunk)
@@ -131,12 +131,12 @@ class KggDecoder(context: Context) {
             val output = contentResolver.openOutputStream(uri, "w")
                 ?: throw IllegalStateException("无法打开输出文件")
             output.use {
-                val buffer = ByteArray(8192)
+                val buffer = ByteArray(QmcCipher.STREAM_BUFFER_SIZE)
                 var streamOffset = 0L
                 while (true) {
                     val bytesRead = audioFileInputStream.readChunk(buffer)
                     if (bytesRead < 0) break
-                    cipher.decrypt(buffer, streamOffset)
+                    cipher.decrypt(buffer, streamOffset, bytesRead)
                     it.write(buffer, 0, bytesRead)
                     streamOffset += bytesRead.toLong()
                 }

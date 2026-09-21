@@ -4,12 +4,13 @@ class MMKVParser(private val data: ByteArray) {
     private var position = 0
 
     fun getBytes(queryKey: String): ByteArray? {
+        val wantedKey = queryKey.encodeToByteArray()
         if (data.size < 8) return null
         position = 8
         while (position < data.size) {
             val keyLength = data[position++].toInt() and 0xFF
             if (position > data.size - keyLength) return null
-            val keyBytes = data.copyOfRange(position, position + keyLength)
+            val keyStart = position
             position += keyLength
 
             // tag(2) + encoded value length
@@ -20,11 +21,20 @@ class MMKVParser(private val data: ByteArray) {
             position = valueLengthResult.second
             if (valueLength < 0 || position > data.size - valueLength) return null
 
-            val value = data.copyOfRange(position, position + valueLength)
+            // Only the matching value is copied out; every other entry is skipped in place.
+            if (keyLength == wantedKey.size && regionEquals(keyStart, wantedKey)) {
+                return data.copyOfRange(position, position + valueLength)
+            }
             position += valueLength
-            if (queryKey == keyBytes.decodeToString()) return value
         }
         return null
+    }
+
+    private fun regionEquals(start: Int, expected: ByteArray): Boolean {
+        for (index in expected.indices) {
+            if (data[start + index] != expected[index]) return false
+        }
+        return true
     }
 
     private fun readVarint32(start: Int): Pair<Int, Int>? {

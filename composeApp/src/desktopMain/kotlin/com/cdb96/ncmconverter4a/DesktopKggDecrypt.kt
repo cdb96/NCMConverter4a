@@ -11,7 +11,6 @@ import com.cdb96.ncmconverter4a.io.skipFully
 import com.cdb96.ncmconverter4a.platform.Logger
 import com.cdb96.ncmconverter4a.util.FileNameUtils
 import java.io.BufferedInputStream
-import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileInputStream
 
@@ -31,7 +30,7 @@ class DesktopKggDecrypt {
         val audioFile = File(audioFilePath)
         require(audioFile.isFile) { "音频文件不存在: $audioFilePath" }
 
-        BufferedInputStream(FileInputStream(audioFile), 256 * 1024).use { audioStream ->
+        BufferedInputStream(FileInputStream(audioFile)).use { audioStream ->
             val headerChunk = ByteArray(1024)
             audioStream.readFully(headerChunk)
             val header = parseKgmHeader(headerChunk)
@@ -66,12 +65,12 @@ class DesktopKggDecrypt {
                 extension = audioFormat,
                 mitigateConflicts = true
             ) { outputStream ->
-                val buffer = ByteArray(8192)
+                val buffer = ByteArray(QmcCipher.STREAM_BUFFER_SIZE)
                 var streamOffset = 0L
                 while (true) {
                     val bytesRead = audioStream.readChunk(buffer)
                     if (bytesRead < 0) break
-                    cipher.decrypt(buffer, streamOffset)
+                    cipher.decrypt(buffer, streamOffset, bytesRead)
                     outputStream.write(buffer, 0, bytesRead)
                     streamOffset += bytesRead.toLong()
                 }
@@ -84,7 +83,8 @@ class DesktopKggDecrypt {
         val isSqlite = KggDbDecryptor.isSqliteDatabase(dbBytes)
         log.i("dbFile=${dbFile.name} size=${dbBytes.size} isSqliteDatabase=$isSqlite")
         val eKeyBytes = if (isSqlite) {
-            val decrypted = KggDbDecryptor.decryptDatabase(ByteArrayInputStream(dbBytes))
+            // Decrypted in place: the file is held in memory exactly once.
+            val decrypted = KggDbDecryptor.decryptDatabase(dbBytes)
             val mapping = KggDbDecryptor.extractKeyMapping(decrypted)
             log.i("map size=${mapping.size}, audioHash in map: ${mapping.containsKey(audioHash)}")
             mapping[audioHash]?.encodeToByteArray()
