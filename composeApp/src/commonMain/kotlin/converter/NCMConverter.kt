@@ -94,7 +94,7 @@ object NCMConverter {
         RC4Decrypt.ksa(info.RC4key)
         val reader = DecryptedPayloadReader(input, bufferSize)
 
-        val prefix = ByteArray(4)
+        val prefix = ByteArray(3)
         val prefixSize = reader.read(prefix, 0, prefix.size)
         if (prefixSize == 0) throw IllegalArgumentException("NCM payload is empty")
         if (rawWriteMode) {
@@ -104,8 +104,7 @@ object NCMConverter {
         }
 
         when {
-            prefixSize >= 3 && prefix[0] == 'I'.code.toByte() &&
-                prefix[1] == 'D'.code.toByte() && prefix[2] == '3'.code.toByte() -> {
+            prefix.contentEquals("ID3".toByteArray()) -> {
                 val id3Header = ByteArray(10)
                 prefix.copyInto(id3Header)
                 reader.readFully(id3Header, prefixSize, id3Header.size - prefixSize)
@@ -128,8 +127,9 @@ object NCMConverter {
                 reader.copyTo(output)
             }
 
-            prefixSize >= 4 && prefix.copyOfRange(0, 4).contentEquals("fLaC".encodeToByteArray()) -> {
-                writeFlacMetadata(reader, output, info)
+           prefix.contentEquals("fLa".toByteArray()) -> {
+               reader.skipFully(1)
+               writeFlacMetadata(reader, output, info)
                 reader.copyTo(output)
             }
 
