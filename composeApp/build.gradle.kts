@@ -43,7 +43,7 @@ kotlin {
     }
 
     sourceSets {
-        val commonMain by getting {
+        val commonMain = getByName("commonMain") {
             dependencies {
                 implementation("org.jetbrains.compose.runtime:runtime:1.12.0-beta03")
                 implementation("org.jetbrains.compose.foundation:foundation:1.12.0-beta03")
@@ -52,15 +52,15 @@ kotlin {
                 implementation("org.jetbrains.compose.ui:ui:1.12.0-beta03")
             }
         }
-        val commonTest by getting {
+        getByName("commonTest") {
             dependencies {
                 implementation(kotlin("test"))
             }
         }
-        val jvmMain by creating {
+        val jvmMain = create("jvmMain") {
             dependsOn(commonMain)
         }
-        val androidMain by getting {
+        getByName("androidMain") {
             dependsOn(jvmMain)
             dependencies {
                 implementation(libs.androidx.activity.compose)
@@ -69,7 +69,7 @@ kotlin {
                 implementation(libs.androidx.documentfile)
             }
         }
-        val desktopMain by getting {
+        getByName("desktopMain") {
             dependsOn(jvmMain)
             dependencies {
                 implementation(compose.desktop.currentOs)
@@ -110,12 +110,17 @@ val ncmNativeExtension = when (ncmNativeOsName) {
 val ncmNativeResourceDir = layout.projectDirectory
     .dir("src/desktopMain/resources/ncmc4a/$ncmNativeOsName-$ncmNativeArchName")
 
-private fun findOnPath(executable: String): File? =
-    System.getenv("PATH")
+private fun findOnPath(executable: String): File? {
+    // Windows resolves `cmake` to `cmake.exe`; File.isFile does not.
+    val names = if (ncmHostOs.isWindows) listOf("$executable.exe", executable) else listOf(executable)
+    return System.getenv("PATH")
         ?.split(File.pathSeparator)
         ?.asSequence()
-        ?.map { File(it, executable) }
+        ?.flatMap { directory -> names.asSequence().map { File(directory, it) } }
         ?.firstOrNull { it.isFile }
+}
+
+private val ncmExecutableSuffix = if (ncmHostOs.isWindows) ".exe" else ""
 
 /** Ninja shipped with the Android SDK, so a JDK-only machine still works. */
 private fun findBundledNinja(): File? {
@@ -131,14 +136,14 @@ private fun findBundledNinja(): File? {
     val cmakeDir = File(sdkDir, "cmake")
     return cmakeDir.listFiles()
         ?.asSequence()
-        ?.map { File(File(it, "bin"), "ninja.exe") }
+        ?.map { File(File(it, "bin"), "ninja$ncmExecutableSuffix") }
         ?.firstOrNull { it.isFile }
 }
 
 val ncmCmake = findOnPath("cmake")
     ?: findBundledNinja()?.let { ninja ->
         // The SDK CMake sits next to the bundled Ninja.
-        File(ninja.parentFile.parentFile, "bin/cmake.exe").takeIf { it.isFile }
+        File(ninja.parentFile, "cmake$ncmExecutableSuffix").takeIf { it.isFile }
     }
 val ncmNinja = findBundledNinja() ?: findOnPath("ninja")
 
@@ -146,27 +151,27 @@ val ncmNinja = findBundledNinja() ?: findOnPath("ninja")
 // serializable for the configuration cache.
 val ncmJniIncludeDir = File(desktopJdk25Home.get(), "include")
 
-/**
- * The native tasks shell out to cmake, so they are exempt from configuration
- * cache serialization.
- */
-private fun Task.disableConfigurationCache() {
-    notCompatibleWithConfigurationCache("shells out to cmake")
-}
+// Decided once at configuration time. The task specs below copy these values
+// into locals so they do not capture the build script, which the configuration
+// cache cannot serialize; the property is still tracked as a cache input.
+val ncmNativeBuildEnabled =
+    providers.gradleProperty("ncmSkipNativeBuild").orNull != "true" && ncmCmake != null
+// A missing cmake must only skip the tasks, not fail their configuration.
+val ncmCmakeExecutable = ncmCmake?.absolutePath ?: "cmake"
 
 private val ncmCmakeGeneratorArgs = ncmNinja
     ?.let { listOf("-G", "Ninja", "-DCMAKE_MAKE_PROGRAM=${it.absolutePath}") }
     ?: emptyList()
 
-val nativeConfigure by tasks.registering(Exec::class) {
+val nativeConfigure = tasks.register<Exec>("nativeConfigure") {
     group = "build"
     description = "Configures the shared native core build for the Desktop JVM"
-    onlyIf { providers.gradleProperty("ncmSkipNativeBuild").orNull != "true" && ncmCmake != null }
-    disableConfigurationCache()
+    val enabled = ncmNativeBuildEnabled
+    onlyIf("cmake is available and ncmSkipNativeBuild is not set") { enabled }
     workingDir = rootProject.projectDir
     commandLine(
         listOf(
-            requireNotNull(ncmCmake) { "cmake 不可用" }.absolutePath,
+            ncmCmakeExecutable,
             "-S", nativeSourceDir.asFile.absolutePath,
             "-B", nativeBuildDir.asFile.absolutePath,
             "-DCMAKE_BUILD_TYPE=Release",
@@ -181,15 +186,15 @@ val nativeConfigure by tasks.registering(Exec::class) {
     outputs.file(nativeBuildDir.file("CMakeCache.txt"))
 }
 
-val nativeBuild by tasks.registering(Exec::class) {
+val nativeBuild = tasks.register<Exec>("nativeBuild") {
     group = "build"
     description = "Builds the shared native core for the Desktop JVM and bundles it as a resource"
     dependsOn(nativeConfigure)
-    onlyIf { providers.gradleProperty("ncmSkipNativeBuild").orNull != "true" && ncmCmake != null }
-    disableConfigurationCache()
+    val enabled = ncmNativeBuildEnabled
+    onlyIf("cmake is available and ncmSkipNativeBuild is not set") { enabled }
     workingDir = rootProject.projectDir
     commandLine(
-        requireNotNull(ncmCmake) { "cmake 不可用" }.absolutePath,
+        ncmCmakeExecutable,
         "--build", nativeBuildDir.asFile.absolutePath,
         "--config", "Release"
     )
@@ -198,7 +203,9 @@ val nativeBuild by tasks.registering(Exec::class) {
     val resourceDirectory = ncmNativeResourceDir.asFile
     val nativeFileName = "ncmc4a.$ncmNativeExtension"
 
-    inputs.dir(nativeSourceDir)
+    // The cmake build directory lives inside native/; excluding it keeps the
+    // task's own output from invalidating its inputs on every run.
+    inputs.files(fileTree(nativeSourceDir) { exclude("build/**") })
     outputs.file(ncmNativeResourceDir.file(nativeFileName))
 
     doLast {
@@ -215,10 +222,11 @@ val nativeBuild by tasks.registering(Exec::class) {
 
 // The library is produced straight into a source directory, so declare it as a
 // processResources input; otherwise packaging treats the old resource set as up
-// to date and can ship a jar without the native core.
+// to date and can ship a jar without the native core. A file tree tolerates the
+// directory being absent when the native build is skipped.
 tasks.named("desktopProcessResources") {
     dependsOn(nativeBuild)
-    inputs.dir(ncmNativeResourceDir)
+    inputs.files(fileTree(ncmNativeResourceDir))
 }
 
 tasks.named("desktopTest") {

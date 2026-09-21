@@ -67,6 +67,12 @@ class MainActivity : ComponentActivity() {
 
             fun startConversion(selectedUris: List<Uri>) {
                 if (selectedUris.isEmpty()) return
+                if (conversionState.isProcessing) {
+                    // A second batch (for example files shared while converting)
+                    // would reset the progress state of the running one.
+                    Toast.makeText(context, "正在转换中，请等待完成后再选择文件", Toast.LENGTH_SHORT).show()
+                    return
+                }
                 val selectedSettings = settingsState
                 conversionState = conversionState.start(selectedUris.size)
                 scope.launch {

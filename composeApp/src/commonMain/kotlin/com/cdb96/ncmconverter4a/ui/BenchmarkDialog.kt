@@ -222,7 +222,7 @@ private fun StartContent(onStart: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "• 测试 KGM 和 NCM 解密算法性能\n• 对比 ByteBuffer 与 ByteArray 模式",
+                    text = "• 测试 KGM 和 NCM 解密算法性能\n• 结果取多次运行中的最高吞吐量",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                     lineHeight = MaterialTheme.typography.bodyMedium.lineHeight * 1.3
@@ -388,7 +388,7 @@ private fun ResultsContent(
         )
 
         PerformanceCard(
-            title = "NCM 解密 (ByteArray)",
+            title = "NCM 解密",
             icon = Icons.Default.Star,
             results = result.ncmResults,
             gradientColors = listOf(Color(0xFF10B981), Color(0xFF34D399))

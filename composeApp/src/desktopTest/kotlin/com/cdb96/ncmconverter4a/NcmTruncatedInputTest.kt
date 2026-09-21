@@ -98,6 +98,21 @@ class NcmTruncatedInputTest {
     }
 
     @Test
+    fun metadataValuesThatEqualKeyNamesDoNotShadowTheKeys() {
+        val header = validHeader(
+            "{\"musicName\":\"format\",\"album\":\"artist\",\"artist\":\"[[\\\"album\\\",0]]\",\"format\":\"flac\"}"
+        )
+        val stream = ByteArrayInputStream(header + ByteArray(5) + ByteArray(8))
+
+        val info = NCMConverter.readHeader(InputStreamBinaryInput(stream))
+
+        assertEquals("format", info.musicName)
+        assertEquals("artist", info.musicAlbum)
+        assertEquals("album", info.musicArtists)
+        assertEquals("flac", info.format)
+    }
+
+    @Test
     fun skippedCoverStillRejectsInvalidLengthsAndTruncatedImageOrPadding() {
         val invalidCovers = listOf(
             coverHeader(4, 5) + ByteArray(4),
@@ -149,10 +164,12 @@ class NcmTruncatedInputTest {
         return output.toByteArray()
     }
 
-    private fun validHeader(): ByteArray {
+    private fun validHeader(
+        metadataJson: String =
+            "{\"musicName\":\"Song\",\"album\":\"Album\",\"artist\":\"[[\\\"Artist\\\",0]]\",\"format\":\"mp3\"}"
+    ): ByteArray {
         val output = ByteArrayOutputStream()
         output.write(ncmPrefixWithValidKey())
-        val metadataJson = "{\"musicName\":\"Song\",\"album\":\"Album\",\"artist\":\"[[\\\"Artist\\\",0]]\",\"format\":\"mp3\"}"
         val encryptedMetadata = aesEncrypt(
             byteArrayOf(
                 0x23, 0x31, 0x34, 0x6C, 0x6A, 0x6B, 0x5F, 0x21,

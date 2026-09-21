@@ -148,6 +148,11 @@ jobs:
       - name: 运行 Desktop/common 回归测试
         run: ./gradlew :composeApp:desktopTest --configure-on-demand
 
+      # desktopTest builds the core through cmake (Ninja, single config), which
+      # also produces the JVM-free self-test next to the library.
+      - name: 运行 native core 自检
+        run: ./native/build/ncm_core_selftest
+
       - name: 桌面编译检查
         run: ./gradlew :composeApp:compileKotlinDesktop --configure-on-demand
 

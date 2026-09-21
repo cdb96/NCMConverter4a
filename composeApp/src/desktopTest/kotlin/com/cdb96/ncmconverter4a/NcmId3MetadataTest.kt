@@ -78,4 +78,73 @@ class NcmId3MetadataTest {
         assertContentEquals(cover, picture.copyOfRange(14, picture.size))
         assertContentEquals(audio, bytes.copyOfRange(position, bytes.size))
     }
+
+    @Test
+    fun omitsApicWithoutCoverAndSkipsAnId3v24Footer() {
+        val key = byteArrayOf(2, 4, 6)
+        val audio = byteArrayOf(0x7F, 0x11, 0x22, 0x33)
+        // ID3v2.4, footer flag (0x10) set, 300-byte body followed by a 10-byte footer.
+        val oldHeader = byteArrayOf(0x49, 0x44, 0x33, 4, 0, 0x10, 0, 0, 2, 0x2C)
+        val footer = byteArrayOf(0x33, 0x44, 0x49, 4, 0, 0x10, 0, 0, 2, 0x2C)
+        val encrypted = oldHeader + ByteArray(300) + footer + audio
+        RC4Decrypt.ksa(key)
+        RC4Decrypt.prgaDecrypt(encrypted, encrypted.size)
+
+        val bytes = convert(encrypted, key, cover = byteArrayOf())
+
+        val frames = parseFrames(bytes)
+        assertEquals(listOf("TIT2", "TPE1", "TALB"), frames.keys.toList())
+        assertContentEquals(audio, bytes.copyOfRange(10 + tagSize(bytes), bytes.size))
+    }
+
+    @Test
+    fun labelsPngCoversWithThePngMimeType() {
+        val key = byteArrayOf(9, 9, 9)
+        val pngCover = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 7, 7)
+        val encrypted = byteArrayOf(0x49, 0x44, 0x33, 3, 0, 0, 0, 0, 0, 0) + byteArrayOf(1, 2, 3)
+        RC4Decrypt.ksa(key)
+        RC4Decrypt.prgaDecrypt(encrypted, encrypted.size)
+
+        val picture = parseFrames(convert(encrypted, key, pngCover)).getValue("APIC")
+
+        assertContentEquals(
+            byteArrayOf(0) + "image/png".encodeToByteArray() + byteArrayOf(0, 3, 0) + pngCover,
+            picture
+        )
+    }
+
+    private fun convert(encrypted: ByteArray, key: ByteArray, cover: ByteArray): ByteArray {
+        val result = ByteArrayOutputStream()
+        NCMConverter.writeAudio(
+            input = InputStreamBinaryInput(ByteArrayInputStream(encrypted)),
+            output = object : BinaryOutput {
+                override fun write(buffer: ByteArray, offset: Int, length: Int) {
+                    result.write(buffer, offset, length)
+                }
+            },
+            info = NcmFileInfo(key, cover, "歌曲", "专辑", "歌手", "mp3"),
+            rawWriteMode = false,
+            bufferSize = 256
+        )
+        return result.toByteArray()
+    }
+
+    private fun tagSize(bytes: ByteArray): Int = (6..9).fold(0) { size, index ->
+        assertEquals(0, bytes[index].toInt() and 0x80)
+        (size shl 7) or (bytes[index].toInt() and 0x7F)
+    }
+
+    private fun parseFrames(bytes: ByteArray): Map<String, ByteArray> {
+        val frames = linkedMapOf<String, ByteArray>()
+        val end = 10 + tagSize(bytes)
+        var position = 10
+        while (position < end) {
+            val id = String(bytes, position, 4, Charsets.US_ASCII)
+            val length = ByteBuffer.wrap(bytes, position + 4, 4).int
+            frames[id] = bytes.copyOfRange(position + 10, position + 10 + length)
+            position += 10 + length
+        }
+        assertEquals(end, position)
+        return frames
+    }
 }

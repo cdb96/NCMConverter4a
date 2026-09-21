@@ -113,7 +113,10 @@ object NCMConverter {
                 require(id3Length in 0..MAX_ID3_LENGTH) {
                     "invalid ID3 length: $id3Length"
                 }
-                reader.skipFully(id3Length.toLong())
+                // The size field excludes the ten-byte footer an ID3v2.4 tag may
+                // append (flag bit 4), so it is skipped separately.
+                val hasFooter = id3Header[3].toInt() == 4 && (id3Header[5].toInt() and 0x10) != 0
+                reader.skipFully(id3Length.toLong() + if (hasFooter) 10L else 0L)
 
                 ID3TagBuilder().apply {
                     initDefaultTagHeader()
@@ -202,22 +205,44 @@ object NCMConverter {
     }
 
     private fun requiredField(values: List<String>, field: String): String {
-        val index = values.indexOf(field)
-        require(index >= 0 && index + 1 < values.size) {
-            "NCM metadata is missing field: $field"
+        // The parser appends key/value pairs, so keys sit at even indices. A
+        // value that happens to equal a key name must not be mistaken for it.
+        for (index in values.indices step 2) {
+            if (values[index] == field && index + 1 < values.size) return values[index + 1]
         }
-        return values[index + 1]
+        throw IllegalArgumentException("NCM metadata is missing field: $field")
     }
 
-    private fun combineArtistsString(artistsString: String): String {
-        val values = artistsString
-            .replace("\\", "")
-            .replace("[", "")
-            .replace("]", "")
-            .replace("\"", "")
-            .split(",")
-        return values.filterIndexed { index, _ -> index % 2 == 0 }
-            .joinToString("/") { it.trim() }
+    /**
+     * The NCM "artist" field is a JSON array of `[name, id]` pairs. Names are
+     * read from their quoted strings, so commas and escapes inside a name
+     * survive. A plain string value is used as-is.
+     */
+    internal fun combineArtistsString(artistsString: String): String {
+        val value = artistsString.trim()
+        if (!value.startsWith("[")) return value
+
+        val names = ArrayList<String>()
+        var depth = 0
+        var firstInPair = false
+        var index = 0
+        while (index < value.length) {
+            when (value[index]) {
+                '[' -> { depth++; firstInPair = true }
+                ']' -> depth--
+                '"' -> {
+                    val end = SimpleJsonParser.findStringEnd(value, index)
+                    if (end < 0) break
+                    if (depth == 1 || firstInPair) {
+                        names += SimpleJsonParser.decodeJsonString(value.substring(index + 1, end))
+                    }
+                    firstInPair = false
+                    index = end
+                }
+            }
+            index++
+        }
+        return names.map { it.trim() }.filter { it.isNotEmpty() }.joinToString("/")
     }
 
     private fun writeFlacMetadata(
@@ -229,6 +254,9 @@ object NCMConverter {
         val blockHeader = ByteArray(4)
         var totalLength = 4L // fLaC signature already consumed
         var vorbisRewritten = false
+        // Without cover art no picture block is inserted, so the rewritten
+        // Vorbis block itself may have to carry the last-block flag.
+        val hasCover = info.coverData.isNotEmpty()
 
         while (true) {
             reader.readFully(blockHeader)
@@ -253,15 +281,16 @@ object NCMConverter {
                 }
 
                 FLACMetadataGenerator.writeVorbisCommentBlock(
-                    output, info.musicName, info.musicArtists, info.musicAlbum, vendorLength
+                    output, info.musicName, info.musicArtists, info.musicAlbum, vendorLength,
+                    isLast = isLast && !hasCover
                 ) { vendorOutput -> reader.copyTo(vendorOutput, vendorLength.toLong()) }
                 reader.skipFully((bodyLength - 4 - vendorLength).toLong())
                 vorbisRewritten = true
-                if (isLast) {
+                if (isLast && hasCover) {
                     FLACMetadataGenerator.writePictureBlock(output, info.coverData, isLast = true)
                 }
             } else {
-                if (isLast && vorbisRewritten) {
+                if (isLast && vorbisRewritten && hasCover) {
                     FLACMetadataGenerator.writePictureBlock(output, info.coverData, isLast = false)
                 }
                 output.write(blockHeader)

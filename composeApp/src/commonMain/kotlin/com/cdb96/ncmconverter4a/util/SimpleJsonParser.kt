@@ -53,7 +53,8 @@ object SimpleJsonParser {
         return values
     }
 
-    private fun findStringEnd(input: String, start: Int): Int {
+    /** Index of the closing quote of the JSON string opening at [start], or -1. */
+    internal fun findStringEnd(input: String, start: Int): Int {
         var escaped = false
         for (index in start + 1 until input.length) {
             val character = input[index]
@@ -103,7 +104,8 @@ object SimpleJsonParser {
         return index
     }
 
-    private fun decodeJsonString(value: String): String {
+    /** Resolves JSON escapes in the body of a quoted string (quotes excluded). */
+    internal fun decodeJsonString(value: String): String {
         val result = StringBuilder(value.length)
         var index = 0
         while (index < value.length) {

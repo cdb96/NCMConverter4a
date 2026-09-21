@@ -50,8 +50,10 @@ class ID3TagBuilder {
         chunks.addAll(bodies)
     }
 
+    /** Adds an APIC frame; an NCM file without cover art gets no frame at all. */
     fun addCover(coverData: ByteArray) {
-        val mimeTypeBytes = "image/jpeg".encodeToByteArray()
+        if (coverData.isEmpty()) return
+        val mimeTypeBytes = CoverImage.mimeType(coverData).encodeToByteArray()
         val descriptionBytes = "".encodeToByteArray()
         val textEncoding: Byte = 0x00  // ISO-8859-1
         val pictureType: Byte = 0x03

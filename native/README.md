@@ -45,7 +45,7 @@ Consumers:
 
 - Android: `nativeLib/src/main/cpp/CMakeLists.txt` builds `libncmc4a.so` and
   `System.loadLibrary("ncmc4a")` resolves it from the APK.
-- Desktop: `:composeApp:nativeTestLibrary` builds the library and bundles it as
+- Desktop: `:composeApp:nativeBuild` builds the library and bundles it as
   the `ncmc4a/<os>-<arch>/ncmc4a.<ext>` resource; `jni/NativeLibrary.kt` extracts
   it at runtime, so the Jar, the installed distribution and `desktopTest` all work.
 
@@ -73,8 +73,7 @@ JVM-level check (needs a JDK as well):
 native/check.sh
 ```
 
-Desktop unit tests, including the parity check against the retired Vector API
-implementation:
+Desktop unit tests, including the JNI golden vectors and chunk boundary checks:
 
 ```bash
 ./gradlew :composeApp:desktopTest

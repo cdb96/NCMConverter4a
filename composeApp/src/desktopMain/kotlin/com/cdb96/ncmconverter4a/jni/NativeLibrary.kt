@@ -23,11 +23,13 @@ internal object NativeLibrary {
     fun load() {
         val os = osName()
         val arch = archName()
-        if (!loaded.add("$os-$arch")) return
+        val key = "$os-$arch"
+        if (key in loaded) return
 
         val override = System.getProperty("ncmc4a.library")
         if (override != null) {
             System.load(File(override).absolutePath)
+            loaded.add(key)
             return
         }
 
@@ -39,6 +41,9 @@ internal object NativeLibrary {
         for (candidate in candidates) {
             try {
                 System.load(candidate.absolutePath)
+                // Recorded only after success, so a failed attempt keeps its
+                // detailed error on the next call instead of returning silently.
+                loaded.add(key)
                 return
             } catch (error: UnsatisfiedLinkError) {
                 failure.append("\n  ").append(candidate.absolutePath).append(": ").append(error.message)

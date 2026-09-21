@@ -146,6 +146,44 @@ class NcmFlacMetadataTest {
     }
 
     @Test
+    fun omitsPictureBlockWithoutCoverAndKeepsTheLastFlagOnTheRewrittenVorbis() {
+        val vorbisLast = "fLaC".encodeToByteArray() +
+            flacBlock(0, false, ByteArray(34)) +
+            flacBlock(4, true, ByteArray(8)) + byteArrayOf(1, 2, 3)
+        val (lastBlocks, lastAudio) = parseFlac(convertFlac(vorbisLast, cover = byteArrayOf()))
+        assertEquals(listOf(0, 0x84), lastBlocks.map { it.first })
+        assertContentEquals(byteArrayOf(1, 2, 3), lastAudio)
+
+        val padding = ByteArray(16) { it.toByte() }
+        val vorbisMiddle = "fLaC".encodeToByteArray() +
+            flacBlock(0, false, ByteArray(34)) +
+            flacBlock(4, false, ByteArray(8)) +
+            flacBlock(1, true, padding) + byteArrayOf(4, 5, 6)
+        val (middleBlocks, middleAudio) = parseFlac(convertFlac(vorbisMiddle, cover = byteArrayOf()))
+        assertEquals(listOf(0, 4, 0x81), middleBlocks.map { it.first })
+        assertContentEquals(padding, middleBlocks.last().second)
+        assertContentEquals(byteArrayOf(4, 5, 6), middleAudio)
+    }
+
+    @Test
+    fun labelsPngCoversWithThePngMimeType() {
+        val pngCover = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2)
+        val payload = "fLaC".encodeToByteArray() +
+            flacBlock(0, false, ByteArray(34)) +
+            flacBlock(4, true, ByteArray(8)) + byteArrayOf(1, 2, 3)
+
+        val (blocks, _) = parseFlac(convertFlac(payload, cover = pngCover))
+
+        assertEquals(listOf(0, 4, 0x86), blocks.map { it.first })
+        val picture = ByteBuffer.wrap(blocks.last().second)
+        assertEquals(3, picture.int)
+        assertEquals("image/png", ByteArray(picture.int).also { picture.get(it) }.decodeToString())
+        repeat(5) { assertEquals(0, picture.int) }
+        assertEquals(pngCover.size, picture.int)
+        assertContentEquals(pngCover, ByteArray(pngCover.size).also { picture.get(it) })
+    }
+
+    @Test
     fun rejectsTruncatedOrOversizedMetadataIncludingSkippedComments() {
         val invalidBlocks = listOf(
             byteArrayOf(0x80.toByte(), 0, 0, 2, 1), // truncated body
@@ -214,7 +252,7 @@ class NcmFlacMetadataTest {
         assertEquals(expectedCrc.value, actualCrc.value)
     }
 
-    private fun convertFlac(payload: ByteArray): ByteArray {
+    private fun convertFlac(payload: ByteArray, cover: ByteArray = byteArrayOf(9, 8, 7)): ByteArray {
         val key = byteArrayOf(1, 2, 3, 4, 5)
         val input = object : ByteArrayInputStream(rc4(payload, key)) {
             override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
@@ -224,7 +262,7 @@ class NcmFlacMetadataTest {
         NCMConverter.writeAudio(
             InputStreamBinaryInput(input),
             OutputStreamBinaryOutput(output),
-            NcmFileInfo(key, byteArrayOf(9, 8, 7), "Title", "Album", "Artist", "flac"),
+            NcmFileInfo(key, cover, "Title", "Album", "Artist", "flac"),
             rawWriteMode = false,
             bufferSize = 256
         )

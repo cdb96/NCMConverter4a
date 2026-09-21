@@ -9,9 +9,13 @@ import com.cdb96.ncmconverter4a.util.LengthUtils.writeIntLE
 object FLACMetadataGenerator {
     private const val MAX_BLOCK_SIZE = 0xFFFFFF
 
-    /** Emits the small picture header followed by the original cover array. */
+    /**
+     * Emits the small picture header followed by the original cover array.
+     * Callers skip this block entirely when there is no cover.
+     */
     fun writePictureBlock(output: BinaryOutput, coverData: ByteArray, isLast: Boolean) {
-        val mimeTypeBytes = "image/jpeg".encodeToByteArray()
+        require(coverData.isNotEmpty()) { "FLAC picture block needs cover data" }
+        val mimeTypeBytes = CoverImage.mimeType(coverData).encodeToByteArray()
         val headerSize = 4 + 4 + 4 + mimeTypeBytes.size + 4 + 4 * 4 + 4
         val bodyHeaderSize = headerSize - 4
         require(coverData.size <= MAX_BLOCK_SIZE - bodyHeaderSize) {
@@ -31,13 +35,18 @@ object FLACMetadataGenerator {
         output.write(coverData)
     }
 
-    /** [writeVendor] copies exactly [vendorLength] bytes from the original block. */
+    /**
+     * [writeVendor] copies exactly [vendorLength] bytes from the original block.
+     * [isLast] marks this as the final metadata block, which is only correct
+     * when no picture block follows it.
+     */
     fun writeVorbisCommentBlock(
         output: BinaryOutput,
         title: String,
         artist: String,
         album: String,
         vendorLength: Int,
+        isLast: Boolean,
         writeVendor: (BinaryOutput) -> Unit
     ) {
         val comments = arrayOf(
@@ -51,7 +60,7 @@ object FLACMetadataGenerator {
         }
 
         val header = ByteArray(8)
-        header[0] = 4 // a picture block will follow, so this is never the last block
+        header[0] = (4 or if (isLast) 0x80 else 0).toByte()
         toBigEndianInteger3Bytes(blockSize.toInt()).copyInto(header, 1)
         writeIntLE(header, 4, vendorLength)
         output.write(header)
