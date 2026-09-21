@@ -11,7 +11,6 @@
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/androidApp" />
             <option value="$PROJECT_DIR$/composeApp" />
-            <option value="$PROJECT_DIR$/nativeLib" />
           </set>
         </option>
       </GradleProjectSettings>

@@ -50,13 +50,6 @@ object LengthUtils {
         )
     }
 
-    fun toBigEndianBytes(value: Int): ByteArray = byteArrayOf(
-        (value shr 24).toByte(),
-        (value shr 16).toByte(),
-        (value shr 8).toByte(),
-        value.toByte()
-    )
-
     fun toBigEndianInteger3Bytes(value: Int): ByteArray {
         require(value in 0..0xFFFFFF) { "invalid three-byte integer: $value" }
         return byteArrayOf(
@@ -64,13 +57,6 @@ object LengthUtils {
             ((value shr 8) and 0xFF).toByte(),
             (value and 0xFF).toByte()
         )
-    }
-
-    fun getBigEndianInteger3bytes(bytes: ByteArray): Int {
-        require(bytes.size >= 3) { "need three bytes for a big-endian integer" }
-        return ((bytes[0].toInt() and 0xFF) shl 16) or
-            ((bytes[1].toInt() and 0xFF) shl 8) or
-            (bytes[2].toInt() and 0xFF)
     }
 
     fun getSyncSafeInteger(bytes: ByteArray): Int {

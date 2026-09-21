@@ -2,15 +2,12 @@
 #
 # Built two ways:
 #   * Desktop: standalone, `cmake -S native -B native/build` (see README.md).
-#   * Android: included from nativeLib/src/main/cpp/CMakeLists.txt, which already
-#     defined the `ncmc4a` project and sets NCM_BUILD_* before including this file.
+#   * Android: androidApp builds this file directly with NCM_BUILD_SELFTEST=OFF.
 #
 # The algorithms live in RC4Core.cpp / KGMCore.cpp behind the C ABI declared in
 # NativeApi.h; JniBridge.cpp is the only file that knows about JNI.
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    cmake_minimum_required(VERSION 3.22)
-    project(ncmc4a CXX)
-endif()
+cmake_minimum_required(VERSION 3.22)
+project(ncmc4a CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -47,11 +44,12 @@ if(NCM_BUILD_JNI)
 
     target_compile_features(ncmc4a PRIVATE cxx_std_17)
 
-    # The library is loaded from a Blob rather than through java.library.path, so
-    # the Android and Desktop artifacts can share one file name.
-    set_target_properties(ncmc4a PROPERTIES PREFIX "")
-    if(NOT ANDROID)
+    if(ANDROID)
+        target_link_libraries(ncmc4a PRIVATE android log)
+    else()
+        # Desktop extracts its bundled library; Android uses libncmc4a.so.
         set_target_properties(ncmc4a PROPERTIES
+            PREFIX ""
             CXX_VISIBILITY_PRESET hidden
             VISIBILITY_INLINES_HIDDEN ON)
     endif()

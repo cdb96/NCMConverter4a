@@ -12,12 +12,24 @@ plugins {
     alias(libs.plugins.compose.multiplatform)
 }
 
+val desktopNativeResources = layout.buildDirectory.dir("generated/desktopNativeResources")
+
 val desktopJdk25Home = extensions.getByType<JavaToolchainService>()
     .launcherFor {
         languageVersion.set(JavaLanguageVersion.of(25))
         vendor.set(JvmVendorSpec.ADOPTIUM)
     }
     .map { it.metadata.installationPath.asFile.absolutePath }
+
+// JDK 25 product feature: smaller headers for UI/state objects, with no
+// change to the streaming buffers or native SIMD conversion path.
+// Keep an explicit off switch for same-runtime performance comparisons.
+val desktopObjectHeaderArgs = listOf(
+    if (providers.gradleProperty("ncmCompactObjectHeaders").orNull != "false")
+        "-XX:+UseCompactObjectHeaders"
+    else
+        "-XX:-UseCompactObjectHeaders"
+)
 
 kotlin {
     jvmToolchain {
@@ -71,6 +83,7 @@ kotlin {
         }
         getByName("desktopMain") {
             dependsOn(jvmMain)
+            resources.srcDir(desktopNativeResources)
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
@@ -82,7 +95,7 @@ kotlin {
 // ---------------------------------------------------------------------------
 // Desktop native core
 //
-// native/ holds the single C++ implementation of RC4 and KGM. nativeLib builds
+// native/ holds the single C++ implementation of RC4 and KGM. androidApp builds
 // it for Android; this task builds the same sources into the Desktop JVM library
 // and bundles it as a resource, so both platforms share one bridge as well.
 //
@@ -107,8 +120,8 @@ val ncmNativeExtension = when (ncmNativeOsName) {
     "macos" -> "dylib"
     else -> "so"
 }
-val ncmNativeResourceDir = layout.projectDirectory
-    .dir("src/desktopMain/resources/ncmc4a/$ncmNativeOsName-$ncmNativeArchName")
+val ncmNativeResourceDir = desktopNativeResources.get()
+    .dir("ncmc4a/$ncmNativeOsName-$ncmNativeArchName")
 
 private fun findOnPath(executable: String): File? {
     // Windows resolves `cmake` to `cmake.exe`; File.isFile does not.
@@ -220,17 +233,17 @@ val nativeBuild = tasks.register<Exec>("nativeBuild") {
     }
 }
 
-// The library is produced straight into a source directory, so declare it as a
-// processResources input; otherwise packaging treats the old resource set as up
-// to date and can ship a jar without the native core. A file tree tolerates the
-// directory being absent when the native build is skipped.
+// Generate the native resource before packaging; generated binaries stay in build/.
 tasks.named("desktopProcessResources") {
     dependsOn(nativeBuild)
     inputs.files(fileTree(ncmNativeResourceDir))
 }
 
-tasks.named("desktopTest") {
+tasks.named<Test>("desktopTest") {
     dependsOn(nativeBuild)
+    // Exercise JNI and conversion tests with the same header layout and GC
+    // as the shipped desktop runtime.
+    jvmArgs(desktopObjectHeaderArgs + "-XX:+UseSerialGC")
 }
 
 // ---------------------------------------------------------------------------
@@ -241,6 +254,7 @@ compose.desktop {
         // JDK 25 toolchain so the packaged runtime matches the compiled target.
         javaHome = desktopJdk25Home.get()
         mainClass = "com.cdb96.ncmconverter4a.MainKt"
+        jvmArgs += desktopObjectHeaderArgs
         // These options reach both Gradle run and the installed launcher. A raw
         // `java -jar` invocation needs to supply its own JVM options.
         // The UI has a small live heap; reserve room for concurrent conversions
@@ -270,7 +284,7 @@ compose.desktop {
             targetFormats(TargetFormat.Msi, TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "NCMConverter4a"
             packageVersion = "4.0.0"
-            appResourcesRootDir.set(layout.projectDirectory.dir("src/desktopMain/resources"))
+            appResourcesRootDir.set(desktopNativeResources)
 
             // JRE modules — trimmed to the minimum needed at runtime
             modules(

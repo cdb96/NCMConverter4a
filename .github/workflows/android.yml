@@ -51,7 +51,7 @@ jobs:
       - name: 设置 Android SDK 和 NDK
         uses: android-actions/setup-android@v4
         with:
-          # nativeLib 模块所需的 NDK 版本 (见 nativeLib/build.gradle.kts)
+          # Android 原生构建所需的 NDK 版本 (见 androidApp/build.gradle.kts)
           packages: ndk;30.0.16248370
 
       - name: 授予 Gradlew 执行权限

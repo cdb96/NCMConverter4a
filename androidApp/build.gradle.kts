@@ -20,6 +20,7 @@ kotlin {
 android {
     namespace = "com.cdb96.ncmconverter4a"
     compileSdk = 37
+    ndkVersion = "30.0.16248370"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_25
@@ -33,6 +34,20 @@ android {
         versionName = "4.0.0"
         ndk {
             abiFilters += listOf("x86_64", "arm64-v8a")
+        }
+        externalNativeBuild {
+            cmake {
+                cppFlags += "-Wno-gnu-inline-cpp-without-extern -Wno-deprecated-declarations"
+                arguments("-DANDROID_ARM_NEON=TRUE", "-DNCM_BUILD_JNI=ON", "-DNCM_BUILD_SELFTEST=OFF")
+                targets("ncmc4a")
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = rootProject.file("native/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 
@@ -64,7 +79,6 @@ android {
 
 dependencies {
     implementation(project(":composeApp"))
-    implementation(project(":nativeLib"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

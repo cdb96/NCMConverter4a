@@ -25,4 +25,3 @@ dependencyResolutionManagement {
 rootProject.name = "NCMConverter4a"
 include(":composeApp")
 include(":androidApp")
-include(":nativeLib")
