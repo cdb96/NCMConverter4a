@@ -276,6 +276,7 @@ compose.desktop {
         }
         buildTypes.release {
             proguard {
+                version.set("7.10.0")
                 isEnabled = true
                 configurationFiles.from(project.file("compose-desktop.pro"))
             }
@@ -297,8 +298,35 @@ compose.desktop {
     }
 }
 
+// Some JDK 25 distributions omit jmods. Compose's ProGuard task only searches
+// that directory, so export the SAME toolchain's runtime classes as libraries.
+// This jar is build-only and must never be packaged with the application.
+val proguardJdkHome = File(desktopJdk25Home.get())
+val proguardNeedsRuntimeExport = !File(proguardJdkHome, "jmods/java.base.jmod").isFile
+val proguardRuntimeDir = layout.buildDirectory.dir("generated/proguardRuntime")
+val exportProguardRuntime = tasks.register<Exec>("exportProguardRuntime") {
+    val exporter = layout.projectDirectory.file("tools/ExportRuntimeClasses.java")
+    val runtimeJar = proguardRuntimeDir.get().file("jdk-library.jar")
+    val runtimeConfig = proguardRuntimeDir.get().file("jdk-library.pro")
+    inputs.file(exporter)
+    inputs.file(File(proguardJdkHome, "lib/modules"))
+    outputs.file(runtimeJar)
+    outputs.file(runtimeConfig)
+    commandLine(
+        File(proguardJdkHome, "bin/java$ncmExecutableSuffix").absolutePath,
+        exporter.asFile.absolutePath,
+        runtimeJar.asFile.absolutePath,
+        runtimeConfig.asFile.absolutePath,
+    )
+}
+
 afterEvaluate {
     tasks.withType<AbstractProguardTask>().configureEach {
         javaHome.set(desktopJdk25Home)
+        if (proguardNeedsRuntimeExport) {
+            dependsOn(exportProguardRuntime)
+            configurationFiles.from(proguardRuntimeDir.map { it.file("jdk-library.pro") })
+            inputs.file(proguardRuntimeDir.map { it.file("jdk-library.jar") })
+        }
     }
 }
