@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -28,12 +29,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.outlined.Settings
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SwitchDefaults
 
@@ -57,81 +62,129 @@ fun SettingsScreen(
             onThreadCountChange = onThreadCountChange,
             enabled = state.enabled,
         )
-        Text("KGG 数据库", style = MaterialTheme.typography.titleMedium)
-        Text("选择对应的酷狗数据库后，即可在转换页与 NCM、KGM 一起批量转换。",
-            style = MaterialTheme.typography.bodyMedium)
-        if (supportsRoot) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("自动获取数据库")
-                    Text("需要设备已 Root 并授权访问", style = MaterialTheme.typography.bodySmall)
-                }
-                Switch(checked = state.kggRootMode, onCheckedChange = onKggRootModeChange,
-                    enabled = state.enabled)
-            }
-        }
-        if (!supportsRoot || !state.kggRootMode) {
-            FileSelectCard(
-                title = "酷狗数据库",
-                description = if (supportsRoot) "包含音频密钥的 MMKV 文件" else "包含音频密钥的 DB 或 MMKV 文件",
-                selectedFileName = state.kggDatabaseName ?: state.kggDatabase,
-                onSelectClick = onSelectKggDatabase,
-                enabled = state.enabled,
-            )
-        }
+        KggDatabaseCard(
+            state = state,
+            onSelectClick = onSelectKggDatabase,
+            onRootModeChange = onKggRootModeChange,
+            supportsRoot = supportsRoot,
+        )
     }
 }
 
 @Composable
-fun FileSelectCard(
-    title: String,
-    description: String,
-    selectedFileName: String?,
+private fun KggDatabaseCard(
+    state: SettingsUiState,
     onSelectClick: () -> Unit,
-    enabled: Boolean
+    onRootModeChange: (Boolean) -> Unit,
+    supportsRoot: Boolean,
 ) {
+    val colors = MaterialTheme.colorScheme
+    val automatic = supportsRoot && state.kggRootMode
+    val hasDatabase = state.kggDatabase != null
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = colors.surfaceVariant),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = selectedFileName ?: "未选择文件",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (selectedFileName != null)
-                        MaterialTheme.colorScheme.primary
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Button(
-                onClick = onSelectClick,
-                enabled = enabled
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(if (selectedFileName == null) "选择" else "更换")
+                Icon(Icons.Outlined.Key, contentDescription = null,
+                    tint = colors.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("KGG 数据库", style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium)
+                    Text("用于读取 KGG 音频密钥，支持与 NCM、KGM 一起批量转换。",
+                        style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                }
+            }
+            HorizontalDivider(color = colors.onSurfaceVariant.copy(alpha = 0.12f))
+
+            if (supportsRoot) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().toggleable(
+                        value = state.kggRootMode,
+                        enabled = state.enabled,
+                        role = Role.Switch,
+                        onValueChange = onRootModeChange,
+                    ).padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("自动获取数据库", style = MaterialTheme.typography.bodyLarge)
+                        Text("需要设备已 Root 并授予访问权限",
+                            style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                    }
+                    Switch(checked = state.kggRootMode, onCheckedChange = null, enabled = state.enabled)
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = if (automatic) colors.secondaryContainer else colors.surface,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Icon(
+                        imageVector = if (automatic) Icons.Outlined.Key
+                            else Icons.AutoMirrored.Outlined.InsertDriveFile,
+                        contentDescription = null,
+                        tint = if (automatic) colors.onSecondaryContainer else colors.primary,
+                        modifier = Modifier.size(24.dp),
+                    )
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = when {
+                                automatic -> "转换时自动获取"
+                                hasDatabase -> "已选择数据库"
+                                else -> "尚未选择数据库"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (automatic) colors.onSecondaryContainer else colors.onSurfaceVariant,
+                        )
+                        Text(
+                            text = when {
+                                automatic -> "开始转换 KGG 时读取酷狗数据库，无需手动选择文件。"
+                                hasDatabase -> state.kggDatabaseName?.takeIf { it.isNotBlank() }
+                                    ?: "已选择数据库文件"
+                                else -> "添加对应的酷狗数据库后，即可转换 KGG 文件。"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (automatic) colors.onSecondaryContainer else colors.onSurface,
+                            maxLines = if (hasDatabase && !automatic) 3 else Int.MAX_VALUE,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+
+            if (!automatic) {
+                Text(
+                    text = if (supportsRoot) "请选择包含音频密钥的 MMKV 文件"
+                        else "请选择包含音频密钥的 DB 或 MMKV 文件",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                )
+                Button(
+                    onClick = onSelectClick,
+                    enabled = state.enabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Outlined.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (hasDatabase) "更换数据库" else "选择数据库")
+                }
             }
         }
     }

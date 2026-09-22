@@ -1,13 +1,9 @@
 // KGM core shared by the Android and Desktop builds.
 //
-// This is a port of the previous Android NEON implementation; the byte-for-byte
-// behaviour (including the mask-table cursor arithmetic) is kept on purpose so
-// that both platforms keep producing identical output.
-//
-// The SIMD body follows the historical KGMDecrypt.cpp: genMask() expands the
-// pre-computed table, and the main loop keeps the old two-path med8/msk8
-// structure rather than the algebraically merged form. ARM compiles it through
-// <arm_neon.h>, x86 through NEON_2_SSE (see SimdCompat.h).
+// Uses the merged transform from master (app/src/main/cpp/KGMDecrypt.cpp).
+// The file key and fixed mask are combined during initialization. Since
+// T(x) = x ^ (x << 4) is linear over XOR for bytes, each SIMD block needs only
+// one transform. ARM uses NEON; x86 uses NEON_2_SSE via SimdCompat.h.
 //
 // The main loop requires a 16-byte aligned `offset` (see NativeApi.h), which is
 // what the historical code assumed as well; `length` may be arbitrary, and the
@@ -30,12 +26,8 @@ constexpr int kMaskV2Period = 272;          // 17 * 16
 constexpr int kMaskBytePeriod = 4352;       // PRE_COMPUTED_TABLE_SIZE
 
 thread_local std::array<std::uint8_t, kMaskBytePeriod> maskBytes{};
-// The 17-byte file key repeated 16 times. Kept unmerged on purpose: the
-// historical SIMD loop XORs MASK_V2_PRE_DEF in separately, and restoring that
-// structure is what makes the migration comparable to the old implementation.
-thread_local std::array<std::uint8_t, 16 * 17> ownKeyBytes{};
-
-const uint8x16_t andVec = vdupq_n_u8(0x0f);
+// The 17-byte file key repeated 16 times and XORed with MASK_V2_PRE_DEF.
+thread_local std::array<std::uint8_t, kMaskV2Period> fileKeyBytes{};
 
 // Expands the pre-computed byte table into 16-byte masks for one 69632 byte
 // period starting at absolute stream position `startPos`.
@@ -95,24 +87,13 @@ inline void normalizeCountersBeforeByte(int i, int j, int& genMaskCounter, int& 
     }
 }
 
-// Scalar equivalent of one SIMD lane:
-//   int med8 = ownKeyBytes[i % 17] ^ cipherDataBytes[j];
-//   med8 ^= (med8 & 0xf) << 4;
-//   int msk8 = maskBytes[keyBytesIndexCounter] ^ MASK_V2_PRE_DEF[MaskV2Counter];
-//   msk8 ^= (msk8 & 0xf) << 4;
-//   cipherDataBytes[j] = (med8 ^ msk8);
-// `ownKeyBytes[maskV2Counter]` stands in for `ownKeyBytes[i % 17]` because
-// kMaskV2Period is a multiple of 17, so both indices agree for every byte.
+// Scalar equivalent of the merged SIMD transform; conversion to uint8_t
+// discards the high bits of the shift, matching the SIMD byte lanes.
 inline void decryptScalarByte(std::uint8_t* data, int j, int maskV2Counter,
                               int keyBytesIndexCounter) {
-    int med8 = ownKeyBytes[static_cast<std::size_t>(maskV2Counter)] ^ data[j];
-    med8 ^= (med8 & 0x0F) << 4;
-
-    int msk8 = maskBytes[static_cast<std::size_t>(keyBytesIndexCounter)] ^
-               MASK_V2_PRE_DEF[static_cast<std::size_t>(maskV2Counter)];
-    msk8 ^= (msk8 & 0x0F) << 4;
-
-    data[j] = static_cast<std::uint8_t>(med8 ^ msk8);
+    const int combined = fileKeyBytes[static_cast<std::size_t>(maskV2Counter)] ^
+                         data[j] ^ maskBytes[static_cast<std::size_t>(keyBytesIndexCounter)];
+    data[j] = static_cast<std::uint8_t>(combined ^ (combined << 4));
 }
 
 }  // namespace
@@ -120,10 +101,14 @@ inline void decryptScalarByte(std::uint8_t* data, int j, int maskV2Counter,
 void kgmInit(const std::uint8_t* key, int keyLength) {
     if (key == nullptr || keyLength < 17) return;
 
-    // Keep the old layout exactly: repeat the original 17-byte key 16 times.
-    std::memcpy(ownKeyBytes.data(), key, 17);
+    // Repeat the key, then fold the fixed mask into the per-file table.
+    std::memcpy(fileKeyBytes.data(), key, 17);
     for (int i = 1; i < 16; ++i) {
-        std::memcpy(ownKeyBytes.data() + i * 17, ownKeyBytes.data(), 17);
+        std::memcpy(fileKeyBytes.data() + i * 17, fileKeyBytes.data(), 17);
+    }
+
+    for (int i = 0; i < kMaskV2Period; ++i) {
+        fileKeyBytes[static_cast<std::size_t>(i)] ^= MASK_V2_PRE_DEF[i];
     }
 
     // The first 69632-byte period uses the pre-computed table directly.
@@ -153,37 +138,17 @@ int kgmDecrypt(std::uint8_t* data, int offset, int bytesRead) {
     // `offset` is a multiple of 16 by contract (see NativeApi.h), so every
     // iteration starts on a 16-byte block boundary: one SIMD block spans exactly
     // one maskBytes entry, and maskV2Counter stays a multiple of 16, so
-    // `vld1q_u8(ownKeyBytes + maskV2Counter)` cannot read past the 272-byte cycle.
+    // `vld1q_u8(fileKeyBytes + maskV2Counter)` cannot read past the 272-byte cycle.
     for (; j + 16 <= bytesRead; i += 16, j += 16) {
         normalizeCountersBeforeByte(i, j, genMaskCounter, maskV2Counter,
                                     keyBytesIndexCounter);
 
-        uint8x16_t cipherDataBytesChunk = vld1q_u8(data + j);
-
-        // ---- med8 --------------------------------------------------------
-        uint8x16_t med8DataChunkOriginal = vld1q_u8(ownKeyBytes.data() + maskV2Counter);
-        uint8x16_t med8DataChunkTemp;
-
-        med8DataChunkOriginal = veorq_u8(med8DataChunkOriginal, cipherDataBytesChunk);
-        med8DataChunkTemp = vandq_u8(med8DataChunkOriginal, andVec);
-        med8DataChunkTemp = vshlq_n_u8(med8DataChunkTemp, 4);
-        med8DataChunkOriginal = veorq_u8(med8DataChunkOriginal, med8DataChunkTemp);
-
-        // ---- msk8 --------------------------------------------------------
-        uint8x16_t msk8DataChunkOriginal =
-            vld1q_dup_u8(maskBytes.data() + keyBytesIndexCounter);
-        uint8x16_t msk8DataChunkTemp;
-
-        const uint8x16_t maskV2Data = vld1q_u8(MASK_V2_PRE_DEF + maskV2Counter);
-
-        msk8DataChunkOriginal = veorq_u8(msk8DataChunkOriginal, maskV2Data);
-        msk8DataChunkTemp = vandq_u8(msk8DataChunkOriginal, andVec);
-        msk8DataChunkTemp = vshlq_n_u8(msk8DataChunkTemp, 4);
-        msk8DataChunkOriginal = veorq_u8(msk8DataChunkOriginal, msk8DataChunkTemp);
-
-        // ---- output ------------------------------------------------------
-        cipherDataBytesChunk = veorq_u8(msk8DataChunkOriginal, med8DataChunkOriginal);
-        vst1q_u8(data + j, cipherDataBytesChunk);
+        const uint8x16_t cipher = vld1q_u8(data + j);
+        const uint8x16_t fileKey = vld1q_u8(fileKeyBytes.data() + maskV2Counter);
+        const uint8x16_t mask = vld1q_dup_u8(maskBytes.data() + keyBytesIndexCounter);
+        const uint8x16_t combined = veorq_u8(veorq_u8(fileKey, cipher), mask);
+        const uint8x16_t result = veorq_u8(combined, vshlq_n_u8(combined, 4));
+        vst1q_u8(data + j, result);
 
         genMaskCounter += 16;
         maskV2Counter += 16;
@@ -200,7 +165,7 @@ int kgmDecrypt(std::uint8_t* data, int offset, int bytesRead) {
     //     272.
     //   * The first tail byte is 16-byte aligned, so it has to advance
     //     keyBytesIndexCounter like every other 16-byte block start.
-    // Skipping it reads past the 272-byte ownKeyBytes/MASK_V2_PRE_DEF cycle and
+    // Skipping it reads past the 272-byte fileKeyBytes/MASK_V2_PRE_DEF cycle and
     // decodes the tail with a stale mask block.
     while (j < bytesRead) {
         normalizeCountersBeforeByte(i, j, genMaskCounter, maskV2Counter,
