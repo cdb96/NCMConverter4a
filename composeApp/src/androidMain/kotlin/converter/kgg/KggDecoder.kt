@@ -1,49 +1,42 @@
 //ported from Unlock Music Project
 package com.cdb96.ncmconverter4a.converter.kgg
 
-import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
-import android.os.Environment
-import android.provider.MediaStore
-import android.provider.OpenableColumns
 import com.cdb96.ncmconverter4a.converter.KGMConverter
 import com.cdb96.ncmconverter4a.io.readChunk
 import com.cdb96.ncmconverter4a.io.readFully
 import com.cdb96.ncmconverter4a.io.skipFully
-import com.cdb96.ncmconverter4a.util.FileNameUtils
 import java.io.BufferedInputStream
 import java.io.InputStream
 
 class KggDecoder(context: Context) {
     private val contentResolver = context.contentResolver
 
-    fun decryptWithUri(audioFileUri: Uri, dbFileUri: Uri?, isRooted: Boolean) {
-        val rawStream = contentResolver.openInputStream(audioFileUri)
-            ?: throw IllegalStateException("无法打开音频文件，Uri: $audioFileUri")
-        rawStream.use { raw ->
-            BufferedInputStream(raw).use { audioStream ->
-                val headerChunk = ByteArray(KGMConverter.HEADER_LENGTH)
-                audioStream.readFully(headerChunk)
-                val header = parseKgmHeader(headerChunk)
-                require(header.cryptoVersion == 5u) { "不是KGG文件" }
-
-                val cipher = getCipher(header.audioHash, dbFileUri, isRooted)
-                val musicName = getFileName(audioFileUri)
-                outputMusic(musicName, header.audioOffset.toLong(), cipher, audioStream)
+    suspend fun decryptToOutput(
+        input: BufferedInputStream,
+        dbFileUri: Uri?,
+        isRooted: Boolean,
+        output: suspend (String, (java.io.OutputStream) -> Unit) -> Boolean,
+    ): Boolean {
+        val bytes = ByteArray(KGMConverter.HEADER_LENGTH)
+        input.readFully(bytes)
+        val header = parseKgmHeader(bytes)
+        require(header.cryptoVersion == 5u) { "不是 KGG 文件" }
+        val cipher = getCipher(header.audioHash, dbFileUri, isRooted)
+        input.skipFully(header.audioOffset.toLong() - bytes.size)
+        val format = detectAudioFormat(input, cipher)
+        return output(format) { stream ->
+            val buffer = ByteArray(QmcCipher.STREAM_BUFFER_SIZE)
+            var offset = 0L
+            while (true) {
+                val count = input.readChunk(buffer)
+                if (count < 0) break
+                cipher.decrypt(buffer, offset, count)
+                stream.write(buffer, 0, count)
+                offset += count
             }
         }
-    }
-
-    private fun getFileName(uri: Uri): String {
-        var name = "未知文件"
-        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            if (cursor.moveToFirst() && nameIndex >= 0) {
-                name = cursor.getString(nameIndex)
-            }
-        }
-        return name
     }
 
     fun getCipher(
@@ -101,51 +94,6 @@ class KggDecoder(context: Context) {
         }
     }
 
-    private fun outputMusic(
-        fileName: String,
-        audioOffset: Long,
-        cipher: QmcCipher.QmcStreamCipher,
-        audioFileInputStream: BufferedInputStream
-    ) {
-        require(audioOffset >= KGMConverter.HEADER_LENGTH) {
-            "KGG audio offset is before the header: $audioOffset"
-        }
-        audioFileInputStream.skipFully(audioOffset - KGMConverter.HEADER_LENGTH)
-        val audioFormat = detectAudioFormat(audioFileInputStream, cipher)
-        val mimeType = when (audioFormat) {
-            "flac" -> "audio/flac"
-            "ogg" -> "audio/ogg"
-            else -> "audio/mpeg"
-        }
-        val safeName = FileNameUtils.sanitizeFileName(
-            FileNameUtils.removeLastExtension(fileName)
-        )
-        val values = ContentValues().apply {
-            put(MediaStore.Audio.Media.DISPLAY_NAME, "$safeName.$audioFormat")
-            put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
-            put(MediaStore.Audio.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/NCMConverter4A")
-        }
-        val uri = contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
-            ?: throw IllegalStateException("无法创建输出文件")
-        try {
-            val output = contentResolver.openOutputStream(uri, "w")
-                ?: throw IllegalStateException("无法打开输出文件")
-            output.use {
-                val buffer = ByteArray(QmcCipher.STREAM_BUFFER_SIZE)
-                var streamOffset = 0L
-                while (true) {
-                    val bytesRead = audioFileInputStream.readChunk(buffer)
-                    if (bytesRead < 0) break
-                    cipher.decrypt(buffer, streamOffset, bytesRead)
-                    it.write(buffer, 0, bytesRead)
-                    streamOffset += bytesRead.toLong()
-                }
-            }
-        } catch (error: Throwable) {
-            contentResolver.delete(uri, null, null)
-            throw error
-        }
-    }
 }
 
 private fun ByteArray.startsWith(prefix: ByteArray): Boolean {

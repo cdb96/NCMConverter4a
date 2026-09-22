@@ -9,7 +9,7 @@ import java.io.OutputStream
 /** Detects the encrypted format without consuming the stream header. */
 fun BufferedInputStream.detectEncryptedFormat(): EncryptedFormat {
     mark(32)
-    val header = ByteArray(16)
+    val header = ByteArray(24)
     val bytesRead = readChunk(header)
     reset()
     return detectEncryptedFormat(header.copyOf(bytesRead.coerceAtLeast(0)))

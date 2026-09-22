@@ -1,17 +1,12 @@
 package com.cdb96.ncmconverter4a.ui.screens
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import com.cdb96.ncmconverter4a.service.ConversionResult
 import com.cdb96.ncmconverter4a.service.FileConversionResult
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,55 +19,38 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.Memory
-import androidx.compose.material.icons.outlined.MusicNote
-import androidx.compose.material.icons.outlined.SaveAlt
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Warning
-import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -125,11 +103,13 @@ data class ConversionUiState(
 }
 
 data class SettingsUiState(
-    val isExpanded: Boolean = false,
     val rawWriteMode: Boolean = false,
     val duplicateConflictMitigation: Boolean = false,
     val threadCount: Int = 4,
     val enabled: Boolean = true,
+    val kggDatabase: String? = null,
+    val kggDatabaseName: String? = null,
+    val kggRootMode: Boolean = false,
 )
 
 // ======================== Main Screen ========================
@@ -139,190 +119,86 @@ data class SettingsUiState(
 fun MainScreen(
     conversionState: ConversionUiState,
     settingsState: SettingsUiState,
-    onSettingsExpandedToggle: () -> Unit,
     onRawWriteModeChange: (Boolean) -> Unit,
     onDuplicateConflictMitigationChange: (Boolean) -> Unit,
     onThreadCountChange: (Int) -> Unit,
     onPickFiles: () -> Unit,
     onBenchmark: () -> Unit,
-    onNavigateToKGG: () -> Unit,
+    onSelectKggDatabase: () -> Unit,
+    onKggRootModeChange: (Boolean) -> Unit = {},
+    supportsRoot: Boolean = false,
 ) {
+    var settingsSelected by remember { mutableStateOf(false) }
+    val conversionScroll = rememberScrollState()
+    val settingsScroll = rememberScrollState()
+    val enabled = settingsState.enabled && !conversionState.isProcessing
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text("NCMConverter4A", fontWeight = FontWeight.Bold)
+                        Text(if (settingsSelected) "设置" else "NCMConverter4A", fontWeight = FontWeight.Bold)
                     }
                 },
                 actions = {
-                    IconButton(onClick = onBenchmark) {
+                    IconButton(onClick = onBenchmark, enabled = !conversionState.isProcessing) {
                         Icon(
                             imageVector = Icons.Outlined.Speed,
                             contentDescription = "基准测试"
                         )
                     }
-                    IconButton(onClick = onNavigateToKGG) {
-                        Icon(
-                            imageVector = Icons.Outlined.Key,
-                            contentDescription = "KGG解密"
-                        )
-                    }
+
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
                 )
             )
         },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { if (!conversionState.isProcessing) onPickFiles() },
-                containerColor = if (conversionState.isProcessing)
-                    MaterialTheme.colorScheme.surfaceVariant
-                else
-                    MaterialTheme.colorScheme.primaryContainer,
-                icon = {
-                    if (conversionState.isProcessing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                    }
-                },
-                text = {
-                    Text(if (conversionState.isProcessing) "转换中…" else "选择文件")
-                }
-            )
-        }
+        bottomBar = {
+            AppBottomBar(settingsSelected, onSelectSettings = { settingsSelected = it })
+        },
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 88.dp)
-        ) {
-            Spacer(modifier = Modifier.height(16.dp))
-
-            WelcomeCard(
-                hasConversionStarted = conversionState.hasConversionStarted,
-                totalCount = conversionState.totalCount
-            )
-
-            AnimatedVisibility(
-                visible = conversionState.hasConversionStarted,
-                enter = fadeIn(animationSpec = tween(300)) +
-                        expandVertically(animationSpec = tween(300)),
+        Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.TopCenter) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 1120.dp)
+                    .fillMaxSize()
+                    .verticalScroll(if (settingsSelected) settingsScroll else conversionScroll)
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 24.dp)
             ) {
-                Column {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    ConversionStatusCard(
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (settingsSelected) {
+                    SettingsScreen(
+                        state = settingsState.copy(enabled = enabled),
+                        onRawWriteModeChange = onRawWriteModeChange,
+                        onDuplicateConflictMitigationChange = onDuplicateConflictMitigationChange,
+                        onThreadCountChange = onThreadCountChange,
+                        onSelectKggDatabase = onSelectKggDatabase,
+                        onKggRootModeChange = onKggRootModeChange,
+                        supportsRoot = supportsRoot,
+                    )
+                } else {
+                    ConversionDashboard(
                         conversionState = conversionState,
+                        settings = settingsState,
+                        supportsRoot = supportsRoot,
+                        onPickFiles = onPickFiles,
+                        onOpenSettings = { settingsSelected = true },
                     )
                 }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            SettingsCard(
-                isExpanded = settingsState.isExpanded,
-                onExpandToggle = onSettingsExpandedToggle,
-                rawWriteMode = settingsState.rawWriteMode,
-                onRawWriteModeChange = onRawWriteModeChange,
-                duplicateConflictMitigation = settingsState.duplicateConflictMitigation,
-                onDuplicateConflictMitigationChange = onDuplicateConflictMitigationChange,
-                threadCount = settingsState.threadCount,
-                onThreadCountChange = onThreadCountChange,
-                enabled = settingsState.enabled
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-    }
-}
-
-// ======================== Welcome Card ========================
-
-@Composable
-fun WelcomeCard(
-    hasConversionStarted: Boolean,
-    totalCount: Int
-) {
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val tertiaryColor = MaterialTheme.colorScheme.tertiary
-
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-        ),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            primaryColor.copy(alpha = 0.15f),
-                            tertiaryColor.copy(alpha = 0.10f),
-                        )
-                    )
-                )
-                .padding(24.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.MusicNote,
-                        contentDescription = null,
-                        modifier = Modifier.size(32.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = if (hasConversionStarted) "已选择 $totalCount 首歌曲" else "开始转换",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = if (hasConversionStarted)
-                            "转换结果将保存至 Music 文件夹"
-                        else
-                            "点击右下角按钮选择 NCM / KGM 文件",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    )
-                }
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
 }
 
-// ======================== Conversion Status Card ========================
+// ======================== Inline Conversion Status ========================
 
 @Composable
-fun ConversionStatusCard(
+internal fun ConversionStatusContent(
     conversionState: ConversionUiState,
 ) {
     val isError = conversionState.convertResult != null &&
@@ -330,27 +206,7 @@ fun ConversionStatusCard(
             !conversionState.isProcessing
     val isDone = conversionState.convertResult == "done" && !conversionState.isProcessing
 
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = when {
-                isError -> MaterialTheme.colorScheme.surfaceVariant
-                isDone -> MaterialTheme.colorScheme.secondaryContainer
-                else -> MaterialTheme.colorScheme.surfaceVariant
-            }
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .animateContentSize(
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioLowBouncy,
-                    stiffness = Spring.StiffnessLow
-                )
-            )
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp).fillMaxWidth()
-        ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
             val (statusIcon, statusText, iconTint) = when {
                 conversionState.isProcessing -> Triple(
                     Icons.Outlined.Sync, "正在转换", MaterialTheme.colorScheme.primary
@@ -390,12 +246,12 @@ fun ConversionStatusCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("进度", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("进度", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     Text(
                         "${conversionState.processedCount} / ${conversionState.totalCount}",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -415,13 +271,13 @@ fun ConversionStatusCard(
                         Icon(
                             Icons.AutoMirrored.Outlined.InsertDriveFile, contentDescription = null,
                             modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             conversionState.currentFile,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                             maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                     }
@@ -433,7 +289,7 @@ fun ConversionStatusCard(
                 Text(
                     text = conversionState.convertResult.orEmpty(),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.heightIn(max = 120.dp).verticalScroll(rememberScrollState()),
                 )
             }
@@ -456,7 +312,7 @@ fun ConversionStatusCard(
                         else if (conversionState.failureCount > 0)
                             MaterialTheme.colorScheme.error
                         else
-                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f),
                         modifier = Modifier.weight(1f),
                         fileNames = conversionState.failedFileNames,
                         fileResults = conversionState.failedFiles,
@@ -468,37 +324,36 @@ fun ConversionStatusCard(
                         Icon(
                             Icons.Outlined.Timer, contentDescription = null,
                             modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f)
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             "耗时 ${"%.3f".format(duration / 1000.0)} 秒",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f)
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
                         )
                     }
                 }
                 if (conversionState.currentFile.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(12.dp))
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.12f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.12f))
                     Spacer(modifier = Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.Top) {
                         Icon(
                             Icons.Outlined.Folder, contentDescription = null,
                             modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f)
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             conversionState.currentFile,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                             modifier = Modifier.heightIn(max = 120.dp).verticalScroll(rememberScrollState())
                         )
                     }
                 }
             }
-        }
     }
 }
 
@@ -543,161 +398,3 @@ fun StatChip(
 }
 
 // ======================== Settings Card ========================
-
-@Composable
-fun SettingsCard(
-    isExpanded: Boolean,
-    onExpandToggle: () -> Unit,
-    rawWriteMode: Boolean,
-    onRawWriteModeChange: (Boolean) -> Unit,
-    duplicateConflictMitigation: Boolean,
-    onDuplicateConflictMitigationChange: (Boolean) -> Unit,
-    threadCount: Int,
-    onThreadCountChange: (Int) -> Unit,
-    enabled: Boolean
-) {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        modifier = Modifier.fillMaxWidth().animateContentSize()
-    ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(
-                        enabled = enabled,
-                        onClick = onExpandToggle,
-                        indication = ripple(),
-                        interactionSource = remember { MutableInteractionSource() }
-                    )
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Outlined.Settings, contentDescription = null,
-                        tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        "兼容性设置", style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium,
-                        color = if (enabled) MaterialTheme.colorScheme.onSurface
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
-                }
-                Icon(
-                    imageVector = if (isExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                    contentDescription = if (isExpanded) "收起设置" else "展开设置",
-                    tint = if (enabled) MaterialTheme.colorScheme.onSurface
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
-            }
-
-            AnimatedVisibility(visible = isExpanded) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 20.dp)
-                ) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(bottom = 16.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)
-                    )
-
-                    // Raw write mode
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Outlined.SaveAlt, contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
-                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text("原始写入模式", color = if (enabled) MaterialTheme.colorScheme.onSurface
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                        }
-                        Switch(
-                            checked = rawWriteMode, onCheckedChange = onRawWriteModeChange, enabled = enabled,
-                            thumbContent = if (rawWriteMode) {
-                                { Icon(Icons.Filled.Check, "原始写入模式已开启", modifier = Modifier.size(SwitchDefaults.IconSize)) }
-                            } else null
-                        )
-                    }
-
-                    // Duplicate conflict mitigation
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.AutoMirrored.Outlined.InsertDriveFile, contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
-                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text("重名文件冲突缓解", color = if (enabled) MaterialTheme.colorScheme.onSurface
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                        }
-                        Switch(
-                            checked = duplicateConflictMitigation, onCheckedChange = onDuplicateConflictMitigationChange,
-                            enabled = enabled,
-                            thumbContent = if (duplicateConflictMitigation) {
-                                { Icon(Icons.Filled.Check, "重名文件冲突缓解已开启", modifier = Modifier.size(SwitchDefaults.IconSize)) }
-                            } else null
-                        )
-                    }
-
-                    // Thread count
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Outlined.Memory, contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
-                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text("线程数: $threadCount", color = if (enabled) MaterialTheme.colorScheme.onSurface
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Slider(
-                            value = threadCount.toFloat(), onValueChange = { onThreadCountChange(it.toInt()) },
-                            valueRange = 1f..8f, steps = 6, enabled = enabled,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("1", style = MaterialTheme.typography.bodySmall,
-                                color = if (enabled) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
-                            Text("8", style = MaterialTheme.typography.bodySmall,
-                                color = if (enabled) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
-                        }
-                        Text(
-                            "请根据设备情况合理选择，推荐为4",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (enabled) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                }
-            }
-        }
-    }
-}

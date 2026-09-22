@@ -18,15 +18,15 @@ import java.io.FileInputStream
 class DesktopKggDecrypt {
     private val log = Logger("DesktopKggDecrypt")
 
-    fun decrypt(audioFilePath: String, dbFilePath: String?) {
+    fun decrypt(audioFilePath: String, dbFilePath: String?, mitigateConflicts: Boolean = true, releaseHeap: Boolean = true) {
         try {
-            decryptFile(audioFilePath, dbFilePath)
+            decryptFile(audioFilePath, dbFilePath, mitigateConflicts)
         } finally {
-            releaseIdleDesktopHeap()
+            if (releaseHeap) releaseIdleDesktopHeap()
         }
     }
 
-    private fun decryptFile(audioFilePath: String, dbFilePath: String?) {
+    private fun decryptFile(audioFilePath: String, dbFilePath: String?, mitigateConflicts: Boolean) {
         val audioFile = File(audioFilePath)
         require(audioFile.isFile) { "音频文件不存在: $audioFilePath" }
 
@@ -63,7 +63,7 @@ class DesktopKggDecrypt {
             outputAllocator.withUniqueOutput(
                 requestedName = outputBaseName,
                 extension = audioFormat,
-                mitigateConflicts = true
+                mitigateConflicts = mitigateConflicts
             ) { outputStream ->
                 val buffer = ByteArray(QmcCipher.STREAM_BUFFER_SIZE)
                 var streamOffset = 0L

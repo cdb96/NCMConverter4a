@@ -10,10 +10,8 @@ on:
     types: [published]
 
 jobs:
-  # Decides the scope of the run. cmp_preview is a development preview branch,
-  # so it only gets test/compile checks. Full release packaging (Android signed
-  # release, MSI/DMG/DEB, Uber Jar, artifacts, GitHub Release) is reserved for
-  # master pushes and published releases.
+  # Pushes, manual runs and published releases build Release artifacts by default.
+  # PRs keep the check-only flow because signing secrets may be unavailable.
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -22,12 +20,11 @@ jobs:
       - id: scope
         env:
           EVENT_NAME: ${{ github.event_name }}
-          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "${EVENT_NAME}" = "release" ] || { [ "${EVENT_NAME}" = "push" ] && [ "${REF_NAME}" = "master" ]; }; then
-            full_build=true
-          else
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
             full_build=false
+          else
+            full_build=true
           fi
           echo "full_build=${full_build}" >> "$GITHUB_OUTPUT"
 
@@ -61,7 +58,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: false
-      
+
       - name: 缓存 Gradle Configuration Cache
         uses: actions/cache@v5
         with:
@@ -70,7 +67,7 @@ jobs:
           restore-keys: |
             gradle-config-${{ runner.os }}-android-
 
-      - name: 构建 Debug APK (preview / PR check)
+      - name: 构建 Debug APK (PR check)
         if: ${{ needs.changes.outputs.full_build != 'true' }}
         run: ./gradlew :androidApp:assembleDebug
 
@@ -95,7 +92,7 @@ jobs:
           name: app-release-apk
           path: androidApp/build/outputs/apk/release/*.apk
 
-      - name: 上传 Debug APK (preview / PR check)
+      - name: 上传 Debug APK (PR check)
         if: ${{ needs.changes.outputs.full_build != 'true' }}
         uses: actions/upload-artifact@v7
         with:
@@ -110,7 +107,7 @@ jobs:
           prerelease: false
           files: androidApp/build/outputs/apk/release/*.apk
 
-  # Runs on every push/PR: tests plus a JVM compile check, on one OS only.
+  # PRs run tests plus a JVM compile check on one OS only.
   # No installers, no jmods, no artifacts.
   desktop-check:
     needs: changes
@@ -134,7 +131,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: false
-          
+
       - name: 缓存 Gradle Configuration Cache
         uses: actions/cache@v5
         with:
@@ -163,7 +160,7 @@ jobs:
         run: ./gradlew :composeApp:compileKotlinDesktop --configure-on-demand
 
   # ======================== Desktop Release Build ========================
-  # master push / published release only: multi-OS installers and Uber Jar.
+  # Push / manual run / published release: multi-OS installers and Uber Jar.
   desktop:
     needs: changes
     if: ${{ always() && !cancelled() && needs.changes.outputs.full_build == 'true' }}
@@ -191,7 +188,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: false
-          
+
       - name: 缓存 Gradle Configuration Cache
         uses: actions/cache@v5
         with:

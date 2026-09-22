@@ -1,6 +1,6 @@
 package com.cdb96.ncmconverter4a.converter
 
-enum class EncryptedFormat { KGM, NCM, UNSUPPORTED }
+enum class EncryptedFormat { KGM, KGG, NCM, UNSUPPORTED }
 
 private val NCM_MAGIC = "CTENFDAM".encodeToByteArray()
 
@@ -14,7 +14,10 @@ private val KGM_MAGIC = byteArrayOf(
 )
 
 fun detectEncryptedFormat(header: ByteArray): EncryptedFormat = when {
-    header.startsWith(KGM_MAGIC) -> EncryptedFormat.KGM
+    header.startsWith(KGM_MAGIC) -> if (header.size >= 24 &&
+        header[20] == 5.toByte() && header[21] == 0.toByte() &&
+        header[22] == 0.toByte() && header[23] == 0.toByte()
+    ) EncryptedFormat.KGG else EncryptedFormat.KGM
     header.startsWith(NCM_MAGIC) -> EncryptedFormat.NCM
     else -> EncryptedFormat.UNSUPPORTED
 }

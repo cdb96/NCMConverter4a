@@ -1,5 +1,7 @@
 package com.cdb96.ncmconverter4a
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -9,26 +11,20 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
-import com.cdb96.ncmconverter4a.converter.kgg.KggDecoder
 import com.cdb96.ncmconverter4a.service.BenchmarkService
 import com.cdb96.ncmconverter4a.service.FileConversionService
 import com.cdb96.ncmconverter4a.ui.BenchmarkDialog
 import com.cdb96.ncmconverter4a.ui.screens.ConversionUiState
-import com.cdb96.ncmconverter4a.ui.screens.KggScreen
-import com.cdb96.ncmconverter4a.ui.screens.KggUiState
 import com.cdb96.ncmconverter4a.ui.screens.MainScreen
 import com.cdb96.ncmconverter4a.ui.screens.SettingsUiState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private fun getDisplayName(uri: Uri): String? = runCatching {
@@ -60,7 +56,6 @@ class MainActivity : ComponentActivity() {
             val context = LocalContext.current
             val scope = rememberCoroutineScope()
 
-            var currentScreen by remember { mutableStateOf("main") }
             var conversionState by remember { mutableStateOf(ConversionUiState()) }
             var settingsState by remember { mutableStateOf(SettingsUiState(threadCount = threadCount)) }
             var showBenchmark by remember { mutableStateOf(false) }
@@ -82,6 +77,8 @@ class MainActivity : ComponentActivity() {
                             rawWriteMode = selectedSettings.rawWriteMode,
                             duplicateConflictMitigation = selectedSettings.duplicateConflictMitigation,
                             fileCoroutineDispatcher = fileProcessingDispatcher,
+                            kggDatabase = selectedSettings.kggDatabase?.let(Uri::parse),
+                            kggRootMode = selectedSettings.kggRootMode,
                         ) { processed, total, fileName ->
                             conversionState = conversionState.copy(
                                 processedCount = processed,
@@ -97,49 +94,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            if (currentScreen == "kgg") {
-                val kggDecoder = remember { KggDecoder(context) }
-                var kggState by remember { mutableStateOf(KggUiState()) }
-
-                val dbPicker = rememberLauncherForActivityResult(
-                    ActivityResultContracts.GetContent()
-                ) { uri ->
-                    if (uri != null) kggState = kggState.copy(dbFileName = uri.toString(), dbDisplayName = getDisplayName(uri), decryptResult = null)
+            val dbPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                if (uri != null) {
+                    runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                    settingsState = settingsState.copy(kggDatabase = uri.toString(), kggDatabaseName = getDisplayName(uri))
                 }
-                val audioPicker = rememberLauncherForActivityResult(
-                    ActivityResultContracts.GetContent()
-                ) { uri ->
-                    if (uri != null) kggState = kggState.copy(audioFileName = uri.toString(), audioDisplayName = getDisplayName(uri), decryptResult = null)
-                }
-
-                KggScreen(
-                    state = kggState,
-                    onNavigateBack = { currentScreen = "main" },
-                    onSelectDbFile = { if (!kggState.isRooted) dbPicker.launch("*/*") },
-                    onSelectAudioFile = { audioPicker.launch("*/*") },
-                    onDecrypt = {
-                        val audioFileName = kggState.audioFileName
-                        val dbFileName = kggState.dbFileName
-                        val isRooted = kggState.isRooted
-                        if (!kggState.isProcessing && audioFileName != null && (isRooted || dbFileName != null)) {
-                            kggState = kggState.copy(isProcessing = true, resultIsError = false, decryptResult = "正在解密文件...")
-                            scope.launch {
-                                try {
-                                    val audioUri = android.net.Uri.parse(audioFileName)
-                                    val dbUri = dbFileName?.let { android.net.Uri.parse(it) }
-                                    withContext(Dispatchers.IO) {
-                                        kggDecoder.decryptWithUri(audioUri, dbUri, isRooted)
-                                    }
-                                    kggState = kggState.copy(isProcessing = false, decryptResult = "文件解密完成！")
-                                } catch (e: Exception) {
-                                    kggState = kggState.copy(isProcessing = false, resultIsError = true, decryptResult = "文件解密失败: ${e.message}")
-                                }
-                            }
-                        }
-                    },
-                    onRootedChange = { kggState = kggState.copy(isRooted = it, decryptResult = null) },
-                )
-                return@setContent
             }
 
             val filePicker = rememberLauncherForActivityResult(
@@ -156,23 +115,26 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            MainScreen(
-                conversionState = conversionState,
-                settingsState = settingsState,
-                onSettingsExpandedToggle = { settingsState = settingsState.copy(isExpanded = !settingsState.isExpanded) },
-                onRawWriteModeChange = { settingsState = settingsState.copy(rawWriteMode = it) },
-                onDuplicateConflictMitigationChange = { settingsState = settingsState.copy(duplicateConflictMitigation = it) },
-                onThreadCountChange = { updateThreadPool(it); settingsState = settingsState.copy(threadCount = it) },
-                onPickFiles = { filePicker.launch("*/*") },
-                onBenchmark = { showBenchmark = true },
-                onNavigateToKGG = { currentScreen = "kgg" },
-            )
-
-            if (showBenchmark) {
-                BenchmarkDialog(
-                    onDismiss = { showBenchmark = false },
-                    onRunBenchmark = { onProgress -> benchmarkService.runBenchmark(onProgress) }
+            App {
+                MainScreen(
+                    conversionState = conversionState,
+                    settingsState = settingsState,
+                    onRawWriteModeChange = { settingsState = settingsState.copy(rawWriteMode = it) },
+                    onDuplicateConflictMitigationChange = { settingsState = settingsState.copy(duplicateConflictMitigation = it) },
+                    onThreadCountChange = { updateThreadPool(it); settingsState = settingsState.copy(threadCount = it) },
+                    onPickFiles = { filePicker.launch("*/*") },
+                    onBenchmark = { showBenchmark = true },
+                    onSelectKggDatabase = { dbPicker.launch(arrayOf("*/*")) },
+                    onKggRootModeChange = { settingsState = settingsState.copy(kggRootMode = it) },
+                    supportsRoot = true,
                 )
+
+                if (showBenchmark) {
+                    BenchmarkDialog(
+                        onDismiss = { showBenchmark = false },
+                        onRunBenchmark = { onProgress -> benchmarkService.runBenchmark(onProgress) }
+                    )
+                }
             }
         }
     }

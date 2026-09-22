@@ -8,6 +8,7 @@ import android.provider.MediaStore
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.cdb96.ncmconverter4a.converter.EncryptedFormat
+import com.cdb96.ncmconverter4a.converter.kgg.KggDecoder
 import com.cdb96.ncmconverter4a.converter.KGMConverter
 import com.cdb96.ncmconverter4a.converter.NCMConverter
 import com.cdb96.ncmconverter4a.io.detectEncryptedFormat
@@ -43,6 +44,8 @@ class FileConversionService(private val context: Context) {
         rawWriteMode: Boolean,
         duplicateConflictMitigation: Boolean = false,
         fileCoroutineDispatcher: CoroutineDispatcher,
+        kggDatabase: Uri? = null,
+        kggRootMode: Boolean = false,
         onProgress: suspend (processed: Int, total: Int, fileName: String) -> Unit
     ): ConversionResult {
         val startTime = System.currentTimeMillis()
@@ -65,7 +68,9 @@ class FileConversionService(private val context: Context) {
                             uri,
                             rawWriteMode,
                             duplicateConflictMitigation,
-                            fileName
+                            fileName,
+                            kggDatabase,
+                            kggRootMode,
                         )
                         FileConversionResult(
                             fileName = fileName,
@@ -103,11 +108,19 @@ class FileConversionService(private val context: Context) {
         uri: Uri,
         rawWriteMode: Boolean,
         duplicateConflictMitigation: Boolean,
-        fileName: String
+        fileName: String,
+        kggDatabase: Uri?,
+        kggRootMode: Boolean,
     ): Boolean = withFileInputStream(uri) { input ->
         val format = input.detectEncryptedFormat()
         Log.i(TAG, "使用${format}解密器")
         when (format) {
+            EncryptedFormat.KGG -> {
+                check(kggRootMode || kggDatabase != null) { "请先在设置中选择 KGG 数据库" }
+                KggDecoder(context).decryptToOutput(input, kggDatabase, kggRootMode) { format, write ->
+                    withFileOutputStream(format, FileNameUtils.removeLastExtension(fileName), duplicateConflictMitigation, write)
+                }
+            }
             EncryptedFormat.KGM -> processKGMFile(
                 input,
                 fileName,

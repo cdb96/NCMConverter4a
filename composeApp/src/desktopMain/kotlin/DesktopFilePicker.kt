@@ -9,15 +9,15 @@ import javax.swing.filechooser.FileNameExtensionFilter
  * Swing components must be created and shown on EDT.
  */
 object DesktopFilePicker {
-    fun pickFiles(multiSelect: Boolean = true): List<String> {
+    fun pickFiles(multiSelect: Boolean = true, database: Boolean = false): List<String> {
         check(SwingUtilities.isEventDispatchThread()) {
             "DesktopFilePicker.pickFiles must be called on the Swing EDT"
         }
         val chooser = JFileChooser().apply {
             fileSelectionMode = JFileChooser.FILES_ONLY
             isMultiSelectionEnabled = multiSelect
-            dialogTitle = "选择 NCM / KGM / KGG 文件"
-            fileFilter = FileNameExtensionFilter(
+            dialogTitle = if (database) "选择酷狗 DB / MMKV 数据库" else "选择 NCM / KGM / KGG 文件"
+            if (!database) fileFilter = FileNameExtensionFilter(
                 "加密音频文件 (*.ncm, *.kgm, *.kgg, *.flac, *.mp3)",
                 "ncm", "kgm", "kgg", "flac", "mp3"
             )

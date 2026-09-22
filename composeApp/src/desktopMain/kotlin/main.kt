@@ -12,8 +12,6 @@ import androidx.compose.ui.window.application
 import com.cdb96.ncmconverter4a.service.BenchmarkService
 import com.cdb96.ncmconverter4a.ui.BenchmarkDialog
 import com.cdb96.ncmconverter4a.ui.screens.ConversionUiState
-import com.cdb96.ncmconverter4a.ui.screens.KggScreen
-import com.cdb96.ncmconverter4a.ui.screens.KggUiState
 import com.cdb96.ncmconverter4a.ui.screens.MainScreen
 import com.cdb96.ncmconverter4a.ui.screens.SettingsUiState
 import kotlinx.coroutines.Dispatchers
@@ -30,31 +28,26 @@ fun main() = application {
 
 @Composable
 fun NCMConverter4aDesktopApp() {
-    var currentScreen by remember { mutableStateOf("main") }
-    var kggFiles by remember { mutableStateOf<List<File>>(emptyList()) }
-
-    App {
-        when (currentScreen) {
-            "main" -> DesktopMainScreen(
-                onNavigateToKGG = { currentScreen = "kgg" },
-                onImportKgg = { kggFiles = it; currentScreen = "kgg" },
-            )
-            "kgg" -> DesktopKggScreen(
-                onNavigateBack = { kggFiles = emptyList(); currentScreen = "main" },
-                initialFiles = kggFiles,
-            )
-        }
-    }
+    App { DesktopMainScreen() }
 }
 
 @Composable
-fun DesktopMainScreen(onNavigateToKGG: () -> Unit, onImportKgg: (List<File>) -> Unit) {
+fun DesktopMainScreen() {
     val scope = rememberCoroutineScope()
     var conversionState by remember { mutableStateOf(ConversionUiState()) }
     var settingsState by remember { mutableStateOf(SettingsUiState()) }
     var showBenchmark by remember { mutableStateOf(false) }
     val desktopFacade = remember { DesktopConversionFacade() }
     val benchmarkService = remember { BenchmarkService() }
+
+    LaunchedEffect(Unit) {
+        val detected = withContext(Dispatchers.IO) {
+            System.getenv("APPDATA")?.let { File(it, "Kugou8/KGMusicV3.db") }?.takeIf { it.isFile }
+        }
+        if (detected != null && settingsState.kggDatabase == null) {
+            settingsState = settingsState.copy(kggDatabase = detected.absolutePath, kggDatabaseName = detected.name)
+        }
+    }
 
     fun startConversion(files: List<String>) {
         if (files.isEmpty() || conversionState.isProcessing) return
@@ -68,6 +61,7 @@ fun DesktopMainScreen(onNavigateToKGG: () -> Unit, onImportKgg: (List<File>) -> 
                         threadCount = selectedSettings.threadCount,
                         rawWriteMode = selectedSettings.rawWriteMode,
                         duplicateConflictMitigation = selectedSettings.duplicateConflictMitigation,
+                        kggDatabase = selectedSettings.kggDatabase,
                     ) { processed, total, fileName ->
                         withContext(Dispatchers.Swing) {
                             conversionState = conversionState.copy(
@@ -87,17 +81,11 @@ fun DesktopMainScreen(onNavigateToKGG: () -> Unit, onImportKgg: (List<File>) -> 
 
     DesktopFileDropArea(
         enabled = !conversionState.isProcessing && !showBenchmark,
-        onFiles = { files ->
-            if (files.any { it.extension.equals("kgg", ignoreCase = true) }) onImportKgg(files)
-            else startConversion(files.map { it.absolutePath })
-        },
+        onFiles = { files -> startConversion(files.map { it.absolutePath }) },
     ) {
         MainScreen(
             conversionState = conversionState,
             settingsState = settingsState,
-            onSettingsExpandedToggle = {
-                settingsState = settingsState.copy(isExpanded = !settingsState.isExpanded)
-            },
             onRawWriteModeChange = { settingsState = settingsState.copy(rawWriteMode = it) },
             onDuplicateConflictMitigationChange = {
                 settingsState = settingsState.copy(duplicateConflictMitigation = it)
@@ -105,7 +93,11 @@ fun DesktopMainScreen(onNavigateToKGG: () -> Unit, onImportKgg: (List<File>) -> 
             onThreadCountChange = { settingsState = settingsState.copy(threadCount = it) },
             onPickFiles = { startConversion(DesktopFilePicker.pickFiles()) },
             onBenchmark = { showBenchmark = true },
-            onNavigateToKGG = onNavigateToKGG,
+            onSelectKggDatabase = {
+                DesktopFilePicker.pickFiles(multiSelect = false, database = true).firstOrNull()?.let {
+                    settingsState = settingsState.copy(kggDatabase = it, kggDatabaseName = File(it).name)
+                }
+            },
         )
     }
 
@@ -113,84 +105,6 @@ fun DesktopMainScreen(onNavigateToKGG: () -> Unit, onImportKgg: (List<File>) -> 
         BenchmarkDialog(
             onDismiss = { showBenchmark = false },
             onRunBenchmark = { onProgress -> benchmarkService.runBenchmark(onProgress) }
-        )
-    }
-}
-
-@Composable
-fun DesktopKggScreen(onNavigateBack: () -> Unit, initialFiles: List<File> = emptyList()) {
-    var state by remember { mutableStateOf(KggUiState()) }
-    val scope = rememberCoroutineScope()
-
-    // Auto-detect Kugou database file on Windows
-    LaunchedEffect(Unit) {
-        val kgDbPath = System.getenv("APPDATA")?.let { appData ->
-            File(appData, "Kugou8/KGMusicV3.db")
-        }
-        val detected = withContext(Dispatchers.IO) { kgDbPath?.takeIf { it.isFile } }
-        if (detected != null && state.dbFileName == null) {
-            state = state.copy(dbFileName = detected.absolutePath)
-        }
-    }
-
-    LaunchedEffect(initialFiles) {
-        if (initialFiles.isNotEmpty()) state = state.importKggFiles(initialFiles)
-    }
-
-    DesktopFileDropArea(
-        enabled = !state.isProcessing,
-        onFiles = { state = state.importKggFiles(it) },
-    ) {
-        KggScreen(
-            state = state,
-            supportsRoot = false,
-            onNavigateBack = onNavigateBack,
-            onSelectDbFile = {
-                scope.launch {
-                    val files = withContext(Dispatchers.Swing) {
-                        DesktopFilePicker.pickFiles(multiSelect = false)
-                    }
-                    if (files.isNotEmpty()) {
-                        withContext(Dispatchers.Swing) {
-                            state = state.copy(dbFileName = files.first(), dbDisplayName = null, decryptResult = null)
-                        }
-                    }
-                }
-            },
-            onSelectAudioFile = {
-                scope.launch {
-                    val files = withContext(Dispatchers.Swing) {
-                        DesktopFilePicker.pickFiles(multiSelect = false)
-                    }
-                    if (files.isNotEmpty()) {
-                        withContext(Dispatchers.Swing) {
-                            state = state.copy(audioFileName = files.first(), audioDisplayName = null, decryptResult = null)
-                        }
-                    }
-                }
-            },
-            onDecrypt = {
-                val audioFileName = state.audioFileName
-                val dbFileName = state.dbFileName
-                if (!state.isProcessing && audioFileName != null && dbFileName != null) {
-                    state = state.copy(isProcessing = true, resultIsError = false, decryptResult = "正在解密文件...")
-                    scope.launch(Dispatchers.IO) {
-                        try {
-                            val decrypter = DesktopKggDecrypt()
-                            // Desktop KGG decrypt - simplified since root mode not available
-                            decrypter.decrypt(audioFileName, dbFileName)
-                            withContext(Dispatchers.Swing) {
-                                state = state.copy(isProcessing = false, decryptResult = "文件解密完成！")
-                            }
-                        } catch (e: Exception) {
-                            withContext(Dispatchers.Swing) {
-                                state = state.copy(isProcessing = false, resultIsError = true, decryptResult = "文件解密失败: ${e.message}")
-                            }
-                        }
-                    }
-                }
-            },
-            onRootedChange = { state = state.copy(isRooted = it, decryptResult = null) },
         )
     }
 }

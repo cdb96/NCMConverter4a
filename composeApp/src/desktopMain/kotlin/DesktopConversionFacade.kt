@@ -43,6 +43,7 @@ class DesktopConversionFacade {
         threadCount: Int,
         rawWriteMode: Boolean,
         duplicateConflictMitigation: Boolean,
+        kggDatabase: String? = null,
         onProgress: suspend (processed: Int, total: Int, fileName: String) -> Unit
     ): ConversionResult {
         val startTime = System.currentTimeMillis()
@@ -58,7 +59,7 @@ class DesktopConversionFacade {
                     async(dispatcher) {
                         val fileName = sourceNames[index]
                         val result = try {
-                            convertFile(path, rawWriteMode, duplicateConflictMitigation, bufferSize)
+                            convertFile(path, rawWriteMode, duplicateConflictMitigation, bufferSize, kggDatabase)
                             FileConversionResult(fileName = fileName, success = true)
                         } catch (cancelled: CancellationException) {
                             throw cancelled
@@ -101,6 +102,7 @@ class DesktopConversionFacade {
         rawWriteMode: Boolean,
         duplicateConflictMitigation: Boolean,
         bufferSize: Int,
+        kggDatabase: String?,
     ) {
         val file = File(path)
         require(file.isFile) { "输入文件不存在: $path" }
@@ -108,6 +110,10 @@ class DesktopConversionFacade {
         BufferedInputStream(FileInputStream(file)).use { input ->
             val format = input.detectEncryptedFormat()
             when (format) {
+                EncryptedFormat.KGG -> {
+                    require(kggDatabase != null) { "请先在设置中选择 KGG 数据库" }
+                    DesktopKggDecrypt().decrypt(path, kggDatabase, duplicateConflictMitigation, releaseHeap = false)
+                }
                 EncryptedFormat.KGM -> convertKGM(
                     input,
                     file.name,
