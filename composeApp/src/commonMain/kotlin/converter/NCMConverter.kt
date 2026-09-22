@@ -213,36 +213,9 @@ object NCMConverter {
         throw IllegalArgumentException("NCM metadata is missing field: $field")
     }
 
-    /**
-     * The NCM "artist" field is a JSON array of `[name, id]` pairs. Names are
-     * read from their quoted strings, so commas and escapes inside a name
-     * survive. A plain string value is used as-is.
-     */
     internal fun combineArtistsString(artistsString: String): String {
-        val value = artistsString.trim()
-        if (!value.startsWith("[")) return value
-
-        val names = ArrayList<String>()
-        var depth = 0
-        var firstInPair = false
-        var index = 0
-        while (index < value.length) {
-            when (value[index]) {
-                '[' -> { depth++; firstInPair = true }
-                ']' -> depth--
-                '"' -> {
-                    val end = SimpleJsonParser.findStringEnd(value, index)
-                    if (end < 0) break
-                    if (depth == 1 || firstInPair) {
-                        names += SimpleJsonParser.decodeJsonString(value.substring(index + 1, end))
-                    }
-                    firstInPair = false
-                    index = end
-                }
-            }
-            index++
-        }
-        return names.map { it.trim() }.filter { it.isNotEmpty() }.joinToString("/")
+        val arr = artistsString.replace(Regex("[\\\\\\[\\]\"]"), "").split(",")
+        return arr.filterIndexed { i, _ -> i % 2 == 0 }.joinToString("/") { it.trim() }
     }
 
     private fun writeFlacMetadata(

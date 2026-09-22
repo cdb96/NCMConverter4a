@@ -100,7 +100,7 @@ class NcmTruncatedInputTest {
     @Test
     fun metadataValuesThatEqualKeyNamesDoNotShadowTheKeys() {
         val header = validHeader(
-            "{\"musicName\":\"format\",\"album\":\"artist\",\"artist\":\"[[\\\"album\\\",0]]\",\"format\":\"flac\"}"
+            """{"musicName":"format","album":"artist","artist":[["album",0]],"format":"flac"}"""
         )
         val stream = ByteArrayInputStream(header + ByteArray(5) + ByteArray(8))
 
@@ -166,7 +166,7 @@ class NcmTruncatedInputTest {
 
     private fun validHeader(
         metadataJson: String =
-            "{\"musicName\":\"Song\",\"album\":\"Album\",\"artist\":\"[[\\\"Artist\\\",0]]\",\"format\":\"mp3\"}"
+            """{"musicName":"Song","album":"Album","artist":[["Artist",0]],"format":"mp3"}"""
     ): ByteArray {
         val output = ByteArrayOutputStream()
         output.write(ncmPrefixWithValidKey())
