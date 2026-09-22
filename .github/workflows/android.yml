@@ -128,14 +128,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: 缓存 Gradle 依赖
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            .gradle/configuration-cache
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: ${{ runner.os }}-gradle-
+        uses: gradle/actions/setup-gradle@v6
 
       # The shared C++ core has a JVM-free self-test: it pins the RC4 golden
       # vector and compares KGM byte-for-byte against the retired implementation.
@@ -182,14 +175,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: 缓存 Gradle 依赖
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            .gradle/configuration-cache
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: ${{ runner.os }}-gradle-
+        uses: gradle/actions/setup-gradle@v6
 
       - name: 运行 Desktop/common 回归测试
         shell: bash
