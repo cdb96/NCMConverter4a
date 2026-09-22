@@ -30,16 +30,9 @@ internal class DesktopOutputAllocator(private val directory: File) {
         mitigateConflicts: Boolean
     ): ReservedDesktopOutput {
         Files.createDirectories(directory.toPath())
-        val baseName = FileNameUtils.sanitizeFileName(requestedName)
-        val cleanExtension = extension.removePrefix(".").lowercase()
-        require(cleanExtension.matches(Regex("[a-z0-9]+"))) {
-            "invalid output extension: $extension"
-        }
-
         var sequence = 0
         while (true) {
-            val suffix = if (sequence == 0) "" else " ($sequence)"
-            val path = directory.toPath().resolve("$baseName$suffix.$cleanExtension")
+            val path = directory.toPath().resolve(FileNameUtils.outputFileName(requestedName, extension, sequence))
             try {
                 val stream = Files.newOutputStream(
                     path,

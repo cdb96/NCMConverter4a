@@ -11,9 +11,10 @@ import com.cdb96.ncmconverter4a.converter.EncryptedFormat
 import com.cdb96.ncmconverter4a.converter.kgg.KggDecoder
 import com.cdb96.ncmconverter4a.converter.KGMConverter
 import com.cdb96.ncmconverter4a.converter.NCMConverter
-import com.cdb96.ncmconverter4a.io.detectEncryptedFormat
-import com.cdb96.ncmconverter4a.io.InputStreamBinaryInput
-import com.cdb96.ncmconverter4a.io.OutputStreamBinaryOutput
+import com.cdb96.ncmconverter4a.converter.detectEncryptedFormat
+import com.cdb96.ncmconverter4a.io.readAtMost
+import com.cdb96.ncmconverter4a.io.BinaryInput
+import com.cdb96.ncmconverter4a.io.BinaryOutput
 import com.cdb96.ncmconverter4a.io.readChunk
 import com.cdb96.ncmconverter4a.io.readFully
 import com.cdb96.ncmconverter4a.util.FileNameUtils
@@ -112,7 +113,11 @@ class FileConversionService(private val context: Context) {
         kggDatabase: Uri?,
         kggRootMode: Boolean,
     ): Boolean = withFileInputStream(uri) { input ->
-        val format = input.detectEncryptedFormat()
+        input.mark(24)
+        val header = ByteArray(24)
+        val size = BinaryInput(input::read).readAtMost(header)
+        input.reset()
+        val format = detectEncryptedFormat(header.copyOf(size))
         Log.i(TAG, "使用${format}解密器")
         when (format) {
             EncryptedFormat.KGG -> {
@@ -142,14 +147,14 @@ class FileConversionService(private val context: Context) {
         duplicateConflictMitigation: Boolean
     ): Boolean {
         return try {
-            val binaryInput = InputStreamBinaryInput(inputStream)
+            val binaryInput = BinaryInput(inputStream::read)
             val info = NCMConverter.readHeader(binaryInput, includeCover = !rawWriteMode)
             val fileName = "${info.musicArtists} - ${info.musicName}"
 
             withFileOutputStream(info.format, fileName, duplicateConflictMitigation) { output ->
                 NCMConverter.writeAudio(
                     input = binaryInput,
-                    output = OutputStreamBinaryOutput(output),
+                    output = BinaryOutput(output::write),
                     info = info,
                     rawWriteMode = rawWriteMode
                 )
@@ -169,11 +174,11 @@ class FileConversionService(private val context: Context) {
     ): Boolean {
         return try {
             val header = ByteArray(KGMConverter.HEADER_LENGTH)
-            inputStream.readFully(header)
+            BinaryInput(inputStream::read).readFully(header)
             val ownKeyBytes = KGMConverter.getOwnKeyBytes(header)
 
             val firstChunk = ByteArray(NCMConverter.AUDIO_BUFFER_SIZE)
-            val firstSize = inputStream.readChunk(firstChunk)
+            val firstSize = BinaryInput(inputStream::read).readChunk(firstChunk)
             require(firstSize > 0) { "KGM audio payload is empty" }
             val musicFormat = KGMConverter.detectFormat(firstChunk[0], ownKeyBytes)
             require(musicFormat.isNotEmpty()) { "无法识别 KGM 音频格式" }
@@ -191,7 +196,7 @@ class FileConversionService(private val context: Context) {
                     firstChunk = firstChunk,
                     firstSize = firstSize,
                     bufferSize = NCMConverter.AUDIO_BUFFER_SIZE,
-                    read = { buffer -> inputStream.readChunk(buffer) },
+                    read = { buffer -> BinaryInput(inputStream::read).readChunk(buffer) },
                     write = { buffer, bytesToWrite -> output.write(buffer, 0, bytesToWrite) }
                 )
             }
@@ -222,13 +227,11 @@ class FileConversionService(private val context: Context) {
         duplicateConflictMitigation: Boolean,
         block: (OutputStream) -> Unit
     ): Boolean {
-        val extension = format.removePrefix(".").lowercase()
-        require(extension.matches(Regex("[a-z0-9]+"))) { "非法输出格式: $format" }
-        val safeFileName = FileNameUtils.sanitizeFileName(fileName)
+        val extension = FileNameUtils.normalizeExtension(format)
         val displayName = if (duplicateConflictMitigation) {
-            assignSeq(safeFileName, extension)
+            assignSeq(fileName, extension)
         } else {
-            "$safeFileName.$extension"
+            FileNameUtils.outputFileName(fileName, extension)
         }
         val mimeType = when (extension) {
             "flac" -> "audio/flac"
@@ -295,7 +298,7 @@ class FileConversionService(private val context: Context) {
     }
 
     private fun assignSeq(fileName: String, extension: String): String {
-        val baseName = "$fileName.$extension"
+        val baseName = FileNameUtils.outputFileName(fileName, extension)
         var assigned = -1
         seqTable.compute(baseName) { _, existing ->
             val sequences = existing ?: mutableSetOf()
@@ -305,13 +308,7 @@ class FileConversionService(private val context: Context) {
             assigned = candidate
             sequences
         }
-        val dot = baseName.lastIndexOf('.')
-        val nameWithoutExtension = baseName.substring(0, dot)
-        return if (assigned > 0) {
-            "$nameWithoutExtension ($assigned).$extension"
-        } else {
-            baseName
-        }
+        return FileNameUtils.outputFileName(fileName, extension, assigned)
     }
 
     private fun Uri.getFileName(context: Context): String? =

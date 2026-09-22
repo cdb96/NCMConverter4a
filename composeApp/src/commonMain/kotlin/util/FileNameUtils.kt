@@ -4,6 +4,16 @@ object FileNameUtils {
     private const val MAX_BASE_NAME_BYTES = 180
     private val RESERVED_NAME = Regex("(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\\..*)?$")
 
+    fun normalizeExtension(extension: String): String =
+        extension.removePrefix(".").lowercase().also {
+            require(it.matches(Regex("[a-z0-9]+"))) { "非法输出格式: $extension" }
+        }
+
+    fun outputFileName(name: String, extension: String, sequence: Int = 0): String {
+        val suffix = if (sequence == 0) "" else " ($sequence)"
+        return "${sanitizeFileName(name)}$suffix.${normalizeExtension(extension)}"
+    }
+
     /** Makes a generated basename safe on Windows, macOS and Linux. */
     fun sanitizeFileName(name: String): String {
         var sanitized = buildString(name.length) {

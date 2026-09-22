@@ -3,9 +3,10 @@ package com.cdb96.ncmconverter4a
 import com.cdb96.ncmconverter4a.converter.EncryptedFormat
 import com.cdb96.ncmconverter4a.converter.KGMConverter
 import com.cdb96.ncmconverter4a.converter.NCMConverter
-import com.cdb96.ncmconverter4a.io.detectEncryptedFormat
-import com.cdb96.ncmconverter4a.io.InputStreamBinaryInput
-import com.cdb96.ncmconverter4a.io.OutputStreamBinaryOutput
+import com.cdb96.ncmconverter4a.converter.detectEncryptedFormat
+import com.cdb96.ncmconverter4a.io.readAtMost
+import com.cdb96.ncmconverter4a.io.BinaryInput
+import com.cdb96.ncmconverter4a.io.BinaryOutput
 import com.cdb96.ncmconverter4a.io.readChunk
 import com.cdb96.ncmconverter4a.io.readFully
 import com.cdb96.ncmconverter4a.platform.Logger
@@ -93,7 +94,6 @@ class DesktopConversionFacade {
             )
         } finally {
             dispatcher.close()
-            releaseIdleDesktopHeap()
         }
     }
 
@@ -108,11 +108,15 @@ class DesktopConversionFacade {
         require(file.isFile) { "输入文件不存在: $path" }
 
         BufferedInputStream(FileInputStream(file)).use { input ->
-            val format = input.detectEncryptedFormat()
+            input.mark(24)
+            val header = ByteArray(24)
+            val size = BinaryInput(input::read).readAtMost(header)
+            input.reset()
+            val format = detectEncryptedFormat(header.copyOf(size))
             when (format) {
                 EncryptedFormat.KGG -> {
                     require(kggDatabase != null) { "请先在设置中选择 KGG 数据库" }
-                    DesktopKggDecrypt().decrypt(path, kggDatabase, duplicateConflictMitigation, releaseHeap = false)
+                    DesktopKggDecrypt().decrypt(path, kggDatabase, duplicateConflictMitigation)
                 }
                 EncryptedFormat.KGM -> convertKGM(
                     input,
@@ -138,7 +142,7 @@ class DesktopConversionFacade {
         duplicateConflictMitigation: Boolean,
         bufferSize: Int,
     ) {
-        val binaryInput = InputStreamBinaryInput(input)
+        val binaryInput = BinaryInput(input::read)
         val info = NCMConverter.readHeader(binaryInput, includeCover = !rawWriteMode)
         val requestedName = "${info.musicArtists} - ${info.musicName}"
 
@@ -149,7 +153,7 @@ class DesktopConversionFacade {
         ) { output ->
             NCMConverter.writeAudio(
                 input = binaryInput,
-                output = OutputStreamBinaryOutput(output),
+                output = BinaryOutput(output::write),
                 info = info,
                 rawWriteMode = rawWriteMode,
                 bufferSize = bufferSize,
@@ -164,11 +168,11 @@ class DesktopConversionFacade {
         bufferSize: Int,
     ) {
         val header = ByteArray(KGMConverter.HEADER_LENGTH)
-        input.readFully(header)
+        BinaryInput(input::read).readFully(header)
         val ownKeyBytes = KGMConverter.getOwnKeyBytes(header)
 
         val firstChunk = ByteArray(bufferSize)
-        val firstSize = input.readChunk(firstChunk)
+        val firstSize = BinaryInput(input::read).readChunk(firstChunk)
         require(firstSize > 0) { "KGM audio payload is empty" }
         val musicFormat = KGMConverter.detectFormat(firstChunk[0], ownKeyBytes)
         require(musicFormat.isNotEmpty()) { "无法识别 KGM 音频格式" }
@@ -186,7 +190,7 @@ class DesktopConversionFacade {
                 firstChunk = firstChunk,
                 firstSize = firstSize,
                 bufferSize = bufferSize,
-                read = { buffer -> input.readChunk(buffer) },
+                read = { buffer -> BinaryInput(input::read).readChunk(buffer) },
                 write = { buffer, bytesToWrite -> output.write(buffer, 0, bytesToWrite) }
             )
         }

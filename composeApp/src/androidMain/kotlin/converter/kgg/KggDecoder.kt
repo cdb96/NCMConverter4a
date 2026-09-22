@@ -1,6 +1,7 @@
 //ported from Unlock Music Project
 package com.cdb96.ncmconverter4a.converter.kgg
 
+import com.cdb96.ncmconverter4a.io.BinaryInput
 import android.content.Context
 import android.net.Uri
 import com.cdb96.ncmconverter4a.converter.KGMConverter
@@ -20,17 +21,17 @@ class KggDecoder(context: Context) {
         output: suspend (String, (java.io.OutputStream) -> Unit) -> Boolean,
     ): Boolean {
         val bytes = ByteArray(KGMConverter.HEADER_LENGTH)
-        input.readFully(bytes)
+        BinaryInput(input::read).readFully(bytes)
         val header = parseKgmHeader(bytes)
         require(header.cryptoVersion == 5u) { "不是 KGG 文件" }
         val cipher = getCipher(header.audioHash, dbFileUri, isRooted)
-        input.skipFully(header.audioOffset.toLong() - bytes.size)
+        BinaryInput(input::read).skipFully(header.audioOffset.toLong() - bytes.size)
         val format = detectAudioFormat(input, cipher)
         return output(format) { stream ->
             val buffer = ByteArray(QmcCipher.STREAM_BUFFER_SIZE)
             var offset = 0L
             while (true) {
-                val count = input.readChunk(buffer)
+                val count = BinaryInput(input::read).readChunk(buffer)
                 if (count < 0) break
                 cipher.decrypt(buffer, offset, count)
                 stream.write(buffer, 0, count)
@@ -80,7 +81,7 @@ class KggDecoder(context: Context) {
     ): String {
         audioFileInputStream.mark(8)
         val header = ByteArray(4)
-        audioFileInputStream.readFully(header)
+        BinaryInput(audioFileInputStream::read).readFully(header)
         cipher.decrypt(header, 0L)
         audioFileInputStream.reset()
         return when {

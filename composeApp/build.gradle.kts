@@ -55,7 +55,7 @@ kotlin {
     }
 
     sourceSets {
-        val commonMain = getByName("commonMain") {
+        getByName("commonMain") {
             dependencies {
                 implementation("org.jetbrains.compose.runtime:runtime:1.12.0-beta03")
                 implementation("org.jetbrains.compose.foundation:foundation:1.12.0-beta03")
@@ -69,11 +69,7 @@ kotlin {
                 implementation(kotlin("test"))
             }
         }
-        val jvmMain = create("jvmMain") {
-            dependsOn(commonMain)
-        }
         getByName("androidMain") {
-            dependsOn(jvmMain)
             dependencies {
                 implementation(libs.androidx.activity.compose)
                 implementation(libs.androidx.core.ktx)
@@ -82,7 +78,6 @@ kotlin {
             }
         }
         getByName("desktopMain") {
-            dependsOn(jvmMain)
             resources.srcDir(desktopNativeResources)
             dependencies {
                 implementation(compose.desktop.currentOs)

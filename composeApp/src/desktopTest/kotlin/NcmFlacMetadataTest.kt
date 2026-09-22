@@ -4,8 +4,6 @@ import com.cdb96.ncmconverter4a.converter.NCMConverter
 import com.cdb96.ncmconverter4a.converter.NcmFileInfo
 import com.cdb96.ncmconverter4a.io.BinaryInput
 import com.cdb96.ncmconverter4a.io.BinaryOutput
-import com.cdb96.ncmconverter4a.io.InputStreamBinaryInput
-import com.cdb96.ncmconverter4a.io.OutputStreamBinaryOutput
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
@@ -25,7 +23,7 @@ class NcmFlacMetadataTest {
         val output = ByteArrayOutputStream()
 
         NCMConverter.writeAudio(
-            input = InputStreamBinaryInput(ByteArrayInputStream(rc4(plainPayload, key))),
+            input = BinaryInput(ByteArrayInputStream(rc4(plainPayload, key))::read),
             output = object : BinaryOutput {
                 override fun write(buffer: ByteArray, offset: Int, length: Int) {
                     output.write(buffer, offset, length)
@@ -48,7 +46,7 @@ class NcmFlacMetadataTest {
         val output = ByteArrayOutputStream()
 
         NCMConverter.writeAudio(
-            input = InputStreamBinaryInput(ByteArrayInputStream(encryptedPayload)),
+            input = BinaryInput(ByteArrayInputStream(encryptedPayload)::read),
             output = object : BinaryOutput {
                 override fun write(buffer: ByteArray, offset: Int, length: Int) {
                     output.write(buffer, offset, length)
@@ -260,8 +258,8 @@ class NcmFlacMetadataTest {
         }
         val output = ByteArrayOutputStream()
         NCMConverter.writeAudio(
-            InputStreamBinaryInput(input),
-            OutputStreamBinaryOutput(output),
+            BinaryInput(input::read),
+            BinaryOutput(output::write),
             NcmFileInfo(key, cover, "Title", "Album", "Artist", "flac"),
             rawWriteMode = false,
             bufferSize = 256

@@ -1,5 +1,6 @@
 package com.cdb96.ncmconverter4a
 
+import com.cdb96.ncmconverter4a.io.BinaryInput
 import com.cdb96.ncmconverter4a.converter.KGMConverter
 import com.cdb96.ncmconverter4a.io.readChunk
 import com.cdb96.ncmconverter4a.jni.KGMDecrypt
@@ -67,7 +68,7 @@ class KgmDecryptTest {
         for (firstBufferSize in listOf(256, 4096)) {
             val input = ByteArrayInputStream(source)
             val firstChunk = ByteArray(firstBufferSize)
-            val firstSize = input.readChunk(firstChunk)
+            val firstSize = BinaryInput(input::read).readChunk(firstChunk)
             val output = ByteArrayOutputStream()
             KGMConverter.decrypt(
                 ownKeyBytes = key,
@@ -77,7 +78,7 @@ class KgmDecryptTest {
                 read = { buffer ->
                     assertEquals(4096, buffer.size)
                     if (firstBufferSize == 4096) assertSame(firstChunk, buffer)
-                    input.readChunk(buffer)
+                    BinaryInput(input::read).readChunk(buffer)
                 },
                 write = { buffer, length -> output.write(buffer, 0, length) }
             )

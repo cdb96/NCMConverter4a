@@ -3,7 +3,7 @@ package com.cdb96.ncmconverter4a
 import com.cdb96.ncmconverter4a.converter.NCMConverter
 import com.cdb96.ncmconverter4a.converter.NcmFileInfo
 import com.cdb96.ncmconverter4a.io.BinaryOutput
-import com.cdb96.ncmconverter4a.io.InputStreamBinaryInput
+import com.cdb96.ncmconverter4a.io.BinaryInput
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -28,7 +28,7 @@ class NcmId3MetadataTest {
         var coverWrites = 0
 
         NCMConverter.writeAudio(
-            input = InputStreamBinaryInput(ByteArrayInputStream(encrypted)),
+            input = BinaryInput(ByteArrayInputStream(encrypted)::read),
             output = object : BinaryOutput {
                 override fun write(buffer: ByteArray, offset: Int, length: Int) {
                     if (buffer === cover) {
@@ -116,7 +116,7 @@ class NcmId3MetadataTest {
     private fun convert(encrypted: ByteArray, key: ByteArray, cover: ByteArray): ByteArray {
         val result = ByteArrayOutputStream()
         NCMConverter.writeAudio(
-            input = InputStreamBinaryInput(ByteArrayInputStream(encrypted)),
+            input = BinaryInput(ByteArrayInputStream(encrypted)::read),
             output = object : BinaryOutput {
                 override fun write(buffer: ByteArray, offset: Int, length: Int) {
                     result.write(buffer, offset, length)

@@ -2,7 +2,6 @@ package com.cdb96.ncmconverter4a
 
 import com.cdb96.ncmconverter4a.converter.NCMConverter
 import com.cdb96.ncmconverter4a.io.BinaryInput
-import com.cdb96.ncmconverter4a.io.InputStreamBinaryInput
 import com.cdb96.ncmconverter4a.io.readFully
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -91,7 +90,7 @@ class NcmTruncatedInputTest {
         val cover = byteArrayOf(9, 8, 7, 6)
         val audio = byteArrayOf(1, 2, 3)
         val stream = ByteArrayInputStream(coverHeader(9, cover.size) + cover + ByteArray(5) + audio)
-        val input = InputStreamBinaryInput(stream)
+        val input = BinaryInput(stream::read)
 
         assertContentEquals(cover, NCMConverter.readHeader(input).coverData)
         assertContentEquals(audio, stream.readBytes())
@@ -104,7 +103,7 @@ class NcmTruncatedInputTest {
         )
         val stream = ByteArrayInputStream(header + ByteArray(5) + ByteArray(8))
 
-        val info = NCMConverter.readHeader(InputStreamBinaryInput(stream))
+        val info = NCMConverter.readHeader(BinaryInput(stream::read))
 
         assertEquals("format", info.musicName)
         assertEquals("artist", info.musicAlbum)
@@ -125,7 +124,7 @@ class NcmTruncatedInputTest {
             for (includeCover in listOf(true, false)) {
                 assertFailsWith<IllegalArgumentException> {
                     NCMConverter.readHeader(
-                        InputStreamBinaryInput(ByteArrayInputStream(bytes)), includeCover
+                        BinaryInput(ByteArrayInputStream(bytes)::read), includeCover
                     )
                 }
             }
@@ -141,7 +140,7 @@ class NcmTruncatedInputTest {
         }.toByteArray()
 
     private fun parse(bytes: ByteArray) {
-        NCMConverter.readHeader(InputStreamBinaryInput(ByteArrayInputStream(bytes)))
+        NCMConverter.readHeader(BinaryInput(ByteArrayInputStream(bytes)::read))
     }
 
     private fun ncmPrefixWithValidKey(): ByteArray {

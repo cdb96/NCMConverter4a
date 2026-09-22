@@ -13,16 +13,6 @@ class ID3TagBuilder {
         chunks.add(byteArrayOf(0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00))
     }
 
-    fun outputHeader(): ByteArray {
-        val totalSize = prepareHeader()
-        val headerBytes = ByteArray(totalSize).also { arr ->
-            var offset = 0
-            for (chunk in chunks) { chunk.copyInto(arr, offset); offset += chunk.size }
-        }
-        chunks.clear()
-        return headerBytes
-    }
-
     /** Writes frame headers and their bodies directly, without copying the cover. */
     fun writeTo(output: BinaryOutput) {
         prepareHeader()

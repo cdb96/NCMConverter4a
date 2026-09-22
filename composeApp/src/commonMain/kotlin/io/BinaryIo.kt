@@ -4,11 +4,11 @@ package com.cdb96.ncmconverter4a.io
  * Small platform-neutral binary input abstraction used by the streaming
  * converters.  Platform source sets adapt java.io.InputStream to this API.
  */
-interface BinaryInput {
+fun interface BinaryInput {
     fun read(buffer: ByteArray, offset: Int, length: Int): Int
 }
 
-interface BinaryOutput {
+fun interface BinaryOutput {
     fun write(buffer: ByteArray, offset: Int, length: Int)
 }
 
@@ -80,3 +80,6 @@ fun BinaryInput.skipFully(bytes: Long) {
 }
 
 fun BinaryOutput.write(bytes: ByteArray) = write(bytes, 0, bytes.size)
+
+fun BinaryInput.readChunk(buffer: ByteArray): Int =
+    readAtMost(buffer).let { if (it == 0) -1 else it }

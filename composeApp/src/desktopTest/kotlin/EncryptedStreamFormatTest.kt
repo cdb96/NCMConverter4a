@@ -1,7 +1,9 @@
 package com.cdb96.ncmconverter4a
 
 import com.cdb96.ncmconverter4a.converter.EncryptedFormat
-import com.cdb96.ncmconverter4a.io.detectEncryptedFormat
+import com.cdb96.ncmconverter4a.converter.detectEncryptedFormat
+import com.cdb96.ncmconverter4a.io.BinaryInput
+import com.cdb96.ncmconverter4a.io.readAtMost
 import java.io.ByteArrayInputStream
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -31,7 +33,11 @@ class EncryptedStreamFormatTest {
         )
         for ((bytes, expected) in cases) {
             ByteArrayInputStream(bytes).buffered().use { input ->
-                assertEquals(expected, input.detectEncryptedFormat())
+                input.mark(24)
+                val header = ByteArray(24)
+                val size = BinaryInput(input::read).readAtMost(header)
+                input.reset()
+                assertEquals(expected, detectEncryptedFormat(header.copyOf(size)))
                 assertContentEquals(bytes, input.readBytes())
             }
         }
