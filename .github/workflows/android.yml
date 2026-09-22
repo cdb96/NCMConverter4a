@@ -57,15 +57,11 @@ jobs:
       - name: 授予 Gradlew 执行权限
         run: chmod +x gradlew
 
-      - name: 缓存 Gradle
-        uses: actions/cache@v5
+      - name: 拉取 Gradle 缓存
+        uses: gradle/actions/setup-gradle@v6
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            .gradle/configuration-cache
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: ${{ runner.os }}-gradle-
+          cache-encryption-key: ${{ secrets.GRADLE_CACHE_ENCRYPTION_KEY }}
+          cache-read-only: false
 
       - name: 构建 Debug APK (preview / PR check)
         if: ${{ needs.changes.outputs.full_build != 'true' }}
@@ -131,6 +127,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           cache-encryption-key: ${{ secrets.GRADLE_CACHE_ENCRYPTION_KEY }}
+          cache-read-only: false
 
       # The shared C++ core has a JVM-free self-test: it pins the RC4 golden
       # vector and compares KGM byte-for-byte against the retired implementation.
@@ -180,6 +177,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           cache-encryption-key: ${{ secrets.GRADLE_CACHE_ENCRYPTION_KEY }}
+          cache-read-only: false
 
       - name: 运行 Desktop/common 回归测试
         shell: bash
