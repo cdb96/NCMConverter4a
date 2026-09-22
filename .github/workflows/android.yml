@@ -127,8 +127,10 @@ jobs:
       - name: 授予 Gradlew 执行权限
         run: chmod +x gradlew
 
-      - name: 缓存 Gradle
+      - name: 拉取 Gradle 缓存
         uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_CACHE_ENCRYPTION_KEY }}
 
       # The shared C++ core has a JVM-free self-test: it pins the RC4 golden
       # vector and compares KGM byte-for-byte against the retired implementation.
@@ -174,8 +176,10 @@ jobs:
       - name: 授予 Gradlew 执行权限
         run: chmod +x gradlew
 
-      - name: 缓存 Gradle 依赖
+      - name: 拉取 Gradle 缓存
         uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_CACHE_ENCRYPTION_KEY }}
 
       - name: 运行 Desktop/common 回归测试
         shell: bash
