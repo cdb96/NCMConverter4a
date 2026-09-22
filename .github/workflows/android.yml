@@ -134,6 +134,14 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: false
+          
+      - name: 缓存 Gradle Configuration Cache
+        uses: actions/cache@v5
+        with:
+          path: .gradle/configuration-cache
+          key: gradle-config-${{ runner.os }}-desktop-check-${{ github.sha }}
+          restore-keys: |
+            gradle-config-${{ runner.os }}-desktop-check-
 
       # The shared C++ core has a JVM-free self-test: it pins the RC4 golden
       # vector and compares KGM byte-for-byte against the retired implementation.
