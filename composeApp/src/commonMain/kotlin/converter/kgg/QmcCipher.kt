@@ -52,7 +52,6 @@ object QmcCipher {
     private class QmcRC4Cipher(
         private val key: ByteArray,
     ): QmcStreamCipher {
-        private val box: ByteArray
         private val n: Int = key.size
         private var hash: UInt = 1u
 
@@ -64,7 +63,7 @@ object QmcCipher {
             // The segment loop reduces sums of a state byte (< 256) and an index
             // (< n) by one conditional subtraction, which needs n > 255.
             require(n > 255) { "QMC RC4 key is too short: $n" }
-            box = ByteArray(n)
+            val box = ByteArray(n)
 
             for (i in 0 until n) {
                 box[i] = i.toByte()

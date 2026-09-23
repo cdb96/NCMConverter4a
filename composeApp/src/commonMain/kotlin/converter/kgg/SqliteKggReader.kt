@@ -58,16 +58,10 @@ object SqliteKggReader {
         }
 
         val mapping = LinkedHashMap<String, String>()
-        // 注: 上方兜底已保证 colId/colKey >= 0, 此 if 恒为真, else 分支不可达 ——
-        //     历史补丁残留, 保留以完全保持行为 (CREATE SQL 损坏时的防御性兜底)
-        if (colId >= 0 && colKey >= 0) {
-            for (row in rows) {
-                val id = row.getOrNull(colId)?.takeIf { it.isNotEmpty() } ?: continue
-                val key = row.getOrNull(colKey) ?: continue
-                mapping[id] = key
-            }
-        } else {
-            probeColumnsByContent(rows, mapping)
+        for (row in rows) {
+            val id = row.getOrNull(colId)?.takeIf { it.isNotEmpty() } ?: continue
+            val key = row.getOrNull(colKey) ?: continue
+            mapping[id] = key
         }
         log.i("mapping: ${mapping.size} entries")
         mapping.entries.take(5).forEach {
@@ -498,27 +492,6 @@ object SqliteKggReader {
         st >= 12L && st % 2L == 0L -> ((st - 12) / 2).toInt()    // BLOB
         st >= 13L -> ((st - 13) / 2).toInt()                     // TEXT
         else -> 0
-    }
-
-    /** 按内容探测列: 1024 字节 → EncryptionKey (ekey); 32 字符 hex → EncryptionKeyId (或其他 hash 列). */
-    private fun probeColumnsByContent(rows: List<List<String?>>, mapping: LinkedHashMap<String, String>) {
-        log.i("schema unavailable, scanning columns by content (ekey=1024B, id=32-char hex)")
-        for (row in rows) {
-            var ekeyCol = -1
-            val idCols = mutableListOf<Int>()
-            for (ci in row.indices) {
-                val v = row[ci] ?: continue
-                if (v.length == 1024) ekeyCol = ci
-                else if (v.length == 32 && v.all { c -> c in '0'..'9' || c in 'a'..'f' || c in 'A'..'F' })
-                    idCols.add(ci)
-            }
-            if (ekeyCol < 0 || idCols.isEmpty()) continue
-            val ekey = row[ekeyCol] ?: continue
-            for (idCol in idCols) {
-                val id = row[idCol] ?: continue
-                mapping[id] = ekey
-            }
-        }
     }
 
     // ── 原始字节扫描 (extractEkey 辅助) ──────────────────────────────────

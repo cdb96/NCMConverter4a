@@ -96,11 +96,3 @@ class KggDecoder(context: Context) {
     }
 
 }
-
-private fun ByteArray.startsWith(prefix: ByteArray): Boolean {
-    if (size < prefix.size) return false
-    for (index in prefix.indices) {
-        if (this[index] != prefix[index]) return false
-    }
-    return true
-}

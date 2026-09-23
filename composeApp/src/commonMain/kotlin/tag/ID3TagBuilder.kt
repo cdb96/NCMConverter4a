@@ -23,12 +23,11 @@ class ID3TagBuilder {
         }
     }
 
-    private fun prepareHeader(): Int {
+    private fun prepareHeader() {
         val totalSize = chunks.sumOf { it.size.toLong() }
         require(totalSize in 10L..0x0FFFFFFFL + 10) { "invalid ID3 tag size: $totalSize" }
         // The sync-safe tag size excludes the ten-byte ID3 header.
         toSyncSafeIntegerBytes(totalSize.toInt() - 10).copyInto(chunks.first(), 6)
-        return totalSize.toInt()
     }
 
     private fun addFrame(id: String, vararg bodies: ByteArray) {
@@ -70,36 +69,19 @@ class ID3TagBuilder {
         return out
     }
 
-    fun addTIT2(title: String) {
-        val titleBytes = title.encodeUtf16LE()
-        var pos = 0
-        val body = ByteArray(1 + 2 + titleBytes.size)
-        body[pos++] = 0x01  // UTF-16 编码
-        body[pos++] = 0xFF.toByte()  // BOM UTF-16LE
-        body[pos++] = 0xFE.toByte()
-        titleBytes.copyInto(body, pos)
-        addFrame("TIT2", body)
+    private fun addTextFrame(id: String, text: String) {
+        val textBytes = text.encodeUtf16LE()
+        val body = ByteArray(3 + textBytes.size)
+        body[0] = 0x01  // UTF-16 编码
+        body[1] = 0xFF.toByte()  // BOM UTF-16LE
+        body[2] = 0xFE.toByte()
+        textBytes.copyInto(body, 3)
+        addFrame(id, body)
     }
 
-    fun addTPE1(artist: String) {
-        val artistBytes = artist.encodeUtf16LE()
-        var pos = 0
-        val body = ByteArray(1 + 2 + artistBytes.size)
-        body[pos++] = 0x01
-        body[pos++] = 0xFF.toByte()
-        body[pos++] = 0xFE.toByte()
-        artistBytes.copyInto(body, pos)
-        addFrame("TPE1", body)
-    }
+    fun addTIT2(title: String) = addTextFrame("TIT2", title)
 
-    fun addTALB(album: String) {
-        val albumBytes = album.encodeUtf16LE()
-        var pos = 0
-        val body = ByteArray(1 + 2 + albumBytes.size)
-        body[pos++] = 0x01
-        body[pos++] = 0xFF.toByte()
-        body[pos++] = 0xFE.toByte()
-        albumBytes.copyInto(body, pos)
-        addFrame("TALB", body)
-    }
+    fun addTPE1(artist: String) = addTextFrame("TPE1", artist)
+
+    fun addTALB(album: String) = addTextFrame("TALB", album)
 }

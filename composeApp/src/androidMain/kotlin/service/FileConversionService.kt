@@ -141,7 +141,7 @@ class FileConversionService(private val context: Context) {
         }
     }
 
-    private suspend fun processNCMFile(
+    private fun processNCMFile(
         inputStream: InputStream,
         rawWriteMode: Boolean,
         duplicateConflictMitigation: Boolean
@@ -167,7 +167,7 @@ class FileConversionService(private val context: Context) {
         }
     }
 
-    private suspend fun processKGMFile(
+    private fun processKGMFile(
         inputStream: InputStream,
         fileName: String,
         duplicateConflictMitigation: Boolean
@@ -221,7 +221,7 @@ class FileConversionService(private val context: Context) {
         }
     }
 
-    private suspend fun withFileOutputStream(
+    private fun withFileOutputStream(
         format: String,
         fileName: String,
         duplicateConflictMitigation: Boolean,
