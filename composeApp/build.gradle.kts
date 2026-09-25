@@ -1,4 +1,5 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask
 import org.jetbrains.compose.desktop.application.tasks.AbstractProguardTask
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JavaToolchainService
@@ -100,6 +101,7 @@ kotlin {
 // ---------------------------------------------------------------------------
 val nativeSourceDir = rootProject.layout.projectDirectory.dir("native")
 val nativeBuildDir = nativeSourceDir.dir("build")
+val msiRestoreInstallDirDll = layout.buildDirectory.file("generated/msi/ncm_msi_restore_install_dir.dll")
 val ncmHostOs = org.gradle.internal.os.OperatingSystem.current()
 val ncmNativeOsName = when {
     ncmHostOs.isWindows -> "windows"
@@ -215,6 +217,9 @@ val nativeBuild = tasks.register<Exec>("nativeBuild") {
     // task's own output from invalidating its inputs on every run.
     inputs.files(fileTree(nativeSourceDir) { exclude("build/**") })
     outputs.file(ncmNativeResourceDir.file(nativeFileName))
+    if (ncmHostOs.isWindows) {
+        outputs.file(msiRestoreInstallDirDll)
+    }
 
     doLast {
         val built = listOf(
@@ -225,6 +230,16 @@ val nativeBuild = tasks.register<Exec>("nativeBuild") {
         resourceDirectory.mkdirs()
         built.copyTo(File(resourceDirectory, nativeFileName), overwrite = true)
         logger.lifecycle("native core 已打包: ${File(resourceDirectory, nativeFileName)}")
+        if (ncmHostOs.isWindows) {
+            val helper = listOf(
+                File(buildDirectory, "ncm_msi_restore_install_dir.dll"),
+                File(buildDirectory, "Release/ncm_msi_restore_install_dir.dll"),
+            ).firstOrNull { it.isFile }
+                ?: throw GradleException("MSI install-directory helper was not built")
+            val output = msiRestoreInstallDirDll.get().asFile
+            output.parentFile.mkdirs()
+            helper.copyTo(output, overwrite = true)
+        }
     }
 }
 
@@ -282,6 +297,13 @@ compose.desktop {
             packageVersion = "4.0.0"
             appResourcesRootDir.set(desktopNativeResources)
 
+            windows {
+                menu = true
+                menuGroup = "NCMConverter4a"
+                // Match the UpgradeCode of the previously released 4.0.0 MSI.
+                upgradeUuid = "047C03F4-286A-3122-9D04-7A2767347553"
+            }
+
             // JRE modules — trimmed to the minimum needed at runtime
             modules(
                 "java.base",
@@ -315,7 +337,40 @@ val exportProguardRuntime = tasks.register<Exec>("exportProguardRuntime") {
     )
 }
 
+val sameVersionMsiUpgradeScript = layout.projectDirectory.file("tools/EnableSameVersionMsiUpgrade.ps1")
 afterEvaluate {
+    tasks.withType<AbstractJPackageTask>().configureEach {
+        if (targetFormat == TargetFormat.Msi) {
+            // Show the installer's choice for creating the Start menu shortcut.
+            freeArgs.add("--win-shortcut-prompt")
+            if (ncmHostOs.isWindows) {
+                inputs.file(sameVersionMsiUpgradeScript)
+                inputs.file(msiRestoreInstallDirDll)
+                dependsOn(nativeBuild)
+                doLast {
+                    val msiFiles = destinationDir.get().asFile.listFiles { file ->
+                        file.isFile && file.extension.equals("msi", ignoreCase = true)
+                    }.orEmpty()
+                    check(msiFiles.size == 1) { "Expected one MSI in ${destinationDir.get().asFile}" }
+
+                    val result = ProcessBuilder(
+                        "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                        "-File", sameVersionMsiUpgradeScript.asFile.absolutePath,
+                        "-MsiPath", msiFiles.single().absolutePath,
+                        "-PackageName", packageName.get(),
+                        "-PackageVersion", packageVersion.get(),
+                        // A 4.0.1 MSI was generated before returning to 4.0.0.
+                        "-ReplaceThroughVersion", "4.0.1",
+                        "-UpgradeCode", winUpgradeUuid.get(),
+                        "-LegacyUpgradeCodes", "B54BE228-D008-3EF6-932D-BFF24CC371FD",
+                        "-RestoreInstallDirDll", msiRestoreInstallDirDll.get().asFile.absolutePath,
+                    ).inheritIO().start().waitFor()
+                    check(result == 0) { "Failed to enable same-version MSI upgrades" }
+                }
+            }
+        }
+    }
+
     tasks.withType<AbstractProguardTask>().configureEach {
         javaHome.set(desktopJdk25Home)
         if (proguardNeedsRuntimeExport) {

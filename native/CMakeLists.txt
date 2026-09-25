@@ -62,3 +62,12 @@ if(NCM_BUILD_SELFTEST)
     target_include_directories(ncm_core_selftest PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
     target_compile_features(ncm_core_selftest PRIVATE cxx_std_17)
 endif()
+
+if(WIN32 AND NOT ANDROID)
+    enable_language(C)
+    # Embedded in the MSI to reuse the directory of a related installation.
+    add_library(ncm_msi_restore_install_dir SHARED
+        "${CMAKE_CURRENT_LIST_DIR}/MsiRestoreInstallDir.c")
+    target_link_libraries(ncm_msi_restore_install_dir PRIVATE msi)
+    set_target_properties(ncm_msi_restore_install_dir PROPERTIES PREFIX "")
+endif()

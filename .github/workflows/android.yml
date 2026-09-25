@@ -204,7 +204,7 @@ jobs:
       - name: 构建桌面安装包 (release)
         shell: bash
         run: |
-          ./gradlew :composeApp:packageReleaseDistributionForCurrentOS --configure-on-demand
+          ./gradlew :composeApp:packageReleaseDistributionForCurrentOS --configure-on-demand --no-configuration-cache
 
       - name: 构建 Uber Jar (release)
         # 独立编译, 产物在 composeApp/build/compose/jars/, 与安装包目录分开
