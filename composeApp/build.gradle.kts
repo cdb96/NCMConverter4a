@@ -212,13 +212,15 @@ val nativeBuild = tasks.register<Exec>("nativeBuild") {
     val buildDirectory = nativeBuildDir.asFile
     val resourceDirectory = ncmNativeResourceDir.asFile
     val nativeFileName = "ncmc4a.$ncmNativeExtension"
+    val buildMsiHelper = ncmHostOs.isWindows
+    val msiHelperOutput = msiRestoreInstallDirDll.get().asFile
 
     // The cmake build directory lives inside native/; excluding it keeps the
     // task's own output from invalidating its inputs on every run.
     inputs.files(fileTree(nativeSourceDir) { exclude("build/**") })
     outputs.file(ncmNativeResourceDir.file(nativeFileName))
-    if (ncmHostOs.isWindows) {
-        outputs.file(msiRestoreInstallDirDll)
+    if (buildMsiHelper) {
+        outputs.file(msiHelperOutput)
     }
 
     doLast {
@@ -230,15 +232,14 @@ val nativeBuild = tasks.register<Exec>("nativeBuild") {
         resourceDirectory.mkdirs()
         built.copyTo(File(resourceDirectory, nativeFileName), overwrite = true)
         logger.lifecycle("native core 已打包: ${File(resourceDirectory, nativeFileName)}")
-        if (ncmHostOs.isWindows) {
+        if (buildMsiHelper) {
             val helper = listOf(
                 File(buildDirectory, "ncm_msi_restore_install_dir.dll"),
                 File(buildDirectory, "Release/ncm_msi_restore_install_dir.dll"),
             ).firstOrNull { it.isFile }
                 ?: throw GradleException("MSI install-directory helper was not built")
-            val output = msiRestoreInstallDirDll.get().asFile
-            output.parentFile.mkdirs()
-            helper.copyTo(output, overwrite = true)
+            msiHelperOutput.parentFile.mkdirs()
+            helper.copyTo(msiHelperOutput, overwrite = true)
         }
     }
 }
@@ -344,8 +345,10 @@ afterEvaluate {
             // Show the installer's choice for creating the Start menu shortcut.
             freeArgs.add("--win-shortcut-prompt")
             if (ncmHostOs.isWindows) {
-                inputs.file(sameVersionMsiUpgradeScript)
-                inputs.file(msiRestoreInstallDirDll)
+                val upgradeScriptFile = sameVersionMsiUpgradeScript.asFile
+                val helperDllFile = msiRestoreInstallDirDll.get().asFile
+                inputs.file(upgradeScriptFile)
+                inputs.file(helperDllFile)
                 dependsOn(nativeBuild)
                 doLast {
                     val msiFiles = destinationDir.get().asFile.listFiles { file ->
@@ -355,7 +358,7 @@ afterEvaluate {
 
                     val result = ProcessBuilder(
                         "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                        "-File", sameVersionMsiUpgradeScript.asFile.absolutePath,
+                        "-File", upgradeScriptFile.absolutePath,
                         "-MsiPath", msiFiles.single().absolutePath,
                         "-PackageName", packageName.get(),
                         "-PackageVersion", packageVersion.get(),
@@ -363,7 +366,7 @@ afterEvaluate {
                         "-ReplaceThroughVersion", "4.0.1",
                         "-UpgradeCode", winUpgradeUuid.get(),
                         "-LegacyUpgradeCodes", "B54BE228-D008-3EF6-932D-BFF24CC371FD",
-                        "-RestoreInstallDirDll", msiRestoreInstallDirDll.get().asFile.absolutePath,
+                        "-RestoreInstallDirDll", helperDllFile.absolutePath,
                     ).inheritIO().start().waitFor()
                     check(result == 0) { "Failed to enable same-version MSI upgrades" }
                 }
