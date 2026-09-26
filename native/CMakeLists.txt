@@ -52,6 +52,13 @@ if(NCM_BUILD_JNI)
             PREFIX ""
             CXX_VISIBILITY_PRESET hidden
             VISIBILITY_INLINES_HIDDEN ON)
+
+        if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            # System.load extracts this DLL to a temp directory. A MinGW-built
+            # DLL must not require libgcc_s_seh-1.dll or libstdc++-6.dll on the
+            # user's machine, where those toolchain runtimes are not installed.
+            target_link_options(ncmc4a PRIVATE -static-libgcc -static-libstdc++)
+        endif()
     endif()
 endif()
 

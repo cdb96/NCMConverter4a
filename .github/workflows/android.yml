@@ -201,6 +201,15 @@ jobs:
         shell: bash
         run: ./gradlew :composeApp:desktopTest --configure-on-demand
 
+      - name: 验证 Windows native 库独立加载
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $dll = (Resolve-Path 'composeApp/build/generated/desktopNativeResources/ncmc4a/windows-x86_64/ncmc4a.dll').Path
+          $env:PATH = "$env:JAVA_HOME\bin;$env:SystemRoot\System32;$env:SystemRoot"
+          & "$env:JAVA_HOME\bin\java.exe" native/check/NativeLibraryLoadCheck.java $dll
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: 构建桌面安装包 (release)
         shell: bash
         run: |
