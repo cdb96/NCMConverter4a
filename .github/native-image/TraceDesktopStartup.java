@@ -5,7 +5,7 @@ public final class TraceDesktopStartup {
     public static void main(String[] args) {
         Thread shutdown = new Thread(() -> {
             try {
-                Thread.sleep(15000);
+                Thread.sleep(25000);
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             }
@@ -13,6 +13,7 @@ public final class TraceDesktopStartup {
         }, "graalvm-trace-shutdown");
         shutdown.setDaemon(true);
         shutdown.start();
+        FilePickerSmoke.run();
         MainKt.main();
     }
 }

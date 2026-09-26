@@ -21,6 +21,10 @@ public final class NativeImageMain {
             verifyNativeLibrary();
             return;
         }
+        if (args.length == 1 && "--file-picker-smoke".equals(args[0])) {
+            FilePickerSmoke.run();
+            return;
+        }
 
         MainKt.main();
     }

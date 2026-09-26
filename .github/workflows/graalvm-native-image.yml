@@ -40,13 +40,14 @@ jobs:
           $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
           $classes = Join-Path $PWD.Path 'build/native-image/trace-classes'
           New-Item -ItemType Directory -Force $metadata,$classes | Out-Null
-          & "$env:JAVA_HOME\bin\javac.exe" -cp $jar.FullName -d $classes '.github/native-image/TraceDesktopStartup.java' '.github/native-image/NativeImageMain.java'
+          & "$env:JAVA_HOME\bin\javac.exe" -cp $jar.FullName -d $classes '.github/native-image/TraceDesktopStartup.java' '.github/native-image/NativeImageMain.java' '.github/native-image/FilePickerSmoke.java'
           if ($LASTEXITCODE -ne 0) { throw "Trace helper compilation failed: $LASTEXITCODE" }
           $agentOption = "-agentlib:native-image-agent=config-output-dir=$metadata,config-write-period-secs=5,config-write-initial-delay-secs=1"
           $classPath = "$classes;$($jar.FullName)"
           & "$env:JAVA_HOME\bin\java.exe" $agentOption '-Dskiko.renderApi=SOFTWARE' '-Dsun.java2d.d3d=false' -cp $classPath 'TraceDesktopStartup'
           $traceExit = $LASTEXITCODE
           Write-Host "Tracing JVM exit code: $traceExit"
+          if ($traceExit -ne 0) { throw "Desktop tracing failed: $traceExit" }
           Get-ChildItem $metadata -Force | ForEach-Object { Write-Host "$($_.Name) $($_.Length) bytes" }
           if (-not (Test-Path (Join-Path $metadata 'reachability-metadata.json'))) {
             throw 'GraalVM tracing did not produce reachability-metadata.json'
@@ -79,6 +80,8 @@ jobs:
           if (-not (Test-Path bin/jawt.dll)) { throw "Expected AWT support library at $PWD/bin/jawt.dll" }
           & (Join-Path $PWD 'NCMConverter4a.exe') --native-smoke
           if ($LASTEXITCODE -ne 0) { throw "Native Image JNI smoke test failed: $LASTEXITCODE" }
+          & (Join-Path $PWD 'NCMConverter4a.exe') --file-picker-smoke
+          if ($LASTEXITCODE -ne 0) { throw "Native Image file picker smoke test failed: $LASTEXITCODE" }
           Pop-Location
           Get-ChildItem build/native-image -Recurse -File | Select-Object FullName,Length
 
