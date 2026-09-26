@@ -1,0 +1,50 @@
+name: GraalVM Native Image experiment
+
+on:
+  push:
+    branches: [codex/graalvm-native-image]
+  workflow_dispatch:
+
+jobs:
+  windows-native-image:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Build Windows UberJar
+        shell: pwsh
+        run: ./gradlew.bat :composeApp:packageReleaseUberJarForCurrentOS --configure-on-demand
+
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          distribution: graalvm
+          java-version: '25'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          native-image-job-reports: 'true'
+
+      - name: Compile Native Image
+        shell: pwsh
+        run: |
+          native-image --version
+          $jar = Get-ChildItem composeApp/build/compose/jars/*-release.jar | Select-Object -First 1
+          if (-not $jar) { throw 'Release UberJar not found' }
+          New-Item -ItemType Directory -Force build/native-image | Out-Null
+          native-image --no-fallback -Ob '-H:IncludeResources=^(ncmc4a/.*|skiko-windows-x64\.dll)$' -jar $jar.FullName -o build/native-image/NCMConverter4a
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem build/native-image | Select-Object Name,Length
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: NCMConverter4a-graalvm-windows-experiment
+          path: build/native-image/*
+          if-no-files-found: error
