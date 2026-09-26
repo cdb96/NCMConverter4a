@@ -36,42 +36,38 @@ jobs:
         shell: pwsh
         run: |
           $jar = Get-ChildItem composeApp/build/compose/jars/*-release.jar | Select-Object -First 1
+          if (-not $jar) { throw 'Release UberJar not found' }
           $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
-          New-Item -ItemType Directory -Force $metadata | Out-Null
-          $javaArgs = @(
-            "-agentlib:native-image-agent=config-output-dir=$metadata,config-write-period-secs=5,config-write-initial-delay-secs=1",
-            '-Dskiko.renderApi=SOFTWARE',
-            '-Dsun.java2d.d3d=false',
-            '-jar',
-            $jar.FullName
-          )
-          $process = Start-Process -FilePath (Join-Path $env:JAVA_HOME 'bin/java.exe') -ArgumentList $javaArgs -WorkingDirectory $PWD.Path -WindowStyle Hidden -PassThru -RedirectStandardError 'build/native-image/agent.stderr.log' -RedirectStandardOutput 'build/native-image/agent.stdout.log'
-          Start-Sleep -Seconds 18
-          $process.Refresh()
-          if (-not $process.HasExited) {
-            $process.CloseMainWindow() | Out-Null
-            Start-Sleep -Seconds 3
-            $process.Refresh()
-            if (-not $process.HasExited) { Stop-Process -Id $process.Id }
+          $classes = Join-Path $PWD.Path 'build/native-image/trace-classes'
+          New-Item -ItemType Directory -Force $metadata,$classes | Out-Null
+          & "$env:JAVA_HOME\bin\javac.exe" -cp $jar.FullName -d $classes '.github/native-image/TraceDesktopStartup.java'
+          if ($LASTEXITCODE -ne 0) { throw "Trace helper compilation failed: $LASTEXITCODE" }
+          $agentOption = "-agentlib:native-image-agent=config-output-dir=$metadata,config-write-period-secs=5,config-write-initial-delay-secs=1"
+          $classPath = "$classes;$($jar.FullName)"
+          & "$env:JAVA_HOME\bin\java.exe" $agentOption '-Dskiko.renderApi=SOFTWARE' '-Dsun.java2d.d3d=false' -cp $classPath 'TraceDesktopStartup'
+          $traceExit = $LASTEXITCODE
+          Write-Host "Tracing JVM exit code: $traceExit"
+          Get-ChildItem $metadata -Force | ForEach-Object { Write-Host "$($_.Name) $($_.Length) bytes" }
+          if (-not (Test-Path (Join-Path $metadata 'reachability-metadata.json'))) {
+            throw 'GraalVM tracing did not produce reachability-metadata.json'
           }
-          Get-ChildItem $metadata | Select-Object Name,Length
-          Get-Content 'build/native-image/agent.stderr.log' -ErrorAction SilentlyContinue | Select-Object -Last 20
-          if (-not (Test-Path (Join-Path $metadata 'jni-config.json'))) { throw 'JNI tracing metadata not generated' }
+
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: NCMConverter4a-graalvm-tracing-metadata
           path: build/native-image/metadata/*
-          if-no-files-found: error
+          if-no-files-found: warn
+
       - name: Compile Native Image
         shell: pwsh
         run: |
-          Get-Command native-image | Select-Object Source,CommandType
           native-image --version
           $jar = Get-ChildItem composeApp/build/compose/jars/*-release.jar | Select-Object -First 1
           if (-not $jar) { throw 'Release UberJar not found' }
+          $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
           Write-Host "UberJar: $($jar.FullName) ($($jar.Length) bytes)"
           New-Item -ItemType Directory -Force build/native-image | Out-Null
-          $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
           Push-Location build/native-image
           native-image --no-fallback -Ob "--enable-native-access=ALL-UNNAMED" "-H:ConfigurationFileDirectories=$metadata" "-H:IncludeResources=ncmc4a/windows-x86_64/ncmc4a.dll" "-H:IncludeResources=skiko-windows-x64.dll" -o NCMConverter4a -jar $jar.FullName
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
