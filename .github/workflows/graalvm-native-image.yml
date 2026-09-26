@@ -32,6 +32,36 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           native-image-job-reports: 'true'
 
+      - name: Trace desktop startup metadata
+        shell: pwsh
+        run: |
+          $jar = Get-ChildItem composeApp/build/compose/jars/*-release.jar | Select-Object -First 1
+          $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
+          New-Item -ItemType Directory -Force $metadata | Out-Null
+          $javaArgs = @(
+            "-agentlib:native-image-agent=config-output-dir=$metadata,config-write-period-secs=5,config-write-initial-delay-secs=1",
+            '-Dskiko.renderApi=SOFTWARE',
+            '-Dsun.java2d.d3d=false',
+            '-jar',
+            $jar.FullName
+          )
+          $process = Start-Process -FilePath (Join-Path $env:JAVA_HOME 'bin/java.exe') -ArgumentList $javaArgs -WorkingDirectory $PWD.Path -WindowStyle Hidden -PassThru -RedirectStandardError 'build/native-image/agent.stderr.log' -RedirectStandardOutput 'build/native-image/agent.stdout.log'
+          Start-Sleep -Seconds 18
+          $process.Refresh()
+          if (-not $process.HasExited) {
+            $process.CloseMainWindow() | Out-Null
+            Start-Sleep -Seconds 3
+            $process.Refresh()
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id }
+          }
+          Get-ChildItem $metadata | Select-Object Name,Length
+          Get-Content 'build/native-image/agent.stderr.log' -ErrorAction SilentlyContinue | Select-Object -Last 20
+          if (-not (Test-Path (Join-Path $metadata 'jni-config.json'))) { throw 'JNI tracing metadata not generated' }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: NCMConverter4a-graalvm-tracing-metadata
+          path: build/native-image/metadata/*
+          if-no-files-found: error
       - name: Compile Native Image
         shell: pwsh
         run: |
@@ -41,8 +71,9 @@ jobs:
           if (-not $jar) { throw 'Release UberJar not found' }
           Write-Host "UberJar: $($jar.FullName) ($($jar.Length) bytes)"
           New-Item -ItemType Directory -Force build/native-image | Out-Null
+          $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
           Push-Location build/native-image
-          native-image --verbose --no-fallback -Ob -o NCMConverter4a -jar $jar.FullName
+          native-image --no-fallback -Ob "--enable-native-access=ALL-UNNAMED" "-H:ConfigurationFileDirectories=$metadata" "-H:IncludeResources=ncmc4a/windows-x86_64/ncmc4a.dll" "-H:IncludeResources=skiko-windows-x64.dll" -o NCMConverter4a -jar $jar.FullName
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Pop-Location
           Get-ChildItem build/native-image | Select-Object Name,Length
