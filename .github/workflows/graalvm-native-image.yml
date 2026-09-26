@@ -67,12 +67,13 @@ jobs:
           $jar = Get-ChildItem composeApp/build/compose/jars/*-release.jar | Select-Object -First 1
           if (-not $jar) { throw 'Release UberJar not found' }
           $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
+          $staticMetadata = Join-Path $PWD.Path '.github/native-image/metadata'
           Write-Host "UberJar: $($jar.FullName) ($($jar.Length) bytes)"
           New-Item -ItemType Directory -Force build/native-image | Out-Null
           Push-Location build/native-image
           $classes = Join-Path $PWD.Path 'trace-classes'
           $classPath = "$classes;$($jar.FullName)"
-          native-image --no-fallback -Ob "--enable-native-access=ALL-UNNAMED" "-H:ConfigurationFileDirectories=$metadata" "-H:IncludeResources=ncmc4a/windows-x86_64/ncmc4a.dll" "-H:IncludeResources=skiko-windows-x64.dll" -cp $classPath NativeImageMain NCMConverter4a
+          native-image --no-fallback -Ob "--enable-native-access=ALL-UNNAMED" "-H:ConfigurationFileDirectories=$metadata,$staticMetadata" "-H:IncludeResources=ncmc4a/windows-x86_64/ncmc4a.dll" "-H:IncludeResources=skiko-windows-x64.dll" -cp $classPath NativeImageMain NCMConverter4a
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Force bin | Out-Null
           Copy-Item -LiteralPath jawt.dll -Destination bin/jawt.dll -Force
