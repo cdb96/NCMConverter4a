@@ -206,6 +206,8 @@ jobs:
         shell: pwsh
         run: |
           $dll = (Resolve-Path 'composeApp/build/generated/desktopNativeResources/ncmc4a/windows-x86_64/ncmc4a.dll').Path
+          $objdump = Get-Command objdump -ErrorAction SilentlyContinue
+          if ($objdump) { & $objdump.Source -p $dll | Select-String 'DLL Name:' }
           $env:PATH = "$env:JAVA_HOME\bin;$env:SystemRoot\System32;$env:SystemRoot"
           & "$env:JAVA_HOME\bin\java.exe" native/check/NativeLibraryLoadCheck.java $dll
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

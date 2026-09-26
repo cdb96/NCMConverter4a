@@ -55,9 +55,10 @@ if(NCM_BUILD_JNI)
 
         if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             # System.load extracts this DLL to a temp directory. A MinGW-built
-            # DLL must not require libgcc_s_seh-1.dll or libstdc++-6.dll on the
-            # user's machine, where those toolchain runtimes are not installed.
-            target_link_options(ncmc4a PRIVATE -static-libgcc -static-libstdc++)
+            # DLL must not require MinGW runtime DLLs on the user's machine.
+            # -static-libgcc/-static-libstdc++ alone can leave libwinpthread
+            # dynamically linked when std::thread is used.
+            target_link_options(ncmc4a PRIVATE -static -static-libgcc -static-libstdc++)
         endif()
     endif()
 endif()
