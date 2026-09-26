@@ -78,6 +78,10 @@ jobs:
           Copy-Item -LiteralPath jawt.dll -Destination bin/jawt.dll -Force
           if (-not (Test-Path awt.dll)) { throw "Expected AWT library at $PWD/awt.dll" }
           if (-not (Test-Path bin/jawt.dll)) { throw "Expected AWT support library at $PWD/bin/jawt.dll" }
+          $fontConfig = Join-Path $env:JAVA_HOME 'lib/fontconfig.bfc'
+          if (-not (Test-Path $fontConfig)) { throw "Expected JDK font configuration at $fontConfig" }
+          New-Item -ItemType Directory -Force lib | Out-Null
+          Copy-Item -LiteralPath $fontConfig -Destination lib/fontconfig.bfc -Force
           & (Join-Path $PWD 'NCMConverter4a.exe') --native-smoke
           if ($LASTEXITCODE -ne 0) { throw "Native Image JNI smoke test failed: $LASTEXITCODE" }
           & (Join-Path $PWD 'NCMConverter4a.exe') --file-picker-smoke
@@ -86,7 +90,8 @@ jobs:
           Get-ChildItem build/native-image -Recurse -File | Select-Object FullName,Length
 
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: NCMConverter4a-graalvm-windows-experiment
           path: build/native-image/**
-          if-no-files-found: error
+          if-no-files-found: warn
