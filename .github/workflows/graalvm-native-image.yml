@@ -77,7 +77,8 @@ jobs:
           Copy-Item -LiteralPath jawt.dll -Destination bin/jawt.dll -Force
           if (-not (Test-Path awt.dll)) { throw "Expected AWT library at $PWD/awt.dll" }
           if (-not (Test-Path bin/jawt.dll)) { throw "Expected AWT support library at $PWD/bin/jawt.dll" }
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & (Join-Path $PWD 'NCMConverter4a.exe') --native-smoke
+          if ($LASTEXITCODE -ne 0) { throw "Native Image JNI smoke test failed: $LASTEXITCODE" }
           Pop-Location
           Get-ChildItem build/native-image -Recurse -File | Select-Object FullName,Length
 
