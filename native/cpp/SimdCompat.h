@@ -32,7 +32,7 @@
     #define NEON2SSE_DISABLE_PERFORMANCE_WARNING
     #endif
 
-    #include "third_party/NEON_2_SSE/NEON_2_SSE.h"
+    #include "../third_party/NEON_2_SSE/NEON_2_SSE.h"
 
     #define NCM_SIMD_NEON2SSE 1
 

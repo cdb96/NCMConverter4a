@@ -1,20 +1,25 @@
 # Shared native core
 
 One C++ implementation of the RC4 and KGM decryption used by **both** the Android
-app and the Desktop app. `nativeLib` (Android) and `composeApp` (Desktop) compile
-the same three sources; only the way the library is loaded differs.
+app and the Desktop app. `androidApp` and `composeApp` compile the same three
+runtime sources; only the way the library is loaded differs.
+
+`cpp/` contains the runtime C++ code, like `master`'s `app/src/main/cpp/`.
+Tests, MSI packaging code, and the external SIMD header are kept alongside it.
 
 | File | Role |
 | --- | --- |
-| `NativeApi.h` | C ABI, free of JNI types, so the core is testable without a JVM |
-| `SimdCompat.h` | Picks the SIMD backend: `<arm_neon.h>` on ARM, `NEON_2_SSE` on x86 |
-| `RC4Core.cpp` | RC4 key schedule + keystream XOR |
-| `KGMCore.cpp` | KGM mask expansion and stream transform |
-| `KgmTables.h` | Generated lookup tables (formerly `KGMData.h`) |
+| `cpp/NativeApi.h` | C ABI, free of JNI types, so the core is testable without a JVM |
+| `cpp/SimdCompat.h` | Picks the SIMD backend: `<arm_neon.h>` on ARM, `NEON_2_SSE` on x86 |
+| `cpp/RC4Core.cpp` | RC4 key schedule + keystream XOR |
+| `cpp/KGMCore.cpp` | KGM mask expansion and stream transform |
+| `cpp/KgmTables.h` | Generated lookup tables (formerly `KGMData.h`) |
 | `third_party/NEON_2_SSE/` | Intel ARM_NEON_2_x86_SSE submodule (x86 compatibility layer) |
-| `JniBridge.cpp` | JNI glue for `com.cdb96.ncmconverter4a.jni.{RC4Decrypt,KGMDecrypt}` |
-| `selftest/SelfTest.cpp` | Golden vector + byte-level reference comparison, no JVM needed |
-| `check/NativeCoreCheck.java` | JVM-level checks (JNI symbol names, boundaries, concurrency) |
+| `cpp/JniBridge.cpp` | JNI glue for `com.cdb96.ncmconverter4a.jni.{RC4Decrypt,KGMDecrypt}` |
+| `tests/SelfTest.cpp` | Golden vector + byte-level reference comparison, no JVM needed |
+| `tests/NativeCoreCheck.java` | JVM-level checks (JNI symbol names, boundaries, concurrency) |
+| `tests/NativeLibraryLoadCheck.java` | Windows DLL load check without MinGW on `PATH` |
+| `packaging/MsiRestoreInstallDir.c` | MSI helper for reusing an existing install directory |
 
 ## SIMD
 
@@ -43,7 +48,7 @@ producing a second code path.
 
 Consumers:
 
-- Android: `nativeLib/src/main/cpp/CMakeLists.txt` builds `libncmc4a.so` and
+- Android: `androidApp` builds `native/CMakeLists.txt` into `libncmc4a.so` and
   `System.loadLibrary("ncmc4a")` resolves it from the APK.
 - Desktop: `:composeApp:nativeBuild` builds the library and bundles it as
   the `ncmc4a/<os>-<arch>/ncmc4a.<ext>` resource; `jni/NativeLibrary.kt` extracts
@@ -70,7 +75,7 @@ chunk.
 JVM-level check (needs a JDK as well):
 
 ```bash
-native/check.sh
+native/tests/check.sh
 ```
 
 Desktop unit tests, including the JNI golden vectors and chunk boundary checks:

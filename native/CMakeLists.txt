@@ -4,8 +4,8 @@
 #   * Desktop: standalone, `cmake -S native -B native/build` (see README.md).
 #   * Android: androidApp builds this file directly with NCM_BUILD_SELFTEST=OFF.
 #
-# The algorithms live in RC4Core.cpp / KGMCore.cpp behind the C ABI declared in
-# NativeApi.h; JniBridge.cpp is the only file that knows about JNI.
+# The algorithms live in cpp/ behind the C ABI in cpp/NativeApi.h;
+# cpp/JniBridge.cpp is the only runtime source that knows about JNI.
 cmake_minimum_required(VERSION 3.22)
 project(ncmc4a CXX)
 
@@ -21,15 +21,15 @@ option(NCM_BUILD_JNI "Build the JNI bridge (needs a JDK)" ON)
 option(NCM_BUILD_SELFTEST "Build the standalone core self-test" ON)
 
 set(NCM_CORE_SOURCES
-    "${CMAKE_CURRENT_LIST_DIR}/RC4Core.cpp"
-    "${CMAKE_CURRENT_LIST_DIR}/KGMCore.cpp")
+    "${CMAKE_CURRENT_LIST_DIR}/cpp/RC4Core.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/cpp/KGMCore.cpp")
 
 if(NCM_BUILD_JNI)
     add_library(ncmc4a SHARED
         ${NCM_CORE_SOURCES}
-        "${CMAKE_CURRENT_LIST_DIR}/JniBridge.cpp")
+        "${CMAKE_CURRENT_LIST_DIR}/cpp/JniBridge.cpp")
 
-    target_include_directories(ncmc4a PUBLIC "${CMAKE_CURRENT_LIST_DIR}")
+    target_include_directories(ncmc4a PUBLIC "${CMAKE_CURRENT_LIST_DIR}/cpp")
     if(NCM_JNI_INCLUDE_DIR AND EXISTS "${NCM_JNI_INCLUDE_DIR}/jni.h")
         target_include_directories(ncmc4a PRIVATE
             "${NCM_JNI_INCLUDE_DIR}"
@@ -65,9 +65,9 @@ endif()
 
 if(NCM_BUILD_SELFTEST)
     add_executable(ncm_core_selftest
-        "${CMAKE_CURRENT_LIST_DIR}/selftest/SelfTest.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/tests/SelfTest.cpp"
         ${NCM_CORE_SOURCES})
-    target_include_directories(ncm_core_selftest PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
+    target_include_directories(ncm_core_selftest PRIVATE "${CMAKE_CURRENT_LIST_DIR}/cpp")
     target_compile_features(ncm_core_selftest PRIVATE cxx_std_17)
 endif()
 
@@ -75,7 +75,7 @@ if(WIN32 AND NOT ANDROID)
     enable_language(C)
     # Embedded in the MSI to reuse the directory of a related installation.
     add_library(ncm_msi_restore_install_dir SHARED
-        "${CMAKE_CURRENT_LIST_DIR}/MsiRestoreInstallDir.c")
+        "${CMAKE_CURRENT_LIST_DIR}/packaging/MsiRestoreInstallDir.c")
     target_link_libraries(ncm_msi_restore_install_dir PRIVATE msi)
     set_target_properties(ncm_msi_restore_install_dir PROPERTIES PREFIX "")
 endif()

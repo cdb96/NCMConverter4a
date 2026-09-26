@@ -328,7 +328,7 @@ public final class NativeCoreCheck {
     }
 
     private static byte[] loadTables() {
-        // Raw bytes generated from native/KgmTables.h; keeping the reference
+        // Raw bytes generated from native/cpp/KgmTables.h; keeping the reference
         // self-contained means the check does not depend on the native library.
         return java.util.Base64.getDecoder().decode(
             "AAAAAAAAAAAAAAAAAAAAAAABIQFhASEB4QEhAWEBIQHSIwICQkICAsLCAgJCQgIC09MCA2NDYwPjw+MDY0NjA5S0lGUEBAQEhISE"

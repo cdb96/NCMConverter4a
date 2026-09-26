@@ -146,7 +146,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ninja-build
 
       - name: 校验共享 native core
-        run: bash native/check.sh
+        run: bash native/tests/check.sh
 
       - name: 运行 Desktop/common 回归测试
         run: ./gradlew :composeApp:desktopTest --configure-on-demand
@@ -209,7 +209,7 @@ jobs:
           $objdump = Get-Command objdump -ErrorAction SilentlyContinue
           if ($objdump) { & $objdump.Source -p $dll | Select-String 'DLL Name:' }
           $env:PATH = "$env:JAVA_HOME\bin;$env:SystemRoot\System32;$env:SystemRoot"
-          & "$env:JAVA_HOME\bin\java.exe" native/check/NativeLibraryLoadCheck.java $dll
+          & "$env:JAVA_HOME\bin\java.exe" native/tests/NativeLibraryLoadCheck.java $dll
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: 构建桌面安装包 (release)
