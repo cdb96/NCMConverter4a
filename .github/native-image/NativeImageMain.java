@@ -4,6 +4,7 @@ import java.nio.file.Path;
 /** Native Image entry point: prepare the Windows AWT support directory, then start Compose. */
 public final class NativeImageMain {
     public static void main(String[] args) {
+        System.setProperty("skiko.renderApi", "SOFTWARE");
         System.setProperty("sun.java2d.d3d", "false");
 
         String javaHome = System.getProperty("java.home");

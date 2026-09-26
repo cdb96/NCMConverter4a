@@ -74,7 +74,8 @@ jobs:
           native-image --no-fallback -Ob "--enable-native-access=ALL-UNNAMED" "-H:ConfigurationFileDirectories=$metadata" "-H:IncludeResources=ncmc4a/windows-x86_64/ncmc4a.dll" "-H:IncludeResources=skiko-windows-x64.dll" -cp $classPath NativeImageMain NCMConverter4a
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Force bin | Out-Null
-          Get-ChildItem -File -Filter *.dll | Move-Item -Destination bin
+          Copy-Item -LiteralPath jawt.dll -Destination bin/jawt.dll -Force
+          if (-not (Test-Path awt.dll)) { throw "Expected AWT library at $PWD/awt.dll" }
           if (-not (Test-Path bin/jawt.dll)) { throw "Expected AWT support library at $PWD/bin/jawt.dll" }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Pop-Location
