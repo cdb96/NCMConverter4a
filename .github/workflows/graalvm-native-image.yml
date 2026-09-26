@@ -40,7 +40,7 @@ jobs:
           $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
           $classes = Join-Path $PWD.Path 'build/native-image/trace-classes'
           New-Item -ItemType Directory -Force $metadata,$classes | Out-Null
-          & "$env:JAVA_HOME\bin\javac.exe" -cp $jar.FullName -d $classes '.github/native-image/TraceDesktopStartup.java'
+          & "$env:JAVA_HOME\bin\javac.exe" -cp $jar.FullName -d $classes '.github/native-image/TraceDesktopStartup.java' '.github/native-image/NativeImageMain.java'
           if ($LASTEXITCODE -ne 0) { throw "Trace helper compilation failed: $LASTEXITCODE" }
           $agentOption = "-agentlib:native-image-agent=config-output-dir=$metadata,config-write-period-secs=5,config-write-initial-delay-secs=1"
           $classPath = "$classes;$($jar.FullName)"
@@ -69,13 +69,19 @@ jobs:
           Write-Host "UberJar: $($jar.FullName) ($($jar.Length) bytes)"
           New-Item -ItemType Directory -Force build/native-image | Out-Null
           Push-Location build/native-image
-          native-image --no-fallback -Ob "--enable-native-access=ALL-UNNAMED" "-H:ConfigurationFileDirectories=$metadata" "-H:IncludeResources=ncmc4a/windows-x86_64/ncmc4a.dll" "-H:IncludeResources=skiko-windows-x64.dll" -o NCMConverter4a -jar $jar.FullName
+          $classes = Join-Path $PWD.Path 'build/native-image/trace-classes'
+          $classPath = "$classes;$($jar.FullName)"
+          native-image --no-fallback -Ob "--enable-native-access=ALL-UNNAMED" "-H:ConfigurationFileDirectories=$metadata" "-H:IncludeResources=ncmc4a/windows-x86_64/ncmc4a.dll" "-H:IncludeResources=skiko-windows-x64.dll" -cp $classPath NativeImageMain NCMConverter4a
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force bin | Out-Null
+          Get-ChildItem -File -Filter *.dll | Move-Item -Destination bin
+          if (-not (Test-Path bin/jawt.dll)) { throw "Expected AWT support library at $PWD/bin/jawt.dll" }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Pop-Location
-          Get-ChildItem build/native-image | Select-Object Name,Length
+          Get-ChildItem build/native-image -Recurse -File | Select-Object FullName,Length
 
       - uses: actions/upload-artifact@v7
         with:
           name: NCMConverter4a-graalvm-windows-experiment
-          path: build/native-image/*
+          path: build/native-image/**
           if-no-files-found: error
