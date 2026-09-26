@@ -40,7 +40,7 @@ public final class NativeImageMain {
         };
 
         RC4Decrypt.ksa(key);
-        RC4Decrypt.prgaDecrypt(actual, actual.length);
+        RC4Decrypt.prgaDecryptByteArray(actual, actual.length);
         if (!Arrays.equals(expected, actual)) {
             throw new IllegalStateException("ncmc4a RC4 JNI smoke test returned an unexpected vector");
         }
