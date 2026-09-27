@@ -3,9 +3,7 @@
     {
       "type": "java.awt.event.MouseWheelEvent",
       "jniAccessible": true,
-      "allDeclaredConstructors": true,
-      "allDeclaredMethods": true,
-      "allDeclaredFields": true
+      "allDeclaredConstructors": true
     }
   ]
 }
