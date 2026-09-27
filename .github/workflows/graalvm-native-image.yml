@@ -2,7 +2,7 @@ name: GraalVM Native Image experiment
 
 on:
   push:
-    branches: [codex/graalvm-native-image]
+    branches: [codex/graalvm-native-image, cmp_preview]
   workflow_dispatch:
 
 jobs:
