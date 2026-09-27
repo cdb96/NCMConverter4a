@@ -1,6 +1,10 @@
 import com.cdb96.ncmconverter4a.MainKt;
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.Window;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.SystemFlavorMap;
 import java.nio.file.Path;
 import java.util.Arrays;
 
@@ -39,6 +43,18 @@ public final class NativeImageMain {
                     System.err.println("Compose desktop startup smoke test failed: no visible window");
                     System.exit(1);
                 }
+                boolean dropTargetInstalled = Arrays.stream(Window.getWindows())
+                    .filter(Window::isShowing).anyMatch(NativeImageMain::hasDropTarget);
+                if (!dropTargetInstalled) {
+                    System.err.println("Compose desktop startup smoke test failed: no file drop target");
+                    System.exit(1);
+                }
+                boolean fileDropMapped = ((SystemFlavorMap) SystemFlavorMap.getDefaultFlavorMap())
+                    .getNativesForFlavor(DataFlavor.javaFileListFlavor).contains("HDROP");
+                if (!fileDropMapped) {
+                    System.err.println("Compose desktop startup smoke test failed: Windows file drops are not mapped");
+                    System.exit(1);
+                }
                 System.out.println("Compose desktop startup smoke test passed");
                 System.exit(0);
             }, "native-startup-smoke-shutdown");
@@ -47,6 +63,16 @@ public final class NativeImageMain {
         }
 
         MainKt.main();
+    }
+
+    private static boolean hasDropTarget(Component component) {
+        if (component.getDropTarget() != null) return true;
+        if (component instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                if (hasDropTarget(child)) return true;
+            }
+        }
+        return false;
     }
 
     private static void verifyNativeLibrary() {

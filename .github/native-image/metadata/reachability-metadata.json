@@ -1,5 +1,17 @@
 {
   "reflection": [
+    { "type": "byte[]" },
+    { "type": "char[]" },
+    { "type": "java.awt.Image" },
+    { "type": "java.io.InputStream" },
+    { "type": "java.io.Reader" },
+    { "type": "java.lang.String[]" },
+    { "type": "java.net.URL" },
+    { "type": "java.nio.ByteBuffer" },
+    { "type": "java.nio.CharBuffer" },
+    { "type": "java.rmi.MarshalledObject" },
+    { "type": "java.rmi.Remote" },
+    { "type": "java.util.List" },
     {
       "type": "java.awt.event.MouseWheelEvent",
       "jniAccessible": true,
@@ -12,9 +24,35 @@
           ]
         }
       ]
+    },
+    {
+      "type": "sun.awt.dnd.SunDropTargetContextPeer",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "handleDropMessage",
+          "parameterTypes": ["java.awt.Component", "int", "int", "int", "int", "long[]", "long"]
+        },
+        {
+          "name": "handleEnterMessage",
+          "parameterTypes": ["java.awt.Component", "int", "int", "int", "int", "long[]", "long"]
+        },
+        {
+          "name": "handleMotionMessage",
+          "parameterTypes": ["java.awt.Component", "int", "int", "int", "int", "long[]", "long"]
+        }
+      ]
+    },
+    {
+      "type": "sun.awt.windows.WDropTargetContextPeer",
+      "jniAccessible": true,
+      "methods": [
+        {"name": "getWDropTargetContextPeer", "parameterTypes": []}
+      ]
     }
   ],
   "resources": [
+    { "module": "java.datatransfer", "glob": "sun/datatransfer/resources/flavormap.properties" },
     { "glob": "ncmc4a/windows-x86_64/ncmc4a.dll" },
     { "glob": "skiko-windows-x64.dll" }
   ]
