@@ -3,7 +3,19 @@
     {
       "type": "java.awt.event.MouseWheelEvent",
       "jniAccessible": true,
-      "allDeclaredConstructors": true
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.awt.Component", "int", "long", "int", "int", "int", "int",
+            "int", "int", "boolean", "int", "int", "int", "double"
+          ]
+        }
+      ]
     }
+  ],
+  "resources": [
+    { "glob": "ncmc4a/windows-x86_64/ncmc4a.dll" },
+    { "glob": "skiko-windows-x64.dll" }
   ]
 }

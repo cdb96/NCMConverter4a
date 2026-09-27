@@ -5,8 +5,8 @@ actual object RC4Decrypt {
         System.loadLibrary("ncmc4a")
     }
 
-    @JvmStatic actual external fun ksa(key: ByteArray)
+    @JvmStatic actual external fun create(key: ByteArray): Long
 
-    @JvmStatic @JvmName("prgaDecryptByteArray")
-    actual external fun prgaDecrypt(cipherData: ByteArray, bytesRead: Int)
+    @JvmStatic actual external fun decrypt(context: Long, cipherData: ByteArray, bytesRead: Int)
+    @JvmStatic actual external fun destroy(context: Long)
 }

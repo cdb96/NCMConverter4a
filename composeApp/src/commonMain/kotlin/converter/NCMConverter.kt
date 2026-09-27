@@ -91,54 +91,58 @@ object NCMConverter {
         // Each RC4 decrypt call starts again at the beginning of the 256-byte
         // keystream. Filling every non-final chunk to a multiple of 256 keeps the
         // stream position consistent across calls without buffering the whole file.
-        RC4Decrypt.ksa(info.RC4key)
-        val reader = DecryptedPayloadReader(input, bufferSize)
+        val context = RC4Decrypt.create(info.RC4key)
+        try {
+            val reader = DecryptedPayloadReader(input, bufferSize, context)
 
-        val prefix = ByteArray(3)
-        val prefixSize = reader.read(prefix, 0, prefix.size)
-        if (prefixSize == 0) throw IllegalArgumentException("NCM payload is empty")
-        if (rawWriteMode) {
-            output.write(prefix, 0, prefixSize)
-            reader.copyTo(output)
-            return
-        }
-
-        when {
-            prefix.contentEquals("ID3".toByteArray()) -> {
-                val id3Header = ByteArray(10)
-                prefix.copyInto(id3Header)
-                reader.readFully(id3Header, prefixSize, id3Header.size - prefixSize)
-                val id3Length = LengthUtils.getSyncSafeInteger(id3Header.copyOfRange(6, 10))
-                require(id3Length in 0..MAX_ID3_LENGTH) {
-                    "invalid ID3 length: $id3Length"
-                }
-                // The size field excludes the ten-byte footer an ID3v2.4 tag may
-                // append (flag bit 4), so it is skipped separately.
-                val hasFooter = id3Header[3].toInt() == 4 && (id3Header[5].toInt() and 0x10) != 0
-                reader.skipFully(id3Length.toLong() + if (hasFooter) 10L else 0L)
-
-                ID3TagBuilder().apply {
-                    initDefaultTagHeader()
-                    addTIT2(info.musicName)
-                    addTPE1(info.musicArtists)
-                    addTALB(info.musicAlbum)
-                    addCover(info.coverData)
-                }.writeTo(output)
-                reader.copyTo(output)
-            }
-
-           prefix.contentEquals("fLa".toByteArray()) -> {
-               reader.skipFully(1)
-               writeFlacMetadata(reader, output, info)
-                reader.copyTo(output)
-            }
-
-            else -> {
-                // Keep the historical behavior for an unknown decrypted audio
-                // header: decrypt the payload, but do not invent metadata.
+            val prefix = ByteArray(3)
+            val prefixSize = reader.read(prefix, 0, prefix.size)
+            if (prefixSize == 0) throw IllegalArgumentException("NCM payload is empty")
+            if (rawWriteMode) {
                 output.write(prefix, 0, prefixSize)
                 reader.copyTo(output)
+                return
             }
+
+            when {
+                prefix.contentEquals("ID3".toByteArray()) -> {
+                    val id3Header = ByteArray(10)
+                    prefix.copyInto(id3Header)
+                    reader.readFully(id3Header, prefixSize, id3Header.size - prefixSize)
+                    val id3Length = LengthUtils.getSyncSafeInteger(id3Header.copyOfRange(6, 10))
+                    require(id3Length in 0..MAX_ID3_LENGTH) {
+                        "invalid ID3 length: $id3Length"
+                    }
+                    // The size field excludes the ten-byte footer an ID3v2.4 tag may
+                    // append (flag bit 4), so it is skipped separately.
+                    val hasFooter = id3Header[3].toInt() == 4 && (id3Header[5].toInt() and 0x10) != 0
+                    reader.skipFully(id3Length.toLong() + if (hasFooter) 10L else 0L)
+
+                    ID3TagBuilder().apply {
+                        initDefaultTagHeader()
+                        addTIT2(info.musicName)
+                        addTPE1(info.musicArtists)
+                        addTALB(info.musicAlbum)
+                        addCover(info.coverData)
+                    }.writeTo(output)
+                    reader.copyTo(output)
+                }
+
+                prefix.contentEquals("fLa".toByteArray()) -> {
+                    reader.skipFully(1)
+                    writeFlacMetadata(reader, output, info)
+                    reader.copyTo(output)
+                }
+
+                else -> {
+                    // Keep the historical behavior for an unknown decrypted audio
+                    // header: decrypt the payload, but do not invent metadata.
+                    output.write(prefix, 0, prefixSize)
+                    reader.copyTo(output)
+                }
+            }
+        } finally {
+            RC4Decrypt.destroy(context)
         }
     }
 
@@ -275,7 +279,8 @@ object NCMConverter {
 
     private class DecryptedPayloadReader(
         private val input: BinaryInput,
-        bufferSize: Int
+        bufferSize: Int,
+        private val context: Long
     ) {
         private val encryptedBuffer = ByteArray(bufferSize)
         private var position = 0
@@ -290,7 +295,7 @@ object NCMConverter {
                 endOfInput = true
                 return false
             }
-            RC4Decrypt.prgaDecrypt(encryptedBuffer, bytesRead)
+            RC4Decrypt.decrypt(context, encryptedBuffer, bytesRead)
             position = 0
             limit = bytesRead
             return true

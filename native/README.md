@@ -4,7 +4,7 @@ One C++ implementation of the RC4 and KGM decryption used by **both** the Androi
 app and the Desktop app. `androidApp` and `composeApp` compile the same three
 runtime sources; only the way the library is loaded differs.
 
-`cpp/` contains the runtime C++ code, like `master`'s `app/src/main/cpp/`.
+`cpp/` contains the runtime C++ code.
 Tests, MSI packaging code, and the external SIMD header are kept alongside it.
 
 | File | Role |
@@ -53,6 +53,11 @@ Consumers:
 - Desktop: `:composeApp:nativeBuild` builds the library and bundles it as
   the `ncmc4a/<os>-<arch>/ncmc4a.<ext>` resource; `jni/NativeLibrary.kt` extracts
   it at runtime, so the Jar, the installed distribution and `desktopTest` all work.
+
+Each conversion creates its own RC4 or KGM context, passes that handle on each
+decrypt call, and destroys it in `finally`. Native key state does not depend on
+which Java worker thread runs a call. The Windows MSVC Release DLL links the
+Visual C++ runtime statically and uses link-time optimization.
 
 ## Verify
 

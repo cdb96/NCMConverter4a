@@ -20,6 +20,32 @@ namespace {
 
 int failures = 0;
 
+class Rc4Session {
+public:
+    ~Rc4Session() { ncm_rc4_destroy(context_); }
+    void init(const std::uint8_t* key, int length) {
+        ncm_rc4_destroy(context_);
+        context_ = ncm_rc4_create(key, length);
+    }
+    void decrypt(std::uint8_t* data, int length) { ncm_rc4_decrypt(context_, data, length); }
+private:
+    NcmRc4Context* context_ = nullptr;
+};
+
+class KgmSession {
+public:
+    ~KgmSession() { ncm_kgm_destroy(context_); }
+    void init(const std::uint8_t* key, int length) {
+        ncm_kgm_destroy(context_);
+        context_ = ncm_kgm_create(key, length);
+    }
+    int decrypt(std::uint8_t* data, int offset, int length) {
+        return ncm_kgm_decrypt(context_, data, offset, length);
+    }
+private:
+    NcmKgmContext* context_ = nullptr;
+};
+
 void report(const std::string& label, bool ok, const std::string& detail = "") {
     if (ok) {
         std::printf("[ok] %s\n", label.c_str());
@@ -64,6 +90,7 @@ void referenceRc4(const std::vector<std::uint8_t>& key, std::vector<std::uint8_t
 }
 
 void checkRc4GoldenVector() {
+    Rc4Session session;
     const std::uint8_t key[] = {1, 2, 3, 4, 5, 6, 7};
     const std::uint8_t expected[] = {
         0x6D, 0x84, 0xE4, 0x70, 0x92, 0x1D, 0xEE, 0x82, 0xA1, 0x5E, 0x4D, 0x6C,
@@ -73,13 +100,14 @@ void checkRc4GoldenVector() {
     std::uint8_t data[32];
     for (int i = 0; i < 32; i++) data[i] = static_cast<std::uint8_t>(i);
 
-    ncm_rc4_init(key, 7);
-    ncm_rc4_decrypt(data, 32);
+    session.init(key, 7);
+    session.decrypt(data, 32);
 
     report("rc4 golden vector", std::memcmp(data, expected, 32) == 0);
 }
 
 void checkRc4AgainstReference() {
+    Rc4Session session;
     const int keyLengths[] = {1, 7, 16, 17, 32, 255, 256, 257};
     bool ok = true;
     for (int keyLength : keyLengths) {
@@ -93,8 +121,8 @@ void checkRc4AgainstReference() {
         referenceRc4(key, expected);
 
         std::vector<std::uint8_t> actual = input;
-        ncm_rc4_init(key.data(), keyLength);
-        ncm_rc4_decrypt(actual.data(), static_cast<int>(actual.size()));
+        session.init(key.data(), keyLength);
+        session.decrypt(actual.data(), static_cast<int>(actual.size()));
 
         if (expected != actual) {
             ok = false;
@@ -105,6 +133,7 @@ void checkRc4AgainstReference() {
 }
 
 void checkRc4Chunking() {
+    Rc4Session session;
     std::vector<std::uint8_t> key(17);
     for (int i = 0; i < 17; i++) key[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(i * 13 + 5);
 
@@ -113,11 +142,11 @@ void checkRc4Chunking() {
     referenceRc4(key, expected);
 
     std::vector<std::uint8_t> chunked = input;
-    ncm_rc4_init(key.data(), 17);
+    session.init(key.data(), 17);
     int offset = 0;
     while (offset < static_cast<int>(chunked.size())) {
         const int length = std::min(256, static_cast<int>(chunked.size()) - offset);
-        ncm_rc4_decrypt(chunked.data() + offset, length);
+        session.decrypt(chunked.data() + offset, length);
         offset += length;
     }
     // The last chunk is shorter than 256 bytes, so the cycle stays aligned.
@@ -130,6 +159,7 @@ void checkRc4Chunking() {
  * boundary, so a wrong loop condition or a bad tail start would show up here.
  */
 void checkRc4SimdBoundaries() {
+    Rc4Session session;
     const int lengths[] = {
         1, 15, 16, 17, 255, 256, 257, 511, 512, 513, 4096 + 137
     };
@@ -148,8 +178,8 @@ void checkRc4SimdBoundaries() {
         referenceRc4(key, expected);
 
         std::vector<std::uint8_t> actual = input;
-        ncm_rc4_init(key.data(), static_cast<int>(key.size()));
-        ncm_rc4_decrypt(actual.data(), length);
+        session.init(key.data(), static_cast<int>(key.size()));
+        session.decrypt(actual.data(), length);
 
         if (actual != expected) {
             ok = false;
@@ -237,6 +267,7 @@ private:
 };
 
 void checkKgmAgainstReference() {
+    KgmSession session;
     const int keySeeds[] = {0, 1, 200, 255};
     const int lengths[] = {1, 15, 16, 17, 255, 256, 257, 272, 273, 4096, 69632 + 33, 139264 + 7};
     bool ok = true;
@@ -249,8 +280,8 @@ void checkKgmAgainstReference() {
             std::vector<std::uint8_t> input = makeData(length, 29);
 
             std::vector<std::uint8_t> actual = input;
-            ncm_kgm_init(key, 17);
-            ncm_kgm_decrypt(actual.data(), 0, length);
+            session.init(key, 17);
+            session.decrypt(actual.data(), 0, length);
 
             std::vector<std::uint8_t> expected = input;
             ReferenceKgm reference(key);
@@ -266,6 +297,7 @@ void checkKgmAgainstReference() {
 }
 
 void checkKgmChunking() {
+    KgmSession session;
     std::uint8_t key[17];
     for (int i = 0; i < 17; i++) key[i] = static_cast<std::uint8_t>(i * 53 + 7);
 
@@ -277,14 +309,14 @@ void checkKgmChunking() {
     const int sizeCount = static_cast<int>(sizeof(sizes) / sizeof(sizes[0]));
 
     std::vector<std::uint8_t> chunked = input;
-    ncm_kgm_init(key, 17);
+    session.init(key, 17);
     int offset = 0;
     int index = 0;
     while (offset < static_cast<int>(chunked.size())) {
         int length = std::min(sizes[index % sizeCount], static_cast<int>(chunked.size()) - offset);
         length -= length % 16;  // keep chunk boundaries 16-byte aligned
         if (length == 0) length = std::min(16, static_cast<int>(chunked.size()) - offset);
-        offset = ncm_kgm_decrypt(chunked.data() + offset, offset, length);
+        offset = session.decrypt(chunked.data() + offset, offset, length);
         index++;
     }
 
@@ -315,6 +347,7 @@ void checkKgmChunking() {
  * same for the wrap and the mask-block advance on their own.
  */
 void checkKgmAlignedBoundaryOffsets() {
+    KgmSession session;
     const int offsets[] = {
         0, 16, 256, 272, 288, 4352, 69616, 69632, 69648, 139248, 139264
     };
@@ -338,8 +371,8 @@ void checkKgmAlignedBoundaryOffsets() {
             reference.decrypt(expected.data(), offset, length);
 
             std::vector<std::uint8_t> actual = input;
-            ncm_kgm_init(key, 17);
-            const int next = ncm_kgm_decrypt(actual.data(), offset, length);
+            session.init(key, 17);
+            const int next = session.decrypt(actual.data(), offset, length);
 
             if (next != offset + length || actual != expected) {
                 ok = false;
@@ -359,6 +392,7 @@ void checkKgmAlignedBoundaryOffsets() {
  * ends on a partial chunk that has to be finished byte by byte.
  */
 void checkKgmAlignedChunking() {
+    KgmSession session;
     std::uint8_t key[17];
     for (int i = 0; i < 17; i++) {
         key[i] = static_cast<std::uint8_t>(i * 71 + 19);
@@ -371,12 +405,12 @@ void checkKgmAlignedChunking() {
     const int sizeCount = static_cast<int>(sizeof(sizes) / sizeof(sizes[0]));
 
     std::vector<std::uint8_t> actual = input;
-    ncm_kgm_init(key, 17);
+    session.init(key, 17);
     int position = 0;
     int index = 0;
     while (position < total) {
         const int length = std::min(sizes[index % sizeCount], total - position);
-        position = ncm_kgm_decrypt(actual.data() + position, position, length);
+        position = session.decrypt(actual.data() + position, position, length);
         index++;
     }
 

@@ -28,8 +28,12 @@ class NativeDecryptTest {
             0x8F.toByte(), 0x87.toByte(), 0x42, 0x9F.toByte(), 0x82.toByte()
         )
 
-        RC4Decrypt.ksa(key)
-        RC4Decrypt.prgaDecrypt(actual, actual.size)
+        val rc4 = RC4Decrypt.create(key)
+        try {
+            RC4Decrypt.decrypt(rc4, actual, actual.size)
+        } finally {
+            RC4Decrypt.destroy(rc4)
+        }
 
         assertContentEquals(expected, actual)
     }
@@ -40,18 +44,26 @@ class NativeDecryptTest {
         val key = ByteArray(17) { (it * 41 + 1).toByte() }
         val input = ByteArray(69632 * 2 + 4096) { (it * 23 + 9).toByte() }
 
-        KGMDecrypt.init(key)
         val whole = input.copyOf()
-        val wholeNext = KGMDecrypt.decrypt(whole, 0, whole.size)
+        val wholeContext = KGMDecrypt.create(key)
+        val wholeNext = try {
+            KGMDecrypt.decrypt(wholeContext, whole, 0, whole.size)
+        } finally {
+            KGMDecrypt.destroy(wholeContext)
+        }
 
-        KGMDecrypt.init(key)
         val chunked = ByteArray(input.size)
         var offset = 0
-        while (offset < input.size) {
-            val size = minOf(4096, input.size - offset)
-            val chunk = input.copyOfRange(offset, offset + size)
-            offset = KGMDecrypt.decrypt(chunk, offset, size)
-            chunk.copyInto(chunked, offset - size)
+        val chunkContext = KGMDecrypt.create(key)
+        try {
+            while (offset < input.size) {
+                val size = minOf(4096, input.size - offset)
+                val chunk = input.copyOfRange(offset, offset + size)
+                offset = KGMDecrypt.decrypt(chunkContext, chunk, offset, size)
+                chunk.copyInto(chunked, offset - size)
+            }
+        } finally {
+            KGMDecrypt.destroy(chunkContext)
         }
 
         assertEquals(input.size, offset)
@@ -63,7 +75,8 @@ class NativeDecryptTest {
         // Touching the object triggers NativeLibrary.load(); a missing library
         // surfaces as ExceptionInInitializerError, so catch Throwable.
         val available = try {
-            RC4Decrypt.ksa(byteArrayOf(1))
+            val context = RC4Decrypt.create(byteArrayOf(1))
+            RC4Decrypt.destroy(context)
             true
         } catch (error: Throwable) {
             println("[info] native core 不可用: ${error.message}")

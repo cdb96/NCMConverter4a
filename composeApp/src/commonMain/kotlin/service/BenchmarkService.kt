@@ -41,16 +41,23 @@ class BenchmarkService {
 
     private fun warmup() {
         try {
-            KGMDecrypt.init(ByteArray(17))
-            RC4Decrypt.ksa(ByteArray(256))
+            val kgm = KGMDecrypt.create(ByteArray(17))
+            try {
+                val rc4 = RC4Decrypt.create(ByteArray(256))
+                try {
+                    val data = ByteArray(100 * 1024)
+                    Random.Default.nextBytes(data)
+                    RC4Decrypt.decrypt(rc4, data, data.size)
 
-            val data = ByteArray(100 * 1024)
-            Random.Default.nextBytes(data)
-            RC4Decrypt.prgaDecrypt(data, data.size)
-
-            val data2 = ByteArray(100 * 1024)
-            Random.Default.nextBytes(data2)
-            KGMDecrypt.decrypt(data2, 0, data2.size)
+                    val data2 = ByteArray(100 * 1024)
+                    Random.Default.nextBytes(data2)
+                    KGMDecrypt.decrypt(kgm, data2, 0, data2.size)
+                } finally {
+                    RC4Decrypt.destroy(rc4)
+                }
+            } finally {
+                KGMDecrypt.destroy(kgm)
+            }
 
             log.d("预热完成")
         } catch (e: Exception) {
@@ -71,16 +78,20 @@ class BenchmarkService {
                 val dataSize = sizeKB * 1024
                 val data = ByteArray(dataSize)
                 Random.Default.nextBytes(data)
-                KGMDecrypt.init(key)
-
+                val context = KGMDecrypt.create(key)
                 val mark = clock.markNow()
                 var pos = 0
                 val chunkSize = 256 * 1024
-                while (pos < dataSize) {
-                    val bytesToProcess = minOf(chunkSize, dataSize - pos)
-                    pos = KGMDecrypt.decrypt(data, pos, bytesToProcess)
+                val elapsed: Long
+                try {
+                    while (pos < dataSize) {
+                        val bytesToProcess = minOf(chunkSize, dataSize - pos)
+                        pos = KGMDecrypt.decrypt(context, data, pos, bytesToProcess)
+                    }
+                    elapsed = mark.elapsedNow().inWholeNanoseconds
+                } finally {
+                    KGMDecrypt.destroy(context)
                 }
-                val elapsed = mark.elapsedNow().inWholeNanoseconds
 
                 if (pos != dataSize) {
                     log.e("未处理完所有数据！期望: $dataSize, 实际: $pos")
@@ -110,11 +121,15 @@ class BenchmarkService {
                 val dataSize = sizeKB * 1024
                 val data = ByteArray(dataSize)
                 Random.Default.nextBytes(data)
-                RC4Decrypt.ksa(ByteArray(256))
-
+                val context = RC4Decrypt.create(ByteArray(256))
                 val mark = clock.markNow()
-                RC4Decrypt.prgaDecrypt(data, dataSize)
-                val elapsed = mark.elapsedNow().inWholeNanoseconds
+                val elapsed: Long
+                try {
+                    RC4Decrypt.decrypt(context, data, dataSize)
+                    elapsed = mark.elapsedNow().inWholeNanoseconds
+                } finally {
+                    RC4Decrypt.destroy(context)
+                }
 
                 val durationSec = elapsed / 1_000_000_000.0
                 val throughput = sizeKB / durationSec

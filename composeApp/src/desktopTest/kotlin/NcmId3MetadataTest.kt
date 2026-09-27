@@ -22,8 +22,7 @@ class NcmId3MetadataTest {
         // The 769-byte old tag crosses three 256-byte decrypt buffers.
         val oldHeader = byteArrayOf(0x49, 0x44, 0x33, 3, 0, 0, 0, 0, 6, 1)
         val encrypted = oldHeader + ByteArray(769) + audio
-        RC4Decrypt.ksa(key)
-        RC4Decrypt.prgaDecrypt(encrypted, encrypted.size)
+        encrypt(key, encrypted)
         val result = ByteArrayOutputStream()
         var coverWrites = 0
 
@@ -87,8 +86,7 @@ class NcmId3MetadataTest {
         val oldHeader = byteArrayOf(0x49, 0x44, 0x33, 4, 0, 0x10, 0, 0, 2, 0x2C)
         val footer = byteArrayOf(0x33, 0x44, 0x49, 4, 0, 0x10, 0, 0, 2, 0x2C)
         val encrypted = oldHeader + ByteArray(300) + footer + audio
-        RC4Decrypt.ksa(key)
-        RC4Decrypt.prgaDecrypt(encrypted, encrypted.size)
+        encrypt(key, encrypted)
 
         val bytes = convert(encrypted, key, cover = byteArrayOf())
 
@@ -102,8 +100,7 @@ class NcmId3MetadataTest {
         val key = byteArrayOf(9, 9, 9)
         val pngCover = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 7, 7)
         val encrypted = byteArrayOf(0x49, 0x44, 0x33, 3, 0, 0, 0, 0, 0, 0) + byteArrayOf(1, 2, 3)
-        RC4Decrypt.ksa(key)
-        RC4Decrypt.prgaDecrypt(encrypted, encrypted.size)
+        encrypt(key, encrypted)
 
         val picture = parseFrames(convert(encrypted, key, pngCover)).getValue("APIC")
 
@@ -111,6 +108,15 @@ class NcmId3MetadataTest {
             byteArrayOf(0) + "image/png".encodeToByteArray() + byteArrayOf(0, 3, 0) + pngCover,
             picture
         )
+    }
+
+    private fun encrypt(key: ByteArray, data: ByteArray) {
+        val context = RC4Decrypt.create(key)
+        try {
+            RC4Decrypt.decrypt(context, data, data.size)
+        } finally {
+            RC4Decrypt.destroy(context)
+        }
     }
 
     private fun convert(encrypted: ByteArray, key: ByteArray, cover: ByteArray): ByteArray {

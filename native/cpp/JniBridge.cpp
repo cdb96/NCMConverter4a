@@ -8,7 +8,6 @@
 #include <jni.h>
 
 #include <cstdint>
-#include <cstring>
 
 #include "NativeApi.h"
 
@@ -19,6 +18,11 @@ void throwIllegalArgument(JNIEnv* env, const char* message) {
     if (exceptionClass != nullptr) {
         env->ThrowNew(exceptionClass, message);
     }
+}
+
+void throwOutOfMemory(JNIEnv* env) {
+    jclass exceptionClass = env->FindClass("java/lang/OutOfMemoryError");
+    if (exceptionClass != nullptr) env->ThrowNew(exceptionClass, "native decrypt context allocation failed");
 }
 
 /** Copies a non-empty jbyteArray into a local buffer and runs `copy`. */
@@ -44,19 +48,25 @@ void withByteArray(JNIEnv* env, jbyteArray source, int minimumLength, const char
 
 extern "C" {
 
-JNIEXPORT void JNICALL
-Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_ksa(JNIEnv* env, jclass, jbyteArray key) {
+JNIEXPORT jlong JNICALL
+Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_create(JNIEnv* env, jclass, jbyteArray key) {
+    NcmRc4Context* context = nullptr;
     withByteArray(
         env, key, 1,
         "RC4 key must not be null or empty",
         "RC4 key must not be null or empty",
-        [](std::uint8_t* bytes, int length) { ncm_rc4_init(bytes, length); });
+        [&](std::uint8_t* bytes, int length) { context = ncm_rc4_create(bytes, length); });
+    if (context == nullptr && !env->ExceptionCheck()) throwOutOfMemory(env);
+    return reinterpret_cast<jlong>(context);
 }
 
 JNIEXPORT void JNICALL
-Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_prgaDecryptByteArray(JNIEnv* env, jclass,
-                                                                 jbyteArray cipherData,
-                                                                 jint bytesRead) {
+Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_decrypt(JNIEnv* env, jclass, jlong handle,
+                                                      jbyteArray cipherData, jint bytesRead) {
+    if (handle == 0) {
+        throwIllegalArgument(env, "RC4 context must not be zero");
+        return;
+    }
     if (cipherData == nullptr) {
         throwIllegalArgument(env, "RC4 data must not be null");
         return;
@@ -68,22 +78,35 @@ Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_prgaDecryptByteArray(JNIEnv* env, j
     }
     jbyte* bytes = static_cast<jbyte*>(env->GetPrimitiveArrayCritical(cipherData, nullptr));
     if (bytes == nullptr) return;
-    ncm_rc4_decrypt(reinterpret_cast<std::uint8_t*>(bytes), static_cast<int>(bytesRead));
+    ncm_rc4_decrypt(reinterpret_cast<NcmRc4Context*>(handle),
+                    reinterpret_cast<std::uint8_t*>(bytes), static_cast<int>(bytesRead));
     env->ReleasePrimitiveArrayCritical(cipherData, bytes, 0);
 }
 
 JNIEXPORT void JNICALL
-Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_init(JNIEnv* env, jclass, jbyteArray fileKeyBytes) {
+Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_destroy(JNIEnv*, jclass, jlong handle) {
+    ncm_rc4_destroy(reinterpret_cast<NcmRc4Context*>(handle));
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_create(JNIEnv* env, jclass, jbyteArray fileKeyBytes) {
+    NcmKgmContext* context = nullptr;
     withByteArray(
         env, fileKeyBytes, 17,
         "KGM key must contain at least 17 bytes",
         "KGM key must contain at least 17 bytes",
-        [](std::uint8_t* bytes, int /*length*/) { ncm_kgm_init(bytes, 17); });
+        [&](std::uint8_t* bytes, int /*length*/) { context = ncm_kgm_create(bytes, 17); });
+    if (context == nullptr && !env->ExceptionCheck()) throwOutOfMemory(env);
+    return reinterpret_cast<jlong>(context);
 }
 
 JNIEXPORT jint JNICALL
-Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv* env, jclass, jbyteArray cipherData,
-                                                     jint offset, jint bytesRead) {
+Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv* env, jclass, jlong handle,
+                                                     jbyteArray cipherData, jint offset, jint bytesRead) {
+    if (handle == 0) {
+        throwIllegalArgument(env, "KGM context must not be zero");
+        return offset;
+    }
     if (cipherData == nullptr) {
         throwIllegalArgument(env, "KGM data must not be null");
         return offset;
@@ -97,10 +120,16 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv* env, jclass, jbyteA
     }
     jbyte* bytes = static_cast<jbyte*>(env->GetPrimitiveArrayCritical(cipherData, nullptr));
     if (bytes == nullptr) return offset;
-    const int nextOffset = ncm_kgm_decrypt(reinterpret_cast<std::uint8_t*>(bytes),
+    const int nextOffset = ncm_kgm_decrypt(reinterpret_cast<NcmKgmContext*>(handle),
+                                          reinterpret_cast<std::uint8_t*>(bytes),
                                           static_cast<int>(offset), static_cast<int>(bytesRead));
     env->ReleasePrimitiveArrayCritical(cipherData, bytes, 0);
     return nextOffset;
+}
+
+JNIEXPORT void JNICALL
+Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_destroy(JNIEnv*, jclass, jlong handle) {
+    ncm_kgm_destroy(reinterpret_cast<NcmKgmContext*>(handle));
 }
 
 }  // extern "C"

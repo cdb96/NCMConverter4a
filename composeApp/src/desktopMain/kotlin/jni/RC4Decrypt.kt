@@ -12,9 +12,11 @@ actual object RC4Decrypt {
     }
 
     @JvmStatic
-    actual external fun ksa(key: ByteArray)
+    actual external fun create(key: ByteArray): Long
 
     @JvmStatic
-    @JvmName("prgaDecryptByteArray")
-    actual external fun prgaDecrypt(cipherData: ByteArray, bytesRead: Int)
+    actual external fun decrypt(context: Long, cipherData: ByteArray, bytesRead: Int)
+
+    @JvmStatic
+    actual external fun destroy(context: Long)
 }

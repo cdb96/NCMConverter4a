@@ -15,18 +15,20 @@
 
 #include <array>
 #include <cstdint>
+#include <new>
 #include <numeric>
 #include <utility>
+
+struct NcmRc4Context {
+    std::array<std::uint8_t, 256> keyStreamBytes{};
+    // The whole keystream, held as 16 x 128-bit chunks.
+    uint8x16_t keys[16]{};
+};
 
 namespace ncm {
 namespace {
 
-thread_local std::array<std::uint8_t, 256> keyStreamBytes{};
-
-// The whole keystream, held as 16 x 128-bit chunks (16 * 16 = 256 bytes).
-thread_local uint8x16_t keys[16];
-
-void applyKeyStream(std::uint8_t* data, int bytesRead) {
+void applyKeyStream(const NcmRc4Context& context, std::uint8_t* data, int bytesRead) {
     int i = 0;
 
     // Keep the old implementation structure almost unchanged:
@@ -40,7 +42,7 @@ void applyKeyStream(std::uint8_t* data, int bytesRead) {
         }
 
         for (int k = 0; k < 16; ++k) {
-            chunk[k] = veorq_u8(chunk[k], keys[k]);
+            chunk[k] = veorq_u8(chunk[k], context.keys[k]);
         }
 
         for (int k = 0; k < 16; ++k) {
@@ -53,13 +55,13 @@ void applyKeyStream(std::uint8_t* data, int bytesRead) {
     // `i` is a multiple of 256 here, so the cycle index is simply `i & 0xFF`.
     for (; i < bytesRead; ++i) {
         const int j = i & 0xFF;
-        data[i] ^= keyStreamBytes[static_cast<std::size_t>(j)];
+        data[i] ^= context.keyStreamBytes[static_cast<std::size_t>(j)];
     }
 }
 
 }  // namespace
 
-void rc4Init(const std::uint8_t* key, int keyLength) {
+void rc4Init(NcmRc4Context& context, const std::uint8_t* key, int keyLength) {
     if (key == nullptr || keyLength <= 0) return;
 
     std::array<std::uint8_t, 256> sBox{};
@@ -74,31 +76,38 @@ void rc4Init(const std::uint8_t* key, int keyLength) {
     // Preserve the corrected historical indexing that avoids the old
     // out-of-bounds load around the end of the 256-byte period.
     for (int k = 1; k < 256; ++k) {
-        keyStreamBytes[static_cast<std::size_t>(k - 1)] =
+        context.keyStreamBytes[static_cast<std::size_t>(k - 1)] =
             sBox[(sBox[static_cast<std::size_t>(k)] +
                   sBox[(sBox[static_cast<std::size_t>(k)] + k) & 0xFF]) & 0xFF];
     }
-    keyStreamBytes[255] = sBox[(sBox[0] + sBox[(sBox[0] + 0) & 0xFF]) & 0xFF];
+    context.keyStreamBytes[255] = sBox[(sBox[0] + sBox[(sBox[0] + 0) & 0xFF]) & 0xFF];
 
     // Directly inherited from the old RC4Decrypt.cpp: the keystream is loaded
     // into the vector registers once, right after the key schedule.
     for (int i = 0; i < 16; ++i) {
-        const uint8x16_t keyChunk = vld1q_u8(keyStreamBytes.data() + i * 16);
-        keys[i] = keyChunk;
+        const uint8x16_t keyChunk = vld1q_u8(context.keyStreamBytes.data() + i * 16);
+        context.keys[i] = keyChunk;
     }
 }
 
-void rc4DecryptAt(std::uint8_t* data, int length) {
+void rc4DecryptAt(const NcmRc4Context& context, std::uint8_t* data, int length) {
     if (data == nullptr || length <= 0) return;
-    applyKeyStream(data, length);
+    applyKeyStream(context, data, length);
 }
 
 }  // namespace ncm
 
-void ncm_rc4_init(const uint8_t* key, int key_len) {
-    ncm::rc4Init(key, key_len);
+NcmRc4Context* ncm_rc4_create(const uint8_t* key, int key_len) {
+    if (key == nullptr || key_len <= 0) return nullptr;
+    auto* context = new (std::nothrow) NcmRc4Context{};
+    if (context != nullptr) ncm::rc4Init(*context, key, key_len);
+    return context;
 }
 
-void ncm_rc4_decrypt(uint8_t* data, int length) {
-    ncm::rc4DecryptAt(data, length);
+void ncm_rc4_decrypt(NcmRc4Context* context, uint8_t* data, int length) {
+    if (context != nullptr) ncm::rc4DecryptAt(*context, data, length);
+}
+
+void ncm_rc4_destroy(NcmRc4Context* context) {
+    delete context;
 }

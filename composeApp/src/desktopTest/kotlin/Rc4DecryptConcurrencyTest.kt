@@ -7,10 +7,36 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 
 /**
- * Concurrency coverage for the native RC4 core: the key stream lives in
- * thread-local native state, so parallel conversions must not disturb each other.
+ * Concurrency coverage for per-conversion native RC4 contexts.
  */
 class Rc4DecryptConcurrencyTest {
+
+    @Test
+    fun twoContextsRemainIndependentOnTheSameThread() {
+        val firstKey = byteArrayOf(1, 2, 3)
+        val secondKey = byteArrayOf(7, 8, 9)
+        val input = ByteArray(513) { it.toByte() }
+        val firstExpected = input.copyOf().also { referenceDecrypt(firstKey, it) }
+        val secondExpected = input.copyOf().also { referenceDecrypt(secondKey, it) }
+        val first = RC4Decrypt.create(firstKey)
+        try {
+            val second = RC4Decrypt.create(secondKey)
+            try {
+                repeat(10) {
+                    assertContentEquals(firstExpected, input.copyOf().also {
+                        RC4Decrypt.decrypt(first, it, it.size)
+                    })
+                    assertContentEquals(secondExpected, input.copyOf().also {
+                        RC4Decrypt.decrypt(second, it, it.size)
+                    })
+                }
+            } finally {
+                RC4Decrypt.destroy(second)
+            }
+        } finally {
+            RC4Decrypt.destroy(first)
+        }
+    }
 
     @Test
     fun concurrentKeysDoNotOverwriteEachOther() {
@@ -23,11 +49,15 @@ class Rc4DecryptConcurrencyTest {
                     val expected = input.copyOf()
                     referenceDecrypt(key, expected)
 
-                    repeat(100) {
-                        val actual = input.copyOf()
-                        RC4Decrypt.ksa(key)
-                        RC4Decrypt.prgaDecrypt(actual, actual.size)
-                        assertContentEquals(expected, actual)
+                    val context = RC4Decrypt.create(key)
+                    try {
+                        repeat(100) {
+                            val actual = input.copyOf()
+                            RC4Decrypt.decrypt(context, actual, actual.size)
+                            assertContentEquals(expected, actual)
+                        }
+                    } finally {
+                        RC4Decrypt.destroy(context)
                     }
                 })
             }

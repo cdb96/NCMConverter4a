@@ -39,6 +39,24 @@ public final class NativeCoreCheck {
 
     // ---------------------------------------------------------------- RC4
 
+    private static void decryptRc4(byte[] key, byte[] data) {
+        long context = RC4Decrypt.create(key);
+        try {
+            RC4Decrypt.decrypt(context, data, data.length);
+        } finally {
+            RC4Decrypt.destroy(context);
+        }
+    }
+
+    private static void decryptKgm(byte[] key, byte[] data) {
+        long context = KGMDecrypt.create(key);
+        try {
+            KGMDecrypt.decrypt(context, data, 0, data.length);
+        } finally {
+            KGMDecrypt.destroy(context);
+        }
+    }
+
     private static void rc4GoldenVector() {
         byte[] key = {1, 2, 3, 4, 5, 6, 7};
         byte[] actual = new byte[32];
@@ -51,8 +69,7 @@ public final class NativeCoreCheck {
             (byte) 0xB4, (byte) 0x98, (byte) 0xA1, (byte) 0x8F, (byte) 0x87, (byte) 0x42,
             (byte) 0x9F, (byte) 0x82
         };
-        RC4Decrypt.ksa(key);
-        RC4Decrypt.prgaDecryptByteArray(actual, actual.length);
+        decryptRc4(key, actual);
         check("rc4 golden vector", expected, actual);
     }
 
@@ -67,8 +84,7 @@ public final class NativeCoreCheck {
             byte[] expected = input.clone();
             referenceRc4(key, expected);
             byte[] actual = input.clone();
-            RC4Decrypt.ksa(key);
-            RC4Decrypt.prgaDecryptByteArray(actual, actual.length);
+            decryptRc4(key, actual);
             check("rc4 key length " + keyLength, expected, actual);
         }
     }
@@ -84,15 +100,19 @@ public final class NativeCoreCheck {
 
         // 256-byte aligned chunks, last chunk short: the documented contract.
         byte[] chunked = input.clone();
-        RC4Decrypt.ksa(key);
+        long context = RC4Decrypt.create(key);
         int offset = 0;
-        while (offset < chunked.length) {
-            int length = Math.min(256, chunked.length - offset);
-            byte[] chunk = new byte[length];
-            System.arraycopy(chunked, offset, chunk, 0, length);
-            RC4Decrypt.prgaDecryptByteArray(chunk, length);
-            System.arraycopy(chunk, 0, chunked, offset, length);
-            offset += length;
+        try {
+            while (offset < chunked.length) {
+                int length = Math.min(256, chunked.length - offset);
+                byte[] chunk = new byte[length];
+                System.arraycopy(chunked, offset, chunk, 0, length);
+                RC4Decrypt.decrypt(context, chunk, length);
+                System.arraycopy(chunk, 0, chunked, offset, length);
+                offset += length;
+            }
+        } finally {
+            RC4Decrypt.destroy(context);
         }
         check("rc4 256-byte chunks", expected, chunked);
     }
@@ -130,9 +150,8 @@ public final class NativeCoreCheck {
                 byte[] input = new byte[length];
                 for (int i = 0; i < length; i++) input[i] = (byte) (i * 29 + length);
 
-                KGMDecrypt.init(key);
                 byte[] actual = input.clone();
-                KGMDecrypt.decrypt(actual, 0, actual.length);
+                decryptKgm(key, actual);
 
                 byte[] expected = input.clone();
                 new ReferenceKgm(key).decrypt(expected, 0, expected.length);
@@ -154,18 +173,22 @@ public final class NativeCoreCheck {
         int[][] alignedSizes = {{256}, {272}, {4096}, {256, 4096, 272, 16, 65536}, {69632}};
         for (int[] sizes : alignedSizes) {
             byte[] chunked = input.clone();
-            KGMDecrypt.init(key);
+            long context = KGMDecrypt.create(key);
             int offset = 0;
             int index = 0;
-            while (offset < chunked.length) {
-                int length = Math.min(sizes[index % sizes.length], chunked.length - offset);
-                length -= length % 16;                      // keep the chunk boundary aligned
-                if (length == 0) length = Math.min(16, chunked.length - offset);
-                byte[] chunk = new byte[length];
-                System.arraycopy(chunked, offset, chunk, 0, length);
-                offset = KGMDecrypt.decrypt(chunk, offset, length);
-                System.arraycopy(chunk, 0, chunked, offset - length, length);
-                index++;
+            try {
+                while (offset < chunked.length) {
+                    int length = Math.min(sizes[index % sizes.length], chunked.length - offset);
+                    length -= length % 16;
+                    if (length == 0) length = Math.min(16, chunked.length - offset);
+                    byte[] chunk = new byte[length];
+                    System.arraycopy(chunked, offset, chunk, 0, length);
+                    offset = KGMDecrypt.decrypt(context, chunk, offset, length);
+                    System.arraycopy(chunk, 0, chunked, offset - length, length);
+                    index++;
+                }
+            } finally {
+                KGMDecrypt.destroy(context);
             }
 
             // Reference with the identical chunking.
@@ -222,16 +245,14 @@ public final class NativeCoreCheck {
 
                     for (int round = 0; round < 100; round++) {
                         byte[] actualRc4 = input.clone();
-                        RC4Decrypt.ksa(rc4Key);
-                        RC4Decrypt.prgaDecryptByteArray(actualRc4, actualRc4.length);
+                        decryptRc4(rc4Key, actualRc4);
                         if (!java.util.Arrays.equals(expectedRc4, actualRc4)) {
                             fail("rc4 concurrency worker " + id + " round " + round);
                             return null;
                         }
 
                         byte[] actualKgm = kgmInput.clone();
-                        KGMDecrypt.init(kgmKey);
-                        KGMDecrypt.decrypt(actualKgm, 0, actualKgm.length);
+                        decryptKgm(kgmKey, actualKgm);
                         if (!java.util.Arrays.equals(expectedKgm, actualKgm)) {
                             fail("kgm concurrency worker " + id + " round " + round);
                             return null;
@@ -246,7 +267,7 @@ public final class NativeCoreCheck {
             executor.shutdownNow();
             executor.awaitTermination(10, TimeUnit.SECONDS);
         }
-        System.out.println("[ok] concurrent thread-local state");
+        System.out.println("[ok] concurrent per-conversion contexts");
     }
 
     /** Byte level port of the pre-existing C++ NEON implementation. */

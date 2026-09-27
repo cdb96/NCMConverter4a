@@ -1,6 +1,6 @@
 // KGM core shared by the Android and Desktop builds.
 //
-// Uses the merged transform from master (app/src/main/cpp/KGMDecrypt.cpp).
+// Uses the merged byte transform shared by both platform builds.
 // The file key and fixed mask are combined during initialization. Since
 // T(x) = x ^ (x << 4) is linear over XOR for bytes, each SIMD block needs only
 // one transform. ARM uses NEON; x86 uses NEON_2_SSE via SimdCompat.h.
@@ -14,8 +14,14 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <new>
 
 #include "KgmTables.h"
+
+struct NcmKgmContext {
+    std::array<std::uint8_t, 4352> maskBytes{};
+    std::array<std::uint8_t, 272> fileKeyBytes{};
+};
 
 namespace ncm {
 namespace {
@@ -25,13 +31,9 @@ constexpr int kGenMaskPeriod = 69632;       // 17 * 16 * 16 * 16
 constexpr int kMaskV2Period = 272;          // 17 * 16
 constexpr int kMaskBytePeriod = 4352;       // PRE_COMPUTED_TABLE_SIZE
 
-thread_local std::array<std::uint8_t, kMaskBytePeriod> maskBytes{};
-// The 17-byte file key repeated 16 times and XORed with MASK_V2_PRE_DEF.
-thread_local std::array<std::uint8_t, kMaskV2Period> fileKeyBytes{};
-
 // Expands the pre-computed byte table into 16-byte masks for one 69632 byte
 // period starting at absolute stream position `startPos`.
-void genMask(int startPos) {
+void genMask(NcmKgmContext& context, int startPos) {
     // Intentionally almost a direct copy of the historical SIMD genMask():
     // 17 iterations, each expanding 256 pre-computed bytes into 16 mask blocks
     // of 16 bytes, then XORing a single byte into all of them.
@@ -60,7 +62,7 @@ void genMask(int startPos) {
 
         const int storePos = pos >> 4;
         for (int k = 0; k < 16; ++k) {
-            vst1q_u8(maskBytes.data() + storePos + k * 16, chunk[k]);
+            vst1q_u8(context.maskBytes.data() + storePos + k * 16, chunk[k]);
         }
     }
 }
@@ -68,10 +70,11 @@ void genMask(int startPos) {
 // Advances the per-byte cursors just before a byte is consumed. The historical
 // loop did this inline; it is factored out here so the SIMD body and the scalar
 // paths cannot drift apart. The order matches the old code exactly.
-inline void normalizeCountersBeforeByte(int i, int j, int& genMaskCounter, int& maskV2Counter,
+inline void normalizeCountersBeforeByte(NcmKgmContext& context, int i, int j,
+                                        int& genMaskCounter, int& maskV2Counter,
                                         int& keyBytesIndexCounter) {
     if (genMaskCounter == kGenMaskPeriod) {
-        genMask(i);
+        genMask(context, i);
         genMaskCounter = 0;
     }
 
@@ -89,33 +92,34 @@ inline void normalizeCountersBeforeByte(int i, int j, int& genMaskCounter, int& 
 
 // Scalar equivalent of the merged SIMD transform; conversion to uint8_t
 // discards the high bits of the shift, matching the SIMD byte lanes.
-inline void decryptScalarByte(std::uint8_t* data, int j, int maskV2Counter,
+inline void decryptScalarByte(const NcmKgmContext& context, std::uint8_t* data,
+                              int j, int maskV2Counter,
                               int keyBytesIndexCounter) {
-    const int combined = fileKeyBytes[static_cast<std::size_t>(maskV2Counter)] ^
-                         data[j] ^ maskBytes[static_cast<std::size_t>(keyBytesIndexCounter)];
+    const int combined = context.fileKeyBytes[static_cast<std::size_t>(maskV2Counter)] ^
+                         data[j] ^ context.maskBytes[static_cast<std::size_t>(keyBytesIndexCounter)];
     data[j] = static_cast<std::uint8_t>(combined ^ (combined << 4));
 }
 
 }  // namespace
 
-void kgmInit(const std::uint8_t* key, int keyLength) {
+void kgmInit(NcmKgmContext& context, const std::uint8_t* key, int keyLength) {
     if (key == nullptr || keyLength < 17) return;
 
     // Repeat the key, then fold the fixed mask into the per-file table.
-    std::memcpy(fileKeyBytes.data(), key, 17);
+    std::memcpy(context.fileKeyBytes.data(), key, 17);
     for (int i = 1; i < 16; ++i) {
-        std::memcpy(fileKeyBytes.data() + i * 17, fileKeyBytes.data(), 17);
+        std::memcpy(context.fileKeyBytes.data() + i * 17, context.fileKeyBytes.data(), 17);
     }
 
     for (int i = 0; i < kMaskV2Period; ++i) {
-        fileKeyBytes[static_cast<std::size_t>(i)] ^= MASK_V2_PRE_DEF[i];
+        context.fileKeyBytes[static_cast<std::size_t>(i)] ^= MASK_V2_PRE_DEF[i];
     }
 
     // The first 69632-byte period uses the pre-computed table directly.
-    std::memcpy(maskBytes.data(), PRE_COMPUTED_TABLE, kMaskBytePeriod);
+    std::memcpy(context.maskBytes.data(), PRE_COMPUTED_TABLE, kMaskBytePeriod);
 }
 
-int kgmDecrypt(std::uint8_t* data, int offset, int bytesRead) {
+int kgmDecrypt(NcmKgmContext& context, std::uint8_t* data, int offset, int bytesRead) {
     if (data == nullptr || bytesRead <= 0) return offset;
 
     int i = offset;
@@ -129,7 +133,7 @@ int kgmDecrypt(std::uint8_t* data, int offset, int bytesRead) {
     // genMask(0) is a no-op because the first 17 table bytes are zero, so the
     // offset == 0 case keeps the table copied by kgmInit().
     if (genMaskCounter == 0) {
-        genMask(i);
+        genMask(context, i);
     }
 
     // ---------------------------------------------------------------------
@@ -140,12 +144,12 @@ int kgmDecrypt(std::uint8_t* data, int offset, int bytesRead) {
     // one maskBytes entry, and maskV2Counter stays a multiple of 16, so
     // `vld1q_u8(fileKeyBytes + maskV2Counter)` cannot read past the 272-byte cycle.
     for (; j + 16 <= bytesRead; i += 16, j += 16) {
-        normalizeCountersBeforeByte(i, j, genMaskCounter, maskV2Counter,
+        normalizeCountersBeforeByte(context, i, j, genMaskCounter, maskV2Counter,
                                     keyBytesIndexCounter);
 
         const uint8x16_t cipher = vld1q_u8(data + j);
-        const uint8x16_t fileKey = vld1q_u8(fileKeyBytes.data() + maskV2Counter);
-        const uint8x16_t mask = vld1q_dup_u8(maskBytes.data() + keyBytesIndexCounter);
+        const uint8x16_t fileKey = vld1q_u8(context.fileKeyBytes.data() + maskV2Counter);
+        const uint8x16_t mask = vld1q_dup_u8(context.maskBytes.data() + keyBytesIndexCounter);
         const uint8x16_t combined = veorq_u8(veorq_u8(fileKey, cipher), mask);
         const uint8x16_t result = veorq_u8(combined, vshlq_n_u8(combined, 4));
         vst1q_u8(data + j, result);
@@ -168,10 +172,10 @@ int kgmDecrypt(std::uint8_t* data, int offset, int bytesRead) {
     // Skipping it reads past the 272-byte fileKeyBytes/MASK_V2_PRE_DEF cycle and
     // decodes the tail with a stale mask block.
     while (j < bytesRead) {
-        normalizeCountersBeforeByte(i, j, genMaskCounter, maskV2Counter,
+        normalizeCountersBeforeByte(context, i, j, genMaskCounter, maskV2Counter,
                                     keyBytesIndexCounter);
 
-        decryptScalarByte(data, j, maskV2Counter, keyBytesIndexCounter);
+        decryptScalarByte(context, data, j, maskV2Counter, keyBytesIndexCounter);
 
         ++genMaskCounter;
         ++maskV2Counter;
@@ -184,10 +188,17 @@ int kgmDecrypt(std::uint8_t* data, int offset, int bytesRead) {
 
 }  // namespace ncm
 
-void ncm_kgm_init(const uint8_t* key, int key_len) {
-    ncm::kgmInit(key, key_len);
+NcmKgmContext* ncm_kgm_create(const uint8_t* key, int key_len) {
+    if (key == nullptr || key_len < 17) return nullptr;
+    auto* context = new (std::nothrow) NcmKgmContext{};
+    if (context != nullptr) ncm::kgmInit(*context, key, 17);
+    return context;
 }
 
-int ncm_kgm_decrypt(uint8_t* data, int offset, int length) {
-    return ncm::kgmDecrypt(data, offset, length);
+int ncm_kgm_decrypt(NcmKgmContext* context, uint8_t* data, int offset, int length) {
+    return context == nullptr ? offset : ncm::kgmDecrypt(*context, data, offset, length);
+}
+
+void ncm_kgm_destroy(NcmKgmContext* context) {
+    delete context;
 }

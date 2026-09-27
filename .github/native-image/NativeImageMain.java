@@ -1,5 +1,6 @@
 import com.cdb96.ncmconverter4a.MainKt;
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt;
+import java.awt.Window;
 import java.nio.file.Path;
 import java.util.Arrays;
 
@@ -25,6 +26,25 @@ public final class NativeImageMain {
             FilePickerSmoke.run();
             return;
         }
+        if (args.length == 1 && "--startup-smoke".equals(args[0])) {
+            Thread shutdown = new Thread(() -> {
+                try {
+                    Thread.sleep(15000);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                boolean windowShowing = Arrays.stream(Window.getWindows()).anyMatch(Window::isShowing);
+                if (!windowShowing) {
+                    System.err.println("Compose desktop startup smoke test failed: no visible window");
+                    System.exit(1);
+                }
+                System.out.println("Compose desktop startup smoke test passed");
+                System.exit(0);
+            }, "native-startup-smoke-shutdown");
+            shutdown.setDaemon(false);
+            shutdown.start();
+        }
 
         MainKt.main();
     }
@@ -43,8 +63,12 @@ public final class NativeImageMain {
             (byte) 0x87, 0x42, (byte) 0x9F, (byte) 0x82
         };
 
-        RC4Decrypt.ksa(key);
-        RC4Decrypt.prgaDecryptByteArray(actual, actual.length);
+        long context = RC4Decrypt.create(key);
+        try {
+            RC4Decrypt.decrypt(context, actual, actual.length);
+        } finally {
+            RC4Decrypt.destroy(context);
+        }
         if (!Arrays.equals(expected, actual)) {
             throw new IllegalStateException("ncmc4a RC4 JNI smoke test returned an unexpected vector");
         }

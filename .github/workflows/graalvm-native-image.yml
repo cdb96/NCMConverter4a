@@ -35,8 +35,9 @@ jobs:
       - name: Trace desktop startup metadata
         shell: pwsh
         run: |
-          $jar = Get-ChildItem composeApp/build/compose/jars/*-release.jar | Select-Object -First 1
+          $jar = Get-ChildItem composeApp/build/compose/jars/*-release.jar | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $jar) { throw 'Release UberJar not found' }
+          if ($jar.Name -notlike '*-4.0.0-release.jar') { throw "Expected the cmp_preview 4.0.0 release UberJar, selected $($jar.Name)" }
           $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
           $classes = Join-Path $PWD.Path 'build/native-image/trace-classes'
           New-Item -ItemType Directory -Force $metadata,$classes | Out-Null
@@ -64,17 +65,40 @@ jobs:
         shell: pwsh
         run: |
           native-image --version
-          $jar = Get-ChildItem composeApp/build/compose/jars/*-release.jar | Select-Object -First 1
+          $jar = Get-ChildItem composeApp/build/compose/jars/*-release.jar | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $jar) { throw 'Release UberJar not found' }
+          if ($jar.Name -notlike '*-4.0.0-release.jar') { throw "Expected the cmp_preview 4.0.0 release UberJar, selected $($jar.Name)" }
           $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
           $staticMetadata = Join-Path $PWD.Path '.github/native-image/metadata'
+          $dpiManifest = Join-Path $PWD.Path '.github/native-image/NCMConverter4a.exe.manifest'
           Write-Host "UberJar: $($jar.FullName) ($($jar.Length) bytes)"
           New-Item -ItemType Directory -Force build/native-image | Out-Null
           Push-Location build/native-image
           $classes = Join-Path $PWD.Path 'trace-classes'
           $classPath = "$classes;$($jar.FullName)"
-          native-image --no-fallback -Ob "--enable-native-access=ALL-UNNAMED" "-H:ConfigurationFileDirectories=$metadata,$staticMetadata" "-H:IncludeResources=ncmc4a/windows-x86_64/ncmc4a.dll" "-H:IncludeResources=skiko-windows-x64.dll" -cp $classPath NativeImageMain NCMConverter4a
+          # -O1 reduced size but segfaulted during Win32 AWT startup on the tested GraalVM; keep the verified -Ob build.
+          # This Windows/AWT build loads DLLs at runtime; Native Image cannot make this target fully static.
+          $nativeImageArgs = @(
+            '--no-fallback'
+            '-Ob'
+            '--enable-native-access=ALL-UNNAMED'
+            "-H:ConfigurationFileDirectories=$metadata,$staticMetadata"
+            '-cp', $classPath
+            'NativeImageMain', 'NCMConverter4a'
+          )
+          native-image @nativeImageArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $mt = (Get-Command mt.exe -ErrorAction SilentlyContinue).Source
+          if (-not $mt) {
+            $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
+            $mt = Get-ChildItem -LiteralPath $sdkBin -Directory | Sort-Object Name -Descending |
+              ForEach-Object { Join-Path $_.FullName 'x64/mt.exe' } |
+              Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          }
+          if (-not $mt) { throw 'Windows SDK manifest tool mt.exe not found' }
+          $imagePath = Join-Path $PWD 'NCMConverter4a.exe'
+          & $mt -manifest $dpiManifest "-outputresource:$imagePath;#1"
+          if ($LASTEXITCODE -ne 0) { throw "Embedding DPI manifest failed: $LASTEXITCODE" }
           New-Item -ItemType Directory -Force bin | Out-Null
           Copy-Item -LiteralPath jawt.dll -Destination bin/jawt.dll -Force
           if (-not (Test-Path awt.dll)) { throw "Expected AWT library at $PWD/awt.dll" }
@@ -87,6 +111,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Native Image JNI smoke test failed: $LASTEXITCODE" }
           & (Join-Path $PWD 'NCMConverter4a.exe') --file-picker-smoke
           if ($LASTEXITCODE -ne 0) { throw "Native Image file picker smoke test failed: $LASTEXITCODE" }
+          & (Join-Path $PWD 'NCMConverter4a.exe') --startup-smoke
+          if ($LASTEXITCODE -ne 0) { throw "Native Image Compose startup smoke test failed: $LASTEXITCODE" }
+          $image = Get-Item -LiteralPath (Join-Path $PWD 'NCMConverter4a.exe')
+          $runtimeFiles = @($image) + @(Get-ChildItem -LiteralPath $PWD.Path -Filter '*.dll' -File) + @(
+            (Get-Item -LiteralPath (Join-Path $PWD 'bin/jawt.dll'))
+            (Get-Item -LiteralPath (Join-Path $PWD 'lib/fontconfig.bfc'))
+          )
+          $runtimeBytes = ($runtimeFiles | Measure-Object -Property Length -Sum).Sum
+          Write-Host ("Native Image executable (-Ob): {0:N2} MiB ({1} bytes)" -f ($image.Length / 1MB), $image.Length)
+          Write-Host ("Windows runtime files: {0:N2} MiB ({1} bytes)" -f ($runtimeBytes / 1MB), $runtimeBytes)
+          "Native Image executable (-Ob): $($image.Length) bytes" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "Windows runtime files (EXE, generated DLLs, font config): $runtimeBytes bytes" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           Pop-Location
           Get-ChildItem build/native-image -Recurse -File | Select-Object FullName,Length
 

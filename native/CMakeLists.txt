@@ -44,6 +44,13 @@ if(NCM_BUILD_JNI)
 
     target_compile_features(ncmc4a PRIVATE cxx_std_17)
 
+    if(MSVC)
+        # Keep the bundled DLL independent of the Visual C++ redistributable.
+        set_property(TARGET ncmc4a PROPERTY MSVC_RUNTIME_LIBRARY
+            "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        set_property(TARGET ncmc4a PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+    endif()
+
     if(ANDROID)
         target_link_libraries(ncmc4a PRIVATE android log)
     else()

@@ -24,20 +24,28 @@ class KgmDecryptTest {
 
     private fun decryptWhole(): ByteArray {
         val data = payload.copyOf()
-        KGMDecrypt.init(key)
-        KGMDecrypt.decrypt(data, 0, data.size)
+        val context = KGMDecrypt.create(key)
+        try {
+            KGMDecrypt.decrypt(context, data, 0, data.size)
+        } finally {
+            KGMDecrypt.destroy(context)
+        }
         return data
     }
 
     private fun decryptChunked(chunkSize: Int): Pair<ByteArray, Int> {
-        KGMDecrypt.init(key)
+        val context = KGMDecrypt.create(key)
         val output = ByteArray(payload.size)
         var offset = 0
-        while (offset < payload.size) {
-            val size = minOf(chunkSize, payload.size - offset)
-            val chunk = payload.copyOfRange(offset, offset + size)
-            offset = KGMDecrypt.decrypt(chunk, offset, size)
-            chunk.copyInto(output, offset - size)
+        try {
+            while (offset < payload.size) {
+                val size = minOf(chunkSize, payload.size - offset)
+                val chunk = payload.copyOfRange(offset, offset + size)
+                offset = KGMDecrypt.decrypt(context, chunk, offset, size)
+                chunk.copyInto(output, offset - size)
+            }
+        } finally {
+            KGMDecrypt.destroy(context)
         }
         return output to offset
     }
@@ -62,8 +70,12 @@ class KgmDecryptTest {
     fun converterReusesMatchingFirstBufferAndPreservesTheShortFinalChunk() {
         val source = payload.copyOf(payload.size + 7)
         val expected = source.copyOf()
-        KGMDecrypt.init(key)
-        KGMDecrypt.decrypt(expected, 0, expected.size)
+        val context = KGMDecrypt.create(key)
+        try {
+            KGMDecrypt.decrypt(context, expected, 0, expected.size)
+        } finally {
+            KGMDecrypt.destroy(context)
+        }
 
         for (firstBufferSize in listOf(256, 4096)) {
             val input = ByteArrayInputStream(source)
