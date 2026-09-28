@@ -2,6 +2,7 @@ import com.cdb96.ncmconverter4a.MainKt;
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt;
 import java.awt.Component;
 import java.awt.Container;
+import java.awt.Frame;
 import java.awt.Window;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.SystemFlavorMap;
@@ -41,6 +42,14 @@ public final class NativeImageMain {
                 boolean windowShowing = Arrays.stream(Window.getWindows()).anyMatch(Window::isShowing);
                 if (!windowShowing) {
                     System.err.println("Compose desktop startup smoke test failed: no visible window");
+                    System.exit(1);
+                }
+                boolean customTitleBar = Arrays.stream(Window.getWindows())
+                    .filter(Window::isShowing)
+                    .filter(window -> window instanceof Frame)
+                    .anyMatch(window -> ((Frame) window).isUndecorated());
+                if (!customTitleBar) {
+                    System.err.println("Compose desktop startup smoke test failed: custom title bar is missing");
                     System.exit(1);
                 }
                 boolean dropTargetInstalled = Arrays.stream(Window.getWindows())

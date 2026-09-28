@@ -13,6 +13,25 @@
     { "type": "java.rmi.Remote" },
     { "type": "java.util.List" },
     {
+      "type": "java.awt.event.MouseEvent",
+      "jniAccessible": true,
+      "fields": [
+        { "name": "button" },
+        { "name": "causedByTouchEvent" },
+        { "name": "x" },
+        { "name": "y" }
+      ],
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.awt.Component", "int", "long", "int", "int", "int", "int",
+            "int", "int", "boolean", "int"
+          ]
+        }
+      ]
+    },
+    {
       "type": "java.awt.event.MouseWheelEvent",
       "jniAccessible": true,
       "methods": [
@@ -48,6 +67,13 @@
       "jniAccessible": true,
       "methods": [
         {"name": "getWDropTargetContextPeer", "parameterTypes": []}
+      ]
+    },
+    {
+      "type": "sun.awt.windows.WGlobalCursorManager",
+      "jniAccessible": true,
+      "methods": [
+        {"name": "nativeUpdateCursor", "parameterTypes": ["java.awt.Component"]}
       ]
     }
   ],

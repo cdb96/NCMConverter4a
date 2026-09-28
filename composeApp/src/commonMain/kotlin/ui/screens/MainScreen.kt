@@ -114,6 +114,7 @@ data class SettingsUiState(
 fun MainScreen(
     conversionState: ConversionUiState,
     settingsState: SettingsUiState,
+    desktopMode: Boolean = false,
     onRawWriteModeChange: (Boolean) -> Unit,
     onDuplicateConflictMitigationChange: (Boolean) -> Unit,
     onThreadCountChange: (Int) -> Unit,
@@ -132,7 +133,10 @@ fun MainScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text(if (settingsSelected) "设置" else "NCMConverter4A", fontWeight = FontWeight.Bold)
+                        Text(
+                            if (settingsSelected) "设置" else if (desktopMode) "转换" else "NCMConverter4A",
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
                 },
                 actions = {
