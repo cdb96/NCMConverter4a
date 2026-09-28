@@ -60,6 +60,11 @@ if(NCM_BUILD_JNI)
             CXX_VISIBILITY_PRESET hidden
             VISIBILITY_INLINES_HIDDEN ON)
 
+        if(WIN32)
+            target_sources(ncmc4a PRIVATE "${CMAKE_CURRENT_LIST_DIR}/windows/NativeCaption.cpp")
+            target_link_libraries(ncmc4a PRIVATE dwmapi)
+        endif()
+
         if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             # System.load extracts this DLL to a temp directory. A MinGW-built
             # DLL must not require MinGW runtime DLLs on the user's machine.

@@ -7,13 +7,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.Modifier
+import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.window.Window
-import androidx.compose.ui.window.WindowDecoration
 import androidx.compose.ui.window.application
-import androidx.compose.ui.window.rememberWindowState
 import com.cdb96.ncmconverter4a.service.BenchmarkService
 import com.cdb96.ncmconverter4a.ui.BenchmarkDialog
 import com.cdb96.ncmconverter4a.ui.screens.ConversionUiState
@@ -25,27 +21,18 @@ import kotlinx.coroutines.swing.Swing
 import kotlinx.coroutines.withContext
 import java.io.File
 
-@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 fun main() = application {
-    val windowState = rememberWindowState()
-    Window(
-        onCloseRequest = ::exitApplication,
-        state = windowState,
-        title = "NCMConverter4a",
-        decoration = WindowDecoration.Undecorated(),
-    ) {
-        NCMConverter4aDesktopApp {
-            Column(Modifier.fillMaxSize()) {
-                DesktopTitleBar(windowState, onClose = ::exitApplication)
-                DesktopMainScreen()
-            }
-        }
+    Window(onCloseRequest = ::exitApplication, title = "NCMConverter4a") {
+        NCMConverter4aDesktopApp(window)
     }
 }
 
 @Composable
-fun NCMConverter4aDesktopApp(content: @Composable () -> Unit = { DesktopMainScreen() }) {
-    App(content)
+fun NCMConverter4aDesktopApp(window: ComposeWindow) {
+    App {
+        DesktopNativeCaption(window)
+        DesktopMainScreen()
+    }
 }
 
 @Composable
@@ -103,7 +90,6 @@ fun DesktopMainScreen() {
         MainScreen(
             conversionState = conversionState,
             settingsState = settingsState,
-            desktopMode = true,
             onRawWriteModeChange = { settingsState = settingsState.copy(rawWriteMode = it) },
             onDuplicateConflictMitigationChange = {
                 settingsState = settingsState.copy(duplicateConflictMitigation = it)

@@ -1,4 +1,5 @@
 import com.cdb96.ncmconverter4a.MainKt;
+import com.cdb96.ncmconverter4a.NativeCaption;
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt;
 import java.awt.Component;
 import java.awt.Container;
@@ -44,12 +45,12 @@ public final class NativeImageMain {
                     System.err.println("Compose desktop startup smoke test failed: no visible window");
                     System.exit(1);
                 }
-                boolean customTitleBar = Arrays.stream(Window.getWindows())
+                boolean nativeFrame = Arrays.stream(Window.getWindows())
                     .filter(Window::isShowing)
                     .filter(window -> window instanceof Frame)
-                    .anyMatch(window -> ((Frame) window).isUndecorated());
-                if (!customTitleBar) {
-                    System.err.println("Compose desktop startup smoke test failed: custom title bar is missing");
+                    .anyMatch(window -> !((Frame) window).isUndecorated());
+                if (!nativeFrame) {
+                    System.err.println("Compose desktop startup smoke test failed: native window frame is missing");
                     System.exit(1);
                 }
                 boolean dropTargetInstalled = Arrays.stream(Window.getWindows())
@@ -106,6 +107,9 @@ public final class NativeImageMain {
         }
         if (!Arrays.equals(expected, actual)) {
             throw new IllegalStateException("ncmc4a RC4 JNI smoke test returned an unexpected vector");
+        }
+        if (NativeCaption.INSTANCE.setColors(0L, 0, 0, false)) {
+            throw new IllegalStateException("native caption JNI accepted an invalid window handle");
         }
         System.out.println("ncmc4a RC4 JNI smoke test passed");
     }
