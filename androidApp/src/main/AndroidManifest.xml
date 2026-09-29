@@ -27,18 +27,24 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/*" />
                 <data android:mimeType="audio/flac"/>
+                <data android:mimeType="audio/mp4"/>
+                <data android:mimeType="audio/x-m4a"/>
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/*" />
                 <data android:mimeType="audio/flac"/>
+                <data android:mimeType="audio/mp4"/>
+                <data android:mimeType="audio/x-m4a"/>
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/*" />
                 <data android:mimeType="audio/flac"/>
+                <data android:mimeType="audio/mp4"/>
+                <data android:mimeType="audio/x-m4a"/>
             </intent-filter>
         </activity>
     </application>

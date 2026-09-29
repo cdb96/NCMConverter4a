@@ -2,7 +2,9 @@ package com.cdb96.ncmconverter4a
 
 import com.cdb96.ncmconverter4a.converter.NCMConverter
 import com.cdb96.ncmconverter4a.io.BinaryInput
+import com.cdb96.ncmconverter4a.io.BinaryOutput
 import com.cdb96.ncmconverter4a.io.readFully
+import com.cdb96.ncmconverter4a.jni.RC4Decrypt
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
@@ -15,6 +17,38 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class NcmTruncatedInputTest {
+    @Test
+    fun decryptsM4aWithoutChangingItsMp4Boxes() {
+        val key = ByteArray(15) { (it + 1).toByte() }
+        val payload = byteArrayOf(0, 0, 0, 16) + "ftypM4A ".toByteArray() +
+            byteArrayOf(0, 0, 0, 0) + byteArrayOf(0, 0, 4, 9) +
+            "mdat".toByteArray() + ByteArray(1025) { it.toByte() }
+        val encrypted = payload.copyOf()
+        val context = RC4Decrypt.create(key)
+        try {
+            RC4Decrypt.decrypt(context, encrypted, encrypted.size)
+        } finally {
+            RC4Decrypt.destroy(context)
+        }
+        val metadata = """{"musicName":"Song","album":"Album","artist":[["Artist",0]],"format":"M4A"}"""
+        val ncm = validHeader(metadata) + ByteArray(5 + 4 + 4) + encrypted
+
+        for (rawWriteMode in listOf(false, true)) {
+            val input = BinaryInput(ByteArrayInputStream(ncm)::read)
+            val info = NCMConverter.readHeader(input, includeCover = !rawWriteMode)
+            assertEquals("m4a", info.format)
+            val result = ByteArrayOutputStream()
+            NCMConverter.writeAudio(
+                input = input,
+                output = BinaryOutput { buffer, offset, length -> result.write(buffer, offset, length) },
+                info = info,
+                rawWriteMode = rawWriteMode,
+                bufferSize = 256
+            )
+            assertContentEquals(payload, result.toByteArray())
+        }
+    }
+
     @Test
     fun rejectsIncompleteMagicAndOversizedKey() {
         assertFailsWith<IllegalArgumentException> {

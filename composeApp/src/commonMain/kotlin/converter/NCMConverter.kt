@@ -65,7 +65,7 @@ object NCMConverter {
         val musicAlbum = requiredField(musicInfo, "album")
         val musicArtists = combineArtistsString(requiredField(musicInfo, "artist"))
         val format = requiredField(musicInfo, "format").lowercase()
-        require(format == "mp3" || format == "flac") {
+        require(format == "mp3" || format == "flac" || format == "m4a") {
             "unsupported NCM audio format: $format"
         }
 
@@ -100,6 +100,20 @@ object NCMConverter {
             if (prefixSize == 0) throw IllegalArgumentException("NCM payload is empty")
             if (rawWriteMode) {
                 output.write(prefix, 0, prefixSize)
+                reader.copyTo(output)
+                return
+            }
+
+            if (info.format == "m4a") {
+                // MP4 metadata lives inside the container. Preserve its atoms and
+                // chunk offsets instead of prepending an ID3 tag or altering boxes.
+                val header = ByteArray(8)
+                prefix.copyInto(header)
+                reader.readFully(header, prefixSize, header.size - prefixSize)
+                require(header.copyOfRange(4, 8).contentEquals("ftyp".encodeToByteArray())) {
+                    "invalid M4A payload: missing ftyp box"
+                }
+                output.write(header)
                 reader.copyTo(output)
                 return
             }

@@ -236,6 +236,7 @@ class FileConversionService(private val context: Context) {
         val mimeType = when (extension) {
             "flac" -> "audio/flac"
             "ogg" -> "audio/ogg"
+            "m4a" -> "audio/mp4"
             else -> "audio/mpeg"
         }
 

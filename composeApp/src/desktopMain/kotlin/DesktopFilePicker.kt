@@ -18,8 +18,8 @@ object DesktopFilePicker {
             isMultiSelectionEnabled = multiSelect
             dialogTitle = if (database) "选择酷狗 DB / MMKV 数据库" else "选择 NCM / KGM / KGG 文件"
             if (!database) fileFilter = FileNameExtensionFilter(
-                "加密音频文件 (*.ncm, *.kgm, *.kgg, *.flac, *.mp3)",
-                "ncm", "kgm", "kgg", "flac", "mp3"
+                "加密音频文件 (*.ncm, *.kgm, *.kgg, *.flac, *.mp3, *.m4a)",
+                "ncm", "kgm", "kgg", "flac", "mp3", "m4a"
             )
         }
         val result = chooser.showOpenDialog(null)
