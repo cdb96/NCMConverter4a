@@ -281,9 +281,9 @@ compose.desktop {
             "-XX:CICompilerCount=2",
         )
         if (ncmHostOs.isWindows) {
-            // This small form-based UI does not need a persistent Direct3D
-            // device. Skiko's native software renderer also avoids driver RAM.
-            jvmArgs += listOf("-Dskiko.renderApi=SOFTWARE", "-Dsun.java2d.d3d=false")
+            // Leave Skiko's Windows renderer selection at its Direct3D default;
+            // Java2D's separate D3D pipeline is not needed by this Compose UI.
+            jvmArgs += "-Dsun.java2d.d3d=false"
         }
         buildTypes.release {
             proguard {

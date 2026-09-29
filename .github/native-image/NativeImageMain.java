@@ -1,6 +1,7 @@
 import com.cdb96.ncmconverter4a.MainKt;
 import com.cdb96.ncmconverter4a.NativeCaption;
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt;
+import org.jetbrains.skiko.SkiaLayer;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Frame;
@@ -13,7 +14,6 @@ import java.util.Arrays;
 /** Native Image entry point: prepare the Windows AWT support directory, then start Compose. */
 public final class NativeImageMain {
     public static void main(String[] args) {
-        System.setProperty("skiko.renderApi", "SOFTWARE");
         System.setProperty("sun.java2d.d3d", "false");
 
         String javaHome = System.getProperty("java.home");
@@ -65,6 +65,10 @@ public final class NativeImageMain {
                     System.err.println("Compose desktop startup smoke test failed: Windows file drops are not mapped");
                     System.exit(1);
                 }
+                Arrays.stream(Window.getWindows()).filter(Window::isShowing)
+                    .map(NativeImageMain::findSkiaLayer).filter(layer -> layer != null).findFirst()
+                    .ifPresent(layer -> System.out.println(
+                        "Skiko renderer: " + layer.getRenderApi() + " (" + layer.getRenderInfo() + ")"));
                 System.out.println("Compose desktop startup smoke test passed");
                 System.exit(0);
             }, "native-startup-smoke-shutdown");
@@ -83,6 +87,17 @@ public final class NativeImageMain {
             }
         }
         return false;
+    }
+
+    private static SkiaLayer findSkiaLayer(Component component) {
+        if (component instanceof SkiaLayer layer) return layer;
+        if (component instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                SkiaLayer layer = findSkiaLayer(child);
+                if (layer != null) return layer;
+            }
+        }
+        return null;
     }
 
     private static void verifyNativeLibrary() {

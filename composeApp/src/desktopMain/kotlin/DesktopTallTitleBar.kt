@@ -7,7 +7,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,7 +17,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CropSquare
 import androidx.compose.material.icons.outlined.FilterNone
-import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -58,12 +56,9 @@ internal fun DesktopTallTitleBar(window: ComposeWindow, onClose: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
-            modifier = Modifier.weight(1f).fillMaxHeight().padding(start = 16.dp),
+            modifier = Modifier.weight(1f).fillMaxHeight().padding(start = 20.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Outlined.MusicNote, contentDescription = null,
-                modifier = Modifier.size(20.dp), tint = colors.primary)
-            Spacer(Modifier.width(10.dp))
             Text("NCMConverter4a", style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold, color = colors.onSurface)
         }

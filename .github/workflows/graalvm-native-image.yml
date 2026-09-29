@@ -45,7 +45,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Trace helper compilation failed: $LASTEXITCODE" }
           $agentOption = "-agentlib:native-image-agent=config-output-dir=$metadata,config-write-period-secs=5,config-write-initial-delay-secs=1"
           $classPath = "$classes;$($jar.FullName)"
-          & "$env:JAVA_HOME\bin\java.exe" $agentOption '-Dskiko.renderApi=SOFTWARE' '-Dsun.java2d.d3d=false' -cp $classPath 'TraceDesktopStartup'
+          & "$env:JAVA_HOME\bin\java.exe" $agentOption '-Dskiko.renderApi=DIRECT3D' '-Dsun.java2d.d3d=false' -cp $classPath 'TraceDesktopStartup'
           $traceExit = $LASTEXITCODE
           Write-Host "Tracing JVM exit code: $traceExit"
           if ($traceExit -ne 0) { throw "Desktop tracing failed: $traceExit" }
