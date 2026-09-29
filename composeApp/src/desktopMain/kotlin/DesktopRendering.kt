@@ -1,14 +1,8 @@
 package com.cdb96.ncmconverter4a
 
-import androidx.compose.ui.awt.ComposeWindow
-import java.awt.BorderLayout
-import java.awt.Component
-import java.awt.Container
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Properties
-import org.jetbrains.skiko.GraphicsApi
-import org.jetbrains.skiko.SkiaLayer
 
 /** Persist the user's renderer choice outside the portable application directory. */
 internal object DesktopRenderingPreference {
@@ -36,44 +30,14 @@ internal object DesktopRenderingPreference {
     }.isSuccess
 }
 
-/** Reattach the Skia layer on the AWT event thread to recreate its actual redrawer. */
-internal object DesktopRendering {
-    fun switchTo(window: ComposeWindow, gpuEnabled: Boolean): Boolean = runCatching {
-        val layer = findLayer(window) ?: return false
-        val requested = if (gpuEnabled) GraphicsApi.DIRECT3D else GraphicsApi.SOFTWARE_FAST
-        val previous = layer.renderApi
-        if (previous == requested) return true
-        val parent = layer.parent ?: return false
-        val index = parent.getComponentZOrder(layer)
-        val constraints = (parent.layout as? BorderLayout)?.getConstraints(layer)
-
-        fun reattach() {
-            parent.remove(layer)
-            parent.add(layer, constraints, index)
-            parent.revalidate()
-            parent.repaint()
-            layer.needRender(true)
-        }
-
-        layer.renderApi = requested
-        try {
-            reattach()
-            if (layer.renderApi == requested) return true
-        } catch (_: Exception) {
-            // Restore the old renderer below if the new one cannot be initialized.
-        }
-        layer.renderApi = previous
-        reattach()
-        false
+/** A fresh process lets Skiko initialize the selected backend without changing a live layer. */
+internal object DesktopRendererRestart {
+    fun restart(): Boolean = runCatching {
+        val command = ProcessHandle.current().info().command().orElse(null) ?: return false
+        val executable = Path.of(command).toAbsolutePath()
+        if (!executable.fileName.toString().equals("NCMConverter4a.exe", ignoreCase = true)
+            || !Files.isRegularFile(executable)) return false
+        ProcessBuilder(executable.toString()).directory(executable.parent.toFile()).start()
+        true
     }.getOrDefault(false)
-
-    private fun findLayer(component: Component): SkiaLayer? {
-        if (component is SkiaLayer) return component
-        if (component is Container) {
-            for (child in component.components) {
-                findLayer(child)?.let { return it }
-            }
-        }
-        return null
-    }
 }

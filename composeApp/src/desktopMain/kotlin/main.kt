@@ -46,13 +46,13 @@ fun NCMConverter4aDesktopApp(window: ComposeWindow, gpuEnabled: Boolean, onClose
             if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
                 DesktopTallTitleBar(window, onClose)
             }
-            DesktopMainScreen(window, gpuEnabled)
+            DesktopMainScreen(gpuEnabled, onClose)
         }
     }
 }
 
 @Composable
-fun DesktopMainScreen(window: ComposeWindow, gpuEnabled: Boolean) {
+fun DesktopMainScreen(gpuEnabled: Boolean, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     var conversionState by remember { mutableStateOf(ConversionUiState()) }
     var settingsState by remember { mutableStateOf(SettingsUiState(gpuRenderingEnabled = gpuEnabled)) }
@@ -121,17 +121,18 @@ fun DesktopMainScreen(window: ComposeWindow, gpuEnabled: Boolean) {
                     gpuSwitching = true
                     gpuError = null
                     scope.launch {
-                        val switched = withContext(Dispatchers.Swing) {
-                            DesktopRendering.switchTo(window, enabled)
+                        val saved = withContext(Dispatchers.IO) {
+                            DesktopRenderingPreference.saveGpuEnabled(enabled)
                         }
-                        if (switched) {
+                        if (saved) {
                             settingsState = settingsState.copy(gpuRenderingEnabled = enabled)
-                            val saved = withContext(Dispatchers.IO) {
-                                DesktopRenderingPreference.saveGpuEnabled(enabled)
+                            if (DesktopRendererRestart.restart()) {
+                                onClose()
+                            } else {
+                                gpuError = "设置已保存，请手动重启程序后生效"
                             }
-                            if (!saved) gpuError = "渲染器已切换，但无法保存设置"
                         } else {
-                            gpuError = "无法切换渲染器"
+                            gpuError = "无法保存渲染设置"
                         }
                         gpuSwitching = false
                     }

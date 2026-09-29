@@ -114,7 +114,7 @@ jobs:
           New-Item -ItemType Directory -Force lib | Out-Null
           Copy-Item -LiteralPath $fontConfig -Destination lib/fontconfig.bfc -Force
           # GUI-subsystem executables must be explicitly waited on by PowerShell.
-          foreach ($smoke in @('--native-smoke', '--file-picker-smoke', '--startup-smoke', '--renderer-switch-smoke')) {
+          foreach ($smoke in @('--native-smoke', '--file-picker-smoke')) {
             $name = $smoke.TrimStart('-')
             $stdout = Join-Path $PWD "$name.stdout.log"
             $stderr = Join-Path $PWD "$name.stderr.log"
@@ -123,6 +123,24 @@ jobs:
             Get-Content -LiteralPath $stderr
             if ($process.ExitCode -ne 0) { throw "Native Image $smoke failed: $($process.ExitCode)" }
           }
+          $originalAppData = $env:APPDATA
+          $smokeAppData = Join-Path $PWD 'smoke-appdata'
+          New-Item -ItemType Directory -Force (Join-Path $smokeAppData 'NCMConverter4a') | Out-Null
+          $env:APPDATA = $smokeAppData
+          foreach ($gpu in @('true', 'false')) {
+            "gpuRendering=$gpu" | Set-Content -LiteralPath (Join-Path $smokeAppData 'NCMConverter4a/rendering.properties') -Encoding ascii
+            $stdout = Join-Path $PWD "startup-$gpu.stdout.log"
+            $stderr = Join-Path $PWD "startup-$gpu.stderr.log"
+            $process = Start-Process -FilePath $imagePath -ArgumentList '--startup-smoke' -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+            Get-Content -LiteralPath $stdout
+            Get-Content -LiteralPath $stderr
+            if ($process.ExitCode -ne 0) { throw "Native Image startup with gpuRendering=$gpu failed: $($process.ExitCode)" }
+            $expected = if ($gpu -eq 'true') { 'DIRECT3D' } else { 'SOFTWARE_FAST' }
+            if (-not (Select-String -LiteralPath $stdout -Pattern "Skiko renderer: $expected" -SimpleMatch -Quiet)) {
+              throw "Native Image startup ignored gpuRendering=$gpu"
+            }
+          }
+          $env:APPDATA = $originalAppData
           $image = Get-Item -LiteralPath (Join-Path $PWD 'NCMConverter4a.exe')
           $runtimeFiles = @($image) + @(Get-ChildItem -LiteralPath $PWD.Path -Filter '*.dll' -File) + @(
             (Get-Item -LiteralPath (Join-Path $PWD 'bin/jawt.dll'))

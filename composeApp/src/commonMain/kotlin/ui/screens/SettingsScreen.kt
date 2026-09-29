@@ -111,7 +111,7 @@ private fun GpuRenderingCard(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("GPU 渲染", style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium)
-                Text("开启使用 Direct3D，关闭使用软件渲染；切换立即生效并保存。",
+                Text("开启使用 Direct3D，关闭使用软件渲染；切换后程序会自动重启。",
                     style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                 if (error != null) {
                     Text(error, style = MaterialTheme.typography.bodySmall, color = colors.error)

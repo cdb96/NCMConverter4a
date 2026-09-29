@@ -1,10 +1,7 @@
-import androidx.compose.ui.awt.ComposeWindow;
-import com.cdb96.ncmconverter4a.DesktopRendering;
 import com.cdb96.ncmconverter4a.MainKt;
 import com.cdb96.ncmconverter4a.NativeCaption;
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt;
 import org.jetbrains.skiko.SkiaLayer;
-import org.jetbrains.skiko.GraphicsApi;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Frame;
@@ -13,7 +10,6 @@ import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.SystemFlavorMap;
 import java.nio.file.Path;
 import java.util.Arrays;
-import javax.swing.SwingUtilities;
 
 /** Native Image entry point: prepare the Windows AWT support directory, then start Compose. */
 public final class NativeImageMain {
@@ -37,8 +33,7 @@ public final class NativeImageMain {
             return;
         }
         boolean startupSmoke = args.length == 1 && "--startup-smoke".equals(args[0]);
-        boolean rendererSwitchSmoke = args.length == 1 && "--renderer-switch-smoke".equals(args[0]);
-        if (startupSmoke || rendererSwitchSmoke) {
+        if (startupSmoke) {
             Thread shutdown = new Thread(() -> {
                 try {
                     Thread.sleep(15000);
@@ -76,35 +71,6 @@ public final class NativeImageMain {
                     .map(NativeImageMain::findSkiaLayer).filter(candidate -> candidate != null).findFirst()
                     .orElseThrow(() -> new IllegalStateException("SkiaLayer is missing"));
                 System.out.println("Skiko renderer: " + layer.getRenderApi() + " (" + layer.getRenderInfo() + ")");
-                if (rendererSwitchSmoke) {
-                    GraphicsApi original = layer.getRenderApi();
-                    Class<?> originalRedrawer = layer.getRedrawer$skiko().getClass();
-                    ComposeWindow composeWindow = (ComposeWindow) SwingUtilities.getWindowAncestor(layer);
-                    GraphicsApi other = original == GraphicsApi.SOFTWARE_FAST
-                        ? GraphicsApi.DIRECT3D : GraphicsApi.SOFTWARE_FAST;
-                    SwingUtilities.invokeAndWait(() -> {
-                        if (!DesktopRendering.INSTANCE.switchTo(composeWindow, other == GraphicsApi.DIRECT3D)) {
-                            throw new IllegalStateException("Could not switch renderer to " + other);
-                        }
-                    });
-                    Thread.sleep(1000);
-                    if (layer.getRenderApi() != other || layer.getRedrawer$skiko().getClass() == originalRedrawer) {
-                        throw new IllegalStateException("The active redrawer did not switch to " + other);
-                    }
-                    System.out.println("Skiko renderer switched to: " + layer.getRenderApi()
-                        + " (" + layer.getRedrawer$skiko().getClass().getName() + ")");
-                    SwingUtilities.invokeAndWait(() -> {
-                        if (!DesktopRendering.INSTANCE.switchTo(composeWindow, original == GraphicsApi.DIRECT3D)) {
-                            throw new IllegalStateException("Could not restore renderer to " + original);
-                        }
-                    });
-                    Thread.sleep(1000);
-                    if (layer.getRenderApi() != original || layer.getRedrawer$skiko().getClass() != originalRedrawer) {
-                        throw new IllegalStateException("The active redrawer did not switch back to " + original);
-                    }
-                    System.out.println("Skiko renderer restored: " + layer.getRenderApi()
-                        + " (" + layer.getRedrawer$skiko().getClass().getName() + ")");
-                }
                 System.out.println("Compose desktop startup smoke test passed");
                 System.exit(0);
                 } catch (Throwable error) {
