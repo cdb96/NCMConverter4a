@@ -36,27 +36,30 @@ internal fun ConversionDashboard(
     val databaseReady = automaticDatabase || settings.kggDatabase != null
     BoxWithConstraints {
         if (maxWidth >= 720.dp) {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Row(
-                    modifier = Modifier.height(IntrinsicSize.Max),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+            Row(
+                modifier = Modifier.height(IntrinsicSize.Max),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Column(
+                    modifier = Modifier.weight(1.5f).fillMaxHeight(),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     ImportPanel(
                         conversionState, supportsRoot, onPickFiles,
-                        modifier = Modifier.weight(1.5f).fillMaxHeight(),
+                        modifier = Modifier.weight(1f),
                         stretch = true,
                     )
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(20.dp),
-                    ) {
-                        ConfigurationPanel(settings, databaseReady, automaticDatabase, onOpenSettings)
-                        onBenchmark?.let { benchmark ->
-                            BenchmarkCard(benchmark, !conversionState.isProcessing)
-                        }
+                    OutputHint()
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                ) {
+                    ConfigurationPanel(settings, databaseReady, automaticDatabase, onOpenSettings)
+                    onBenchmark?.let { benchmark ->
+                        BenchmarkCard(benchmark, !conversionState.isProcessing)
                     }
                 }
-                OutputHint()
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
