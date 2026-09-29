@@ -466,6 +466,5 @@ jobs:
             build/native-image/*.dll
             build/native-image/bin/jawt.dll
             build/native-image/lib/fontconfig.bfc
-            build/native-image/pgo/*.iprof
             build/native-image/*.log
           if-no-files-found: warn
