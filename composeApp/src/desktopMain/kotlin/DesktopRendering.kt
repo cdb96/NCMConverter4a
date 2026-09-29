@@ -1,6 +1,7 @@
 package com.cdb96.ncmconverter4a
 
 import androidx.compose.ui.awt.ComposeWindow
+import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Container
 import java.nio.file.Files
@@ -35,14 +36,35 @@ internal object DesktopRenderingPreference {
     }.isSuccess
 }
 
-/** Skiko can replace its redrawer on the AWT event thread without recreating the window. */
+/** Reattach the Skia layer on the AWT event thread to recreate its actual redrawer. */
 internal object DesktopRendering {
-    fun switch(window: ComposeWindow, gpuEnabled: Boolean): Boolean = runCatching {
+    fun switchTo(window: ComposeWindow, gpuEnabled: Boolean): Boolean = runCatching {
         val layer = findLayer(window) ?: return false
         val requested = if (gpuEnabled) GraphicsApi.DIRECT3D else GraphicsApi.SOFTWARE_FAST
+        val previous = layer.renderApi
+        if (previous == requested) return true
+        val parent = layer.parent ?: return false
+        val index = parent.getComponentZOrder(layer)
+        val constraints = (parent.layout as? BorderLayout)?.getConstraints(layer)
+
+        fun reattach() {
+            parent.remove(layer)
+            parent.add(layer, constraints, index)
+            parent.revalidate()
+            parent.repaint()
+            layer.needRender(true)
+        }
+
         layer.renderApi = requested
-        layer.needRender(true)
-        layer.renderApi == requested
+        try {
+            reattach()
+            if (layer.renderApi == requested) return true
+        } catch (_: Exception) {
+            // Restore the old renderer below if the new one cannot be initialized.
+        }
+        layer.renderApi = previous
+        reattach()
+        false
     }.getOrDefault(false)
 
     private fun findLayer(component: Component): SkiaLayer? {

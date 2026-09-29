@@ -122,7 +122,7 @@ fun DesktopMainScreen(window: ComposeWindow, gpuEnabled: Boolean) {
                     gpuError = null
                     scope.launch {
                         val switched = withContext(Dispatchers.Swing) {
-                            DesktopRendering.switch(window, enabled)
+                            DesktopRendering.switchTo(window, enabled)
                         }
                         if (switched) {
                             settingsState = settingsState.copy(gpuRenderingEnabled = enabled)
