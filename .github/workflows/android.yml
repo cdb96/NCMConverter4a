@@ -160,7 +160,7 @@ jobs:
         run: ./gradlew :composeApp:compileKotlinDesktop --configure-on-demand
 
   # ======================== Desktop Release Build ========================
-  # Push / manual run / published release: multi-OS installers and Uber Jar.
+  # Push / manual run / published release: Unix installers and Uber Jars.
   desktop:
     needs: changes
     if: ${{ always() && !cancelled() && needs.changes.outputs.full_build == 'true' }}
@@ -169,7 +169,7 @@ jobs:
       contents: write  # softprops/action-gh-release 发布 Release 需要
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v6
       - name: 设置 submodules
@@ -201,17 +201,6 @@ jobs:
         shell: bash
         run: ./gradlew :composeApp:desktopTest --configure-on-demand
 
-      - name: 验证 Windows native 库独立加载
-        if: ${{ runner.os == 'Windows' }}
-        shell: pwsh
-        run: |
-          $dll = (Resolve-Path 'composeApp/build/generated/desktopNativeResources/ncmc4a/windows-x86_64/ncmc4a.dll').Path
-          $objdump = Get-Command objdump -ErrorAction SilentlyContinue
-          if ($objdump) { & $objdump.Source -p $dll | Select-String 'DLL Name:' }
-          $env:PATH = "$env:JAVA_HOME\bin;$env:SystemRoot\System32;$env:SystemRoot"
-          & "$env:JAVA_HOME\bin\java.exe" native/tests/NativeLibraryLoadCheck.java $dll
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
       - name: 构建桌面安装包 (release)
         shell: bash
         run: |
@@ -237,13 +226,6 @@ jobs:
           name: NCMConverter4a-macos
           path: composeApp/build/compose/binaries/main-release/dmg/*.dmg
 
-      - name: 上传桌面分发版 (Windows)
-        if: ${{ runner.os == 'Windows' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: NCMConverter4a-windows
-          path: composeApp/build/compose/binaries/main-release/msi/*.msi
-
       - name: 上传 Uber Jar
         uses: actions/upload-artifact@v7
         with:
@@ -259,15 +241,13 @@ jobs:
           files: |
             composeApp/build/compose/binaries/main-release/deb/*.deb
             composeApp/build/compose/binaries/main-release/dmg/*.dmg
-            composeApp/build/compose/binaries/main-release/msi/*.msi
             composeApp/build/compose/jars/*.jar
 
-  # ======================== Windows Native Image ========================
-  windows-native-image:
+  # Build the Windows UberJar once for the installer and Native Image jobs.
+  windows-uberjar:
     needs: changes
     if: ${{ needs.changes.outputs.full_build == 'true' }}
     runs-on: windows-latest
-    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v6
         with:
@@ -283,6 +263,93 @@ jobs:
       - name: Build Windows UberJar
         shell: pwsh
         run: ./gradlew.bat :composeApp:packageReleaseUberJarForCurrentOS --configure-on-demand
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: NCMConverter4a-jar-Windows
+          path: composeApp/build/compose/jars/*-release.jar
+          if-no-files-found: error
+
+  desktop-windows:
+    needs: [changes, windows-uberjar]
+    if: ${{ needs.changes.outputs.full_build == 'true' }}
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: temurin
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: 缓存 Gradle Configuration Cache
+        uses: actions/cache@v5
+        with:
+          path: .gradle/configuration-cache
+          key: gradle-config-${{ runner.os }}-desktop-${{ github.sha }}
+          restore-keys: |
+            gradle-config-${{ runner.os }}-desktop-
+
+      - name: 运行 Desktop/common 回归测试
+        shell: bash
+        run: ./gradlew :composeApp:desktopTest --configure-on-demand
+
+      - name: 验证 Windows native 库独立加载
+        shell: pwsh
+        run: |
+          $dll = (Resolve-Path 'composeApp/build/generated/desktopNativeResources/ncmc4a/windows-x86_64/ncmc4a.dll').Path
+          $objdump = Get-Command objdump -ErrorAction SilentlyContinue
+          if ($objdump) { & $objdump.Source -p $dll | Select-String 'DLL Name:' }
+          $env:PATH = "$env:JAVA_HOME\bin;$env:SystemRoot\System32;$env:SystemRoot"
+          & "$env:JAVA_HOME\bin\java.exe" native/tests/NativeLibraryLoadCheck.java $dll
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: 构建桌面安装包 (release)
+        shell: bash
+        run: ./gradlew :composeApp:packageReleaseDistributionForCurrentOS --configure-on-demand --no-configuration-cache
+
+      - name: 上传桌面分发版 (Windows)
+        uses: actions/upload-artifact@v7
+        with:
+          name: NCMConverter4a-windows
+          path: composeApp/build/compose/binaries/main-release/msi/*.msi
+
+      - name: 获取 Windows UberJar 供 Release 发布
+        if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: NCMConverter4a-jar-Windows
+          path: composeApp/build/compose/jars
+
+      - name: 创建 GitHub Release (Desktop Windows)
+        if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
+        uses: softprops/action-gh-release@v3
+        with:
+          draft: false
+          prerelease: false
+          files: |
+            composeApp/build/compose/binaries/main-release/msi/*.msi
+            composeApp/build/compose/jars/*.jar
+
+  # ======================== Windows Native Image ========================
+  windows-native-image:
+    needs: [changes, windows-uberjar]
+    if: ${{ needs.changes.outputs.full_build == 'true' }}
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: NCMConverter4a-jar-Windows
+          path: composeApp/build/compose/jars
 
       - uses: graalvm/setup-graalvm@v1
         with:
