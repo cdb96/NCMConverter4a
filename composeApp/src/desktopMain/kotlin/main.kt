@@ -7,9 +7,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
 import com.cdb96.ncmconverter4a.service.BenchmarkService
 import com.cdb96.ncmconverter4a.ui.BenchmarkDialog
 import com.cdb96.ncmconverter4a.ui.screens.ConversionUiState
@@ -22,16 +26,22 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 fun main() = application {
-    Window(onCloseRequest = ::exitApplication, title = "NCMConverter4a") {
-        NCMConverter4aDesktopApp(window)
+    val windowState = rememberWindowState()
+    Window(onCloseRequest = ::exitApplication, state = windowState, title = "NCMConverter4a") {
+        NCMConverter4aDesktopApp(window, ::exitApplication)
     }
 }
 
 @Composable
-fun NCMConverter4aDesktopApp(window: ComposeWindow) {
+fun NCMConverter4aDesktopApp(window: ComposeWindow, onClose: () -> Unit) {
     App {
         DesktopNativeCaption(window)
-        DesktopMainScreen()
+        Column(Modifier.fillMaxSize()) {
+            if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+                DesktopTallTitleBar(window, onClose)
+            }
+            DesktopMainScreen()
+        }
     }
 }
 
@@ -90,6 +100,7 @@ fun DesktopMainScreen() {
         MainScreen(
             conversionState = conversionState,
             settingsState = settingsState,
+            desktopMode = true,
             onRawWriteModeChange = { settingsState = settingsState.copy(rawWriteMode = it) },
             onDuplicateConflictMitigationChange = {
                 settingsState = settingsState.copy(duplicateConflictMitigation = it)

@@ -114,6 +114,7 @@ data class SettingsUiState(
 fun MainScreen(
     conversionState: ConversionUiState,
     settingsState: SettingsUiState,
+    desktopMode: Boolean = false,
     onRawWriteModeChange: (Boolean) -> Unit,
     onDuplicateConflictMitigationChange: (Boolean) -> Unit,
     onThreadCountChange: (Int) -> Unit,
@@ -129,7 +130,7 @@ fun MainScreen(
     val enabled = settingsState.enabled && !conversionState.isProcessing
     Scaffold(
         topBar = {
-            TopAppBar(
+            if (!desktopMode) TopAppBar(
                 title = {
                     Column {
                         Text(if (settingsSelected) "设置" else "NCMConverter4A", fontWeight = FontWeight.Bold)
@@ -182,6 +183,7 @@ fun MainScreen(
                         supportsRoot = supportsRoot,
                         onPickFiles = onPickFiles,
                         onOpenSettings = { settingsSelected = true },
+                        onBenchmark = if (desktopMode) onBenchmark else null,
                     )
                 }
                 Spacer(modifier = Modifier.height(16.dp))

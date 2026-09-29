@@ -11,6 +11,7 @@ import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -29,6 +30,7 @@ internal fun ConversionDashboard(
     supportsRoot: Boolean,
     onPickFiles: () -> Unit,
     onOpenSettings: () -> Unit,
+    onBenchmark: (() -> Unit)? = null,
 ) {
     val automaticDatabase = supportsRoot && settings.kggRootMode
     val databaseReady = automaticDatabase || settings.kggDatabase != null
@@ -39,7 +41,12 @@ internal fun ConversionDashboard(
             }
             val configurationPanel: @Composable () -> Unit = {
                 Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                    ConfigurationPanel(settings, databaseReady, automaticDatabase, onOpenSettings)
+                    ConfigurationPanel(
+                        settings, databaseReady, automaticDatabase, onOpenSettings,
+                    )
+                    onBenchmark?.let { benchmark ->
+                        BenchmarkCard(benchmark, !conversionState.isProcessing)
+                    }
                     OutputHint()
                 }
             }
@@ -165,6 +172,26 @@ private fun ConfigurationPanel(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BenchmarkCard(onBenchmark: () -> Unit, enabled: Boolean) {
+    OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Speed, contentDescription = null,
+                    modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Text("基准测试", style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold)
+            }
+            Text("测试本机解密速度", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = onBenchmark, enabled = enabled) {
+                Text("开始测试")
             }
         }
     }
