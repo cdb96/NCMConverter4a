@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
@@ -51,6 +52,9 @@ fun SettingsScreen(
     onSelectKggDatabase: () -> Unit,
     onKggRootModeChange: (Boolean) -> Unit,
     supportsRoot: Boolean,
+    onGpuRenderingChange: ((Boolean) -> Unit)? = null,
+    gpuRenderingBusy: Boolean = false,
+    gpuRenderingError: String? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SettingsCard(
@@ -62,12 +66,59 @@ fun SettingsScreen(
             onThreadCountChange = onThreadCountChange,
             enabled = state.enabled,
         )
+        onGpuRenderingChange?.let { onChange ->
+            GpuRenderingCard(
+                checked = state.gpuRenderingEnabled,
+                enabled = state.enabled && !gpuRenderingBusy,
+                error = gpuRenderingError,
+                onChange = onChange,
+            )
+        }
         KggDatabaseCard(
             state = state,
             onSelectClick = onSelectKggDatabase,
             onRootModeChange = onKggRootModeChange,
             supportsRoot = supportsRoot,
         )
+    }
+}
+
+@Composable
+private fun GpuRenderingCard(
+    checked: Boolean,
+    enabled: Boolean,
+    error: String?,
+    onChange: (Boolean) -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = colors.surfaceVariant),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = onChange,
+            ).padding(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Outlined.Speed, contentDescription = null,
+                tint = colors.onSurfaceVariant, modifier = Modifier.size(22.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("GPU 渲染", style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Medium)
+                Text("开启使用 Direct3D，关闭使用软件渲染；切换立即生效并保存。",
+                    style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                if (error != null) {
+                    Text(error, style = MaterialTheme.typography.bodySmall, color = colors.error)
+                }
+            }
+            Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+        }
     }
 }
 

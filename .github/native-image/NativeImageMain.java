@@ -2,6 +2,7 @@ import com.cdb96.ncmconverter4a.MainKt;
 import com.cdb96.ncmconverter4a.NativeCaption;
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt;
 import org.jetbrains.skiko.SkiaLayer;
+import org.jetbrains.skiko.GraphicsApi;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Frame;
@@ -10,6 +11,7 @@ import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.SystemFlavorMap;
 import java.nio.file.Path;
 import java.util.Arrays;
+import javax.swing.SwingUtilities;
 
 /** Native Image entry point: prepare the Windows AWT support directory, then start Compose. */
 public final class NativeImageMain {
@@ -32,7 +34,9 @@ public final class NativeImageMain {
             FilePickerSmoke.run();
             return;
         }
-        if (args.length == 1 && "--startup-smoke".equals(args[0])) {
+        boolean startupSmoke = args.length == 1 && "--startup-smoke".equals(args[0]);
+        boolean rendererSwitchSmoke = args.length == 1 && "--renderer-switch-smoke".equals(args[0]);
+        if (startupSmoke || rendererSwitchSmoke) {
             Thread shutdown = new Thread(() -> {
                 try {
                     Thread.sleep(15000);
@@ -40,6 +44,7 @@ public final class NativeImageMain {
                     Thread.currentThread().interrupt();
                     return;
                 }
+                try {
                 boolean windowShowing = Arrays.stream(Window.getWindows()).anyMatch(Window::isShowing);
                 if (!windowShowing) {
                     System.err.println("Compose desktop startup smoke test failed: no visible window");
@@ -65,12 +70,39 @@ public final class NativeImageMain {
                     System.err.println("Compose desktop startup smoke test failed: Windows file drops are not mapped");
                     System.exit(1);
                 }
-                Arrays.stream(Window.getWindows()).filter(Window::isShowing)
-                    .map(NativeImageMain::findSkiaLayer).filter(layer -> layer != null).findFirst()
-                    .ifPresent(layer -> System.out.println(
-                        "Skiko renderer: " + layer.getRenderApi() + " (" + layer.getRenderInfo() + ")"));
+                SkiaLayer layer = Arrays.stream(Window.getWindows()).filter(Window::isShowing)
+                    .map(NativeImageMain::findSkiaLayer).filter(candidate -> candidate != null).findFirst()
+                    .orElseThrow(() -> new IllegalStateException("SkiaLayer is missing"));
+                System.out.println("Skiko renderer: " + layer.getRenderApi() + " (" + layer.getRenderInfo() + ")");
+                if (rendererSwitchSmoke) {
+                    GraphicsApi original = layer.getRenderApi();
+                    GraphicsApi other = original == GraphicsApi.SOFTWARE_FAST
+                        ? GraphicsApi.DIRECT3D : GraphicsApi.SOFTWARE_FAST;
+                    SwingUtilities.invokeAndWait(() -> {
+                        layer.setRenderApi(other);
+                        layer.needRender(true);
+                    });
+                    Thread.sleep(1000);
+                    if (layer.getRenderApi() != other) {
+                        throw new IllegalStateException("Renderer did not switch to " + other);
+                    }
+                    System.out.println("Skiko renderer switched to: " + layer.getRenderApi());
+                    SwingUtilities.invokeAndWait(() -> {
+                        layer.setRenderApi(original);
+                        layer.needRender(true);
+                    });
+                    Thread.sleep(1000);
+                    if (layer.getRenderApi() != original) {
+                        throw new IllegalStateException("Renderer did not switch back to " + original);
+                    }
+                    System.out.println("Skiko renderer restored: " + layer.getRenderApi());
+                }
                 System.out.println("Compose desktop startup smoke test passed");
                 System.exit(0);
+                } catch (Throwable error) {
+                    error.printStackTrace();
+                    System.exit(1);
+                }
             }, "native-startup-smoke-shutdown");
             shutdown.setDaemon(false);
             shutdown.start();

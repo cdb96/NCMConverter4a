@@ -25,32 +25,40 @@ import kotlinx.coroutines.swing.Swing
 import kotlinx.coroutines.withContext
 import java.io.File
 
-fun main() = application {
-    val windowState = rememberWindowState()
-    Window(onCloseRequest = ::exitApplication, state = windowState, title = "NCMConverter4a") {
-        NCMConverter4aDesktopApp(window, ::exitApplication)
+fun main() {
+    val gpuEnabled = DesktopRenderingPreference.loadGpuEnabled()
+    if (System.getenv("SKIKO_RENDER_API") == null && System.getProperty("skiko.renderApi") == null) {
+        System.setProperty("skiko.renderApi", if (gpuEnabled) "DIRECT3D" else "SOFTWARE")
+    }
+    application {
+        val windowState = rememberWindowState()
+        Window(onCloseRequest = ::exitApplication, state = windowState, title = "NCMConverter4a") {
+            NCMConverter4aDesktopApp(window, gpuEnabled, ::exitApplication)
+        }
     }
 }
 
 @Composable
-fun NCMConverter4aDesktopApp(window: ComposeWindow, onClose: () -> Unit) {
+fun NCMConverter4aDesktopApp(window: ComposeWindow, gpuEnabled: Boolean, onClose: () -> Unit) {
     App {
         DesktopNativeCaption(window)
         Column(Modifier.fillMaxSize()) {
             if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
                 DesktopTallTitleBar(window, onClose)
             }
-            DesktopMainScreen()
+            DesktopMainScreen(window, gpuEnabled)
         }
     }
 }
 
 @Composable
-fun DesktopMainScreen() {
+fun DesktopMainScreen(window: ComposeWindow, gpuEnabled: Boolean) {
     val scope = rememberCoroutineScope()
     var conversionState by remember { mutableStateOf(ConversionUiState()) }
-    var settingsState by remember { mutableStateOf(SettingsUiState()) }
+    var settingsState by remember { mutableStateOf(SettingsUiState(gpuRenderingEnabled = gpuEnabled)) }
     var showBenchmark by remember { mutableStateOf(false) }
+    var gpuSwitching by remember { mutableStateOf(false) }
+    var gpuError by remember { mutableStateOf<String?>(null) }
     val desktopFacade = remember { DesktopConversionFacade() }
     val benchmarkService = remember { BenchmarkService() }
 
@@ -108,6 +116,29 @@ fun DesktopMainScreen() {
             onThreadCountChange = { settingsState = settingsState.copy(threadCount = it) },
             onPickFiles = { startConversion(DesktopFilePicker.pickFiles()) },
             onBenchmark = { showBenchmark = true },
+            onGpuRenderingChange = { enabled ->
+                if (!gpuSwitching) {
+                    gpuSwitching = true
+                    gpuError = null
+                    scope.launch {
+                        val switched = withContext(Dispatchers.Swing) {
+                            DesktopRendering.switch(window, enabled)
+                        }
+                        if (switched) {
+                            settingsState = settingsState.copy(gpuRenderingEnabled = enabled)
+                            val saved = withContext(Dispatchers.IO) {
+                                DesktopRenderingPreference.saveGpuEnabled(enabled)
+                            }
+                            if (!saved) gpuError = "渲染器已切换，但无法保存设置"
+                        } else {
+                            gpuError = "无法切换渲染器"
+                        }
+                        gpuSwitching = false
+                    }
+                }
+            },
+            gpuRenderingBusy = gpuSwitching,
+            gpuRenderingError = gpuError,
             onSelectKggDatabase = {
                 DesktopFilePicker.pickFiles(multiSelect = false, database = true).firstOrNull()?.let {
                     settingsState = settingsState.copy(kggDatabase = it, kggDatabaseName = File(it).name)

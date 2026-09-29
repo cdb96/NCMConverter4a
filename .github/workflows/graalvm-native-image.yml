@@ -43,12 +43,15 @@ jobs:
           New-Item -ItemType Directory -Force $metadata,$classes | Out-Null
           & "$env:JAVA_HOME\bin\javac.exe" -cp $jar.FullName -d $classes '.github/native-image/TraceDesktopStartup.java' '.github/native-image/NativeImageMain.java' '.github/native-image/FilePickerSmoke.java'
           if ($LASTEXITCODE -ne 0) { throw "Trace helper compilation failed: $LASTEXITCODE" }
-          $agentOption = "-agentlib:native-image-agent=config-output-dir=$metadata,config-write-period-secs=5,config-write-initial-delay-secs=1"
           $classPath = "$classes;$($jar.FullName)"
-          & "$env:JAVA_HOME\bin\java.exe" $agentOption '-Dskiko.renderApi=DIRECT3D' '-Dsun.java2d.d3d=false' -cp $classPath 'TraceDesktopStartup'
-          $traceExit = $LASTEXITCODE
-          Write-Host "Tracing JVM exit code: $traceExit"
-          if ($traceExit -ne 0) { throw "Desktop tracing failed: $traceExit" }
+          foreach ($api in @('DIRECT3D', 'SOFTWARE')) {
+            $agentMode = if ($api -eq 'DIRECT3D') { 'config-output-dir' } else { 'config-merge-dir' }
+            $agentOption = "-agentlib:native-image-agent:$agentMode=$metadata,config-write-period-secs=5,config-write-initial-delay-secs=1"
+            & "$env:JAVA_HOME\bin\java.exe" $agentOption "-Dskiko.renderApi=$api" '-Dsun.java2d.d3d=false' -cp $classPath 'TraceDesktopStartup'
+            $traceExit = $LASTEXITCODE
+            Write-Host "$api tracing JVM exit code: $traceExit"
+            if ($traceExit -ne 0) { throw "$api desktop tracing failed: $traceExit" }
+          }
           Get-ChildItem $metadata -Force | ForEach-Object { Write-Host "$($_.Name) $($_.Length) bytes" }
           if (-not (Test-Path (Join-Path $metadata 'reachability-metadata.json'))) {
             throw 'GraalVM tracing did not produce reachability-metadata.json'
@@ -111,7 +114,7 @@ jobs:
           New-Item -ItemType Directory -Force lib | Out-Null
           Copy-Item -LiteralPath $fontConfig -Destination lib/fontconfig.bfc -Force
           # GUI-subsystem executables must be explicitly waited on by PowerShell.
-          foreach ($smoke in @('--native-smoke', '--file-picker-smoke', '--startup-smoke')) {
+          foreach ($smoke in @('--native-smoke', '--file-picker-smoke', '--startup-smoke', '--renderer-switch-smoke')) {
             $name = $smoke.TrimStart('-')
             $stdout = Join-Path $PWD "$name.stdout.log"
             $stderr = Join-Path $PWD "$name.stderr.log"
