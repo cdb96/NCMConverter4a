@@ -34,35 +34,40 @@ internal fun ConversionDashboard(
 ) {
     val automaticDatabase = supportsRoot && settings.kggRootMode
     val databaseReady = automaticDatabase || settings.kggDatabase != null
-    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        BoxWithConstraints {
-            val importPanel: @Composable () -> Unit = {
-                ImportPanel(conversionState, supportsRoot, onPickFiles)
-            }
-            val configurationPanel: @Composable () -> Unit = {
-                Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                    ConfigurationPanel(
-                        settings, databaseReady, automaticDatabase, onOpenSettings,
+    BoxWithConstraints {
+        if (maxWidth >= 720.dp) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(
+                    modifier = Modifier.height(IntrinsicSize.Max),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    ImportPanel(
+                        conversionState, supportsRoot, onPickFiles,
+                        modifier = Modifier.weight(1.5f).fillMaxHeight(),
+                        stretch = true,
                     )
-                    onBenchmark?.let { benchmark ->
-                        BenchmarkCard(benchmark, !conversionState.isProcessing)
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(20.dp),
+                    ) {
+                        ConfigurationPanel(settings, databaseReady, automaticDatabase, onOpenSettings)
+                        onBenchmark?.let { benchmark ->
+                            BenchmarkCard(benchmark, !conversionState.isProcessing)
+                        }
                     }
-                    OutputHint()
                 }
+                OutputHint()
             }
-            if (maxWidth >= 720.dp) {
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Box(Modifier.weight(1.5f)) { importPanel() }
-                    Box(Modifier.weight(1f)) { configurationPanel() }
-                }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    importPanel()
-                    configurationPanel()
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                ImportPanel(conversionState, supportsRoot, onPickFiles)
+                OutputHint()
+                ConfigurationPanel(settings, databaseReady, automaticDatabase, onOpenSettings)
+                onBenchmark?.let { benchmark ->
+                    BenchmarkCard(benchmark, !conversionState.isProcessing)
                 }
             }
         }
-
     }
 }
 
@@ -80,12 +85,18 @@ private fun OutputHint() {
 }
 
 @Composable
-private fun ImportPanel(state: ConversionUiState, android: Boolean, onPickFiles: () -> Unit) {
+private fun ImportPanel(
+    state: ConversionUiState,
+    android: Boolean,
+    onPickFiles: () -> Unit,
+    modifier: Modifier = Modifier,
+    stretch: Boolean = false,
+) {
     val processing = state.isProcessing
     val colors = MaterialTheme.colorScheme
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp),
+    Card(modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = colors.primaryContainer)) {
-        Box(Modifier.fillMaxWidth().background(Brush.linearGradient(
+        Box((if (stretch) Modifier.fillMaxSize() else Modifier.fillMaxWidth()).background(Brush.linearGradient(
             listOf(colors.primaryContainer, colors.tertiaryContainer.copy(alpha = 0.55f))))) {
             Canvas(Modifier.align(Alignment.TopEnd).padding(top = 24.dp, end = 20.dp).size(132.dp, 48.dp)) {
                 val bars = listOf(0.2f, 0.35f, 0.7f, 0.45f, 1f, 0.65f, 0.9f, 0.4f, 0.6f, 0.3f, 0.5f, 0.2f)
@@ -97,7 +108,10 @@ private fun ImportPanel(state: ConversionUiState, android: Boolean, onPickFiles:
                         strokeWidth = 5.dp.toPx(), cap = StrokeCap.Round)
                 }
             }
-            Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(
+                modifier = (if (stretch) Modifier.fillMaxSize() else Modifier).padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
                 Surface(shape = RoundedCornerShape(14.dp), color = colors.surface.copy(alpha = 0.7f)) {
                     Icon(Icons.Outlined.GraphicEq, null, Modifier.padding(12.dp).size(24.dp), tint = colors.primary)
                 }
@@ -120,6 +134,7 @@ private fun ImportPanel(state: ConversionUiState, android: Boolean, onPickFiles:
                             style = MaterialTheme.typography.bodySmall, color = colors.onPrimaryContainer)
                     }
                 }
+                if (stretch) Spacer(Modifier.weight(1f))
                 Button(onClick = onPickFiles, enabled = !processing,
                     contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)) {
                     if (processing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
