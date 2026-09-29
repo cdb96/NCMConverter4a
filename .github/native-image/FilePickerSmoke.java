@@ -33,9 +33,13 @@ public final class FilePickerSmoke {
         Toolkit.getDefaultToolkit().addAWTEventListener(wheelListener, AWTEvent.MOUSE_WHEEL_EVENT_MASK);
         try {
             SwingUtilities.invokeAndWait(() -> {
-                Timer sendWheel = new Timer(600, event -> {
+                Timer exercisePicker = new Timer(200, event -> {
                     for (Window window : Window.getWindows()) {
                         if (window instanceof Dialog && window.isShowing()) {
+                            if (wheelReceived.get()) {
+                                window.dispose();
+                                return;
+                            }
                             Toolkit.getDefaultToolkit().getSystemEventQueue().postEvent(
                                 new MouseWheelEvent(window, MouseEvent.MOUSE_WHEEL,
                                     System.currentTimeMillis(), 0, 0, 0, 0, false,
@@ -44,24 +48,14 @@ public final class FilePickerSmoke {
                         }
                     }
                 });
-                sendWheel.setRepeats(false);
-                Timer closeDialog = new Timer(2500, event -> {
-                    for (Window window : Window.getWindows()) {
-                        if (window instanceof Dialog && window.isShowing()) {
-                            window.dispose();
-                        }
-                    }
-                });
-                closeDialog.setRepeats(false);
-                sendWheel.start();
-                closeDialog.start();
+                exercisePicker.setInitialDelay(600);
+                exercisePicker.start();
                 try {
                     if (!DesktopFilePicker.INSTANCE.pickFiles(true, false).isEmpty()) {
                         throw new IllegalStateException("File picker smoke unexpectedly selected a file");
                     }
                 } finally {
-                    sendWheel.stop();
-                    closeDialog.stop();
+                    exercisePicker.stop();
                 }
             });
         } catch (InterruptedException error) {
