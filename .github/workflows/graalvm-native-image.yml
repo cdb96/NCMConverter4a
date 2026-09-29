@@ -46,7 +46,7 @@ jobs:
           $classPath = "$classes;$($jar.FullName)"
           foreach ($api in @('DIRECT3D', 'SOFTWARE')) {
             $agentMode = if ($api -eq 'DIRECT3D') { 'config-output-dir' } else { 'config-merge-dir' }
-            $agentOption = "-agentlib:native-image-agent:$agentMode=$metadata,config-write-period-secs=5,config-write-initial-delay-secs=1"
+            $agentOption = "-agentlib:native-image-agent=${agentMode}=$metadata,config-write-period-secs=5,config-write-initial-delay-secs=1"
             & "$env:JAVA_HOME\bin\java.exe" $agentOption "-Dskiko.renderApi=$api" '-Dsun.java2d.d3d=false' -cp $classPath 'TraceDesktopStartup'
             $traceExit = $LASTEXITCODE
             Write-Host "$api tracing JVM exit code: $traceExit"
