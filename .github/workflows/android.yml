@@ -261,3 +261,159 @@ jobs:
             composeApp/build/compose/binaries/main-release/dmg/*.dmg
             composeApp/build/compose/binaries/main-release/msi/*.msi
             composeApp/build/compose/jars/*.jar
+
+  # ======================== Windows Native Image ========================
+  windows-native-image:
+    needs: changes
+    if: ${{ needs.changes.outputs.full_build == 'true' }}
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Build Windows UberJar
+        shell: pwsh
+        run: ./gradlew.bat :composeApp:packageReleaseUberJarForCurrentOS --configure-on-demand
+
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          distribution: graalvm
+          java-version: '25'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          native-image-job-reports: 'true'
+
+      - name: Trace desktop startup metadata
+        shell: pwsh
+        run: |
+          $jar = Get-ChildItem composeApp/build/compose/jars/*-release.jar | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $jar) { throw 'Release UberJar not found' }
+          $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
+          $classes = Join-Path $PWD.Path 'build/native-image/trace-classes'
+          New-Item -ItemType Directory -Force $metadata,$classes | Out-Null
+          & "$env:JAVA_HOME\bin\javac.exe" -cp $jar.FullName -d $classes '.github/native-image/TraceDesktopStartup.java' '.github/native-image/NativeImageMain.java' '.github/native-image/FilePickerSmoke.java'
+          if ($LASTEXITCODE -ne 0) { throw "Trace helper compilation failed: $LASTEXITCODE" }
+          $classPath = "$classes;$($jar.FullName)"
+          foreach ($api in @('DIRECT3D', 'SOFTWARE')) {
+            $agentMode = if ($api -eq 'DIRECT3D') { 'config-output-dir' } else { 'config-merge-dir' }
+            $agentOption = "-agentlib:native-image-agent=${agentMode}=$metadata,config-write-period-secs=5,config-write-initial-delay-secs=1"
+            & "$env:JAVA_HOME\bin\java.exe" $agentOption "-Dskiko.renderApi=$api" '-Dsun.java2d.d3d=false' -cp $classPath 'TraceDesktopStartup'
+            $traceExit = $LASTEXITCODE
+            Write-Host "$api tracing JVM exit code: $traceExit"
+            if ($traceExit -ne 0) { throw "$api desktop tracing failed: $traceExit" }
+          }
+          Get-ChildItem $metadata -Force | ForEach-Object { Write-Host "$($_.Name) $($_.Length) bytes" }
+          if (-not (Test-Path (Join-Path $metadata 'reachability-metadata.json'))) {
+            throw 'GraalVM tracing did not produce reachability-metadata.json'
+          }
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: NCMConverter4a-graalvm-tracing-metadata
+          path: build/native-image/metadata/*
+          if-no-files-found: warn
+
+      - name: Compile Native Image
+        shell: pwsh
+        run: |
+          native-image --version
+          $jar = Get-ChildItem composeApp/build/compose/jars/*-release.jar | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $jar) { throw 'Release UberJar not found' }
+          $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
+          $staticMetadata = Join-Path $PWD.Path '.github/native-image/metadata'
+          $dpiManifest = Join-Path $PWD.Path '.github/native-image/NCMConverter4a.exe.manifest'
+          Write-Host "UberJar: $($jar.FullName) ($($jar.Length) bytes)"
+          New-Item -ItemType Directory -Force build/native-image | Out-Null
+          Push-Location build/native-image
+          $classes = Join-Path $PWD.Path 'trace-classes'
+          $classPath = "$classes;$($jar.FullName)"
+          # -O1 reduced size but segfaulted during Win32 AWT startup on the tested GraalVM; keep the verified -Ob build.
+          # This Windows/AWT build loads DLLs at runtime; Native Image cannot make this target fully static.
+          $nativeImageArgs = @(
+            '--no-fallback'
+            '-Ob'
+            '--enable-native-access=ALL-UNNAMED'
+            # Keep GraalVM's mainCRTStartup entry while using the Windows GUI subsystem.
+            '-H:NativeLinkerOption=/SUBSYSTEM:WINDOWS'
+            '-H:NativeLinkerOption=/ENTRY:mainCRTStartup'
+            "-H:ConfigurationFileDirectories=$metadata,$staticMetadata"
+            '-cp', $classPath
+            'NativeImageMain', 'NCMConverter4a'
+          )
+          native-image @nativeImageArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $mt = (Get-Command mt.exe -ErrorAction SilentlyContinue).Source
+          if (-not $mt) {
+            $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
+            $mt = Get-ChildItem -LiteralPath $sdkBin -Directory | Sort-Object Name -Descending |
+              ForEach-Object { Join-Path $_.FullName 'x64/mt.exe' } |
+              Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          }
+          if (-not $mt) { throw 'Windows SDK manifest tool mt.exe not found' }
+          $imagePath = Join-Path $PWD 'NCMConverter4a.exe'
+          & $mt -manifest $dpiManifest "-outputresource:$imagePath;#1"
+          if ($LASTEXITCODE -ne 0) { throw "Embedding DPI manifest failed: $LASTEXITCODE" }
+          New-Item -ItemType Directory -Force bin | Out-Null
+          Copy-Item -LiteralPath jawt.dll -Destination bin/jawt.dll -Force
+          if (-not (Test-Path awt.dll)) { throw "Expected AWT library at $PWD/awt.dll" }
+          if (-not (Test-Path bin/jawt.dll)) { throw "Expected AWT support library at $PWD/bin/jawt.dll" }
+          $fontConfig = Join-Path $env:JAVA_HOME 'lib/fontconfig.bfc'
+          if (-not (Test-Path $fontConfig)) { throw "Expected JDK font configuration at $fontConfig" }
+          New-Item -ItemType Directory -Force lib | Out-Null
+          Copy-Item -LiteralPath $fontConfig -Destination lib/fontconfig.bfc -Force
+          # GUI-subsystem executables must be explicitly waited on by PowerShell.
+          foreach ($smoke in @('--native-smoke', '--file-picker-smoke')) {
+            $name = $smoke.TrimStart('-')
+            $stdout = Join-Path $PWD "$name.stdout.log"
+            $stderr = Join-Path $PWD "$name.stderr.log"
+            $process = Start-Process -FilePath $imagePath -ArgumentList $smoke -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+            Get-Content -LiteralPath $stdout
+            Get-Content -LiteralPath $stderr
+            if ($process.ExitCode -ne 0) { throw "Native Image $smoke failed: $($process.ExitCode)" }
+          }
+          $originalAppData = $env:APPDATA
+          $smokeAppData = Join-Path $PWD 'smoke-appdata'
+          New-Item -ItemType Directory -Force (Join-Path $smokeAppData 'NCMConverter4a') | Out-Null
+          $env:APPDATA = $smokeAppData
+          foreach ($gpu in @('true', 'false')) {
+            "gpuRendering=$gpu" | Set-Content -LiteralPath (Join-Path $smokeAppData 'NCMConverter4a/rendering.properties') -Encoding ascii
+            $stdout = Join-Path $PWD "startup-$gpu.stdout.log"
+            $stderr = Join-Path $PWD "startup-$gpu.stderr.log"
+            $process = Start-Process -FilePath $imagePath -ArgumentList '--startup-smoke' -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+            Get-Content -LiteralPath $stdout
+            Get-Content -LiteralPath $stderr
+            if ($process.ExitCode -ne 0) { throw "Native Image startup with gpuRendering=$gpu failed: $($process.ExitCode)" }
+            $expected = if ($gpu -eq 'true') { 'DIRECT3D' } else { 'SOFTWARE_FAST' }
+            if (-not (Select-String -LiteralPath $stdout -Pattern "Skiko renderer: $expected" -SimpleMatch -Quiet)) {
+              throw "Native Image startup ignored gpuRendering=$gpu"
+            }
+          }
+          $env:APPDATA = $originalAppData
+          $image = Get-Item -LiteralPath (Join-Path $PWD 'NCMConverter4a.exe')
+          $runtimeFiles = @($image) + @(Get-ChildItem -LiteralPath $PWD.Path -Filter '*.dll' -File) + @(
+            (Get-Item -LiteralPath (Join-Path $PWD 'bin/jawt.dll'))
+            (Get-Item -LiteralPath (Join-Path $PWD 'lib/fontconfig.bfc'))
+          )
+          $runtimeBytes = ($runtimeFiles | Measure-Object -Property Length -Sum).Sum
+          Write-Host ("Native Image executable (-Ob): {0:N2} MiB ({1} bytes)" -f ($image.Length / 1MB), $image.Length)
+          Write-Host ("Windows runtime files: {0:N2} MiB ({1} bytes)" -f ($runtimeBytes / 1MB), $runtimeBytes)
+          "Native Image executable (-Ob): $($image.Length) bytes" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "Windows runtime files (EXE, generated DLLs, font config): $runtimeBytes bytes" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          Pop-Location
+          Get-ChildItem build/native-image -Recurse -File | Select-Object FullName,Length
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: NCMConverter4a-graalvm-windows-experiment
+          path: build/native-image/**
+          if-no-files-found: warn
