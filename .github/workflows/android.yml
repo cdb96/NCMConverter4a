@@ -267,7 +267,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.full_build == 'true' }}
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v6
         with:
@@ -291,7 +291,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           native-image-job-reports: 'true'
 
-      - name: Trace desktop startup metadata
+      - name: Trace conversion and desktop metadata
         shell: pwsh
         run: |
           $jar = Get-ChildItem composeApp/build/compose/jars/*-release.jar | Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -299,16 +299,30 @@ jobs:
           $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
           $classes = Join-Path $PWD.Path 'build/native-image/trace-classes'
           New-Item -ItemType Directory -Force $metadata,$classes | Out-Null
-          & "$env:JAVA_HOME\bin\javac.exe" -cp $jar.FullName -d $classes '.github/native-image/TraceDesktopStartup.java' '.github/native-image/NativeImageMain.java' '.github/native-image/FilePickerSmoke.java'
+          & "$env:JAVA_HOME\bin\javac.exe" -cp $jar.FullName -d $classes '.github/native-image/NativeImageMain.java' '.github/native-image/FilePickerSmoke.java' '.github/native-image/PgoTraining.java'
           if ($LASTEXITCODE -ne 0) { throw "Trace helper compilation failed: $LASTEXITCODE" }
           $classPath = "$classes;$($jar.FullName)"
-          foreach ($api in @('DIRECT3D', 'SOFTWARE')) {
-            $agentMode = if ($api -eq 'DIRECT3D') { 'config-output-dir' } else { 'config-merge-dir' }
-            $agentOption = "-agentlib:native-image-agent=${agentMode}=$metadata,config-write-period-secs=5,config-write-initial-delay-secs=1"
-            & "$env:JAVA_HOME\bin\java.exe" $agentOption "-Dskiko.renderApi=$api" '-Dsun.java2d.d3d=false' -cp $classPath 'TraceDesktopStartup'
-            $traceExit = $LASTEXITCODE
-            Write-Host "$api tracing JVM exit code: $traceExit"
-            if ($traceExit -ne 0) { throw "$api desktop tracing failed: $traceExit" }
+          $traceAppData = Join-Path $PWD.Path 'build/native-image/trace-appdata'
+          $renderConfig = Join-Path $traceAppData 'NCMConverter4a/rendering.properties'
+          New-Item -ItemType Directory -Force (Split-Path $renderConfig) | Out-Null
+          $originalAppData = $env:APPDATA
+          try {
+            $env:APPDATA = $traceAppData
+            foreach ($gpu in @('true', 'false')) {
+              "gpuRendering=$gpu" | Set-Content -LiteralPath $renderConfig -Encoding ascii
+              $agentMode = if ($gpu -eq 'true') { 'config-output-dir' } else { 'config-merge-dir' }
+              $agentOption = "-agentlib:native-image-agent=${agentMode}=$metadata,config-write-period-secs=5,config-write-initial-delay-secs=1"
+              $traceOutput = & "$env:JAVA_HOME\bin\java.exe" $agentOption '--enable-native-access=ALL-UNNAMED' '-Dsun.java2d.d3d=false' -cp $classPath 'NativeImageMain' '--pgo-train' 2>&1
+              $traceExit = $LASTEXITCODE
+              $traceOutput | ForEach-Object { Write-Host $_ }
+              if ($traceExit -ne 0) { throw "gpuRendering=$gpu desktop tracing failed: $traceExit" }
+              $expected = if ($gpu -eq 'true') { 'DIRECT3D' } else { 'SOFTWARE_FAST' }
+              if (-not (($traceOutput | Out-String).Contains("Skiko renderer: $expected"))) {
+                throw "Tracing ignored gpuRendering=$gpu"
+              }
+            }
+          } finally {
+            $env:APPDATA = $originalAppData
           }
           Get-ChildItem $metadata -Force | ForEach-Object { Write-Host "$($_.Name) $($_.Length) bytes" }
           if (-not (Test-Path (Join-Path $metadata 'reachability-metadata.json'))) {
@@ -322,7 +336,7 @@ jobs:
           path: build/native-image/metadata/*
           if-no-files-found: warn
 
-      - name: Compile Native Image
+      - name: Build and train PGO Native Image
         shell: pwsh
         run: |
           native-image --version
@@ -336,20 +350,17 @@ jobs:
           Push-Location build/native-image
           $classes = Join-Path $PWD.Path 'trace-classes'
           $classPath = "$classes;$($jar.FullName)"
-          # -O1 reduced size but segfaulted during Win32 AWT startup on the tested GraalVM; keep the verified -Ob build.
           # This Windows/AWT build loads DLLs at runtime; Native Image cannot make this target fully static.
           $nativeImageArgs = @(
             '--no-fallback'
-            '-Ob'
             '--enable-native-access=ALL-UNNAMED'
             # Keep GraalVM's mainCRTStartup entry while using the Windows GUI subsystem.
             '-H:NativeLinkerOption=/SUBSYSTEM:WINDOWS'
             '-H:NativeLinkerOption=/ENTRY:mainCRTStartup'
             "-H:ConfigurationFileDirectories=$metadata,$staticMetadata"
             '-cp', $classPath
-            'NativeImageMain', 'NCMConverter4a'
           )
-          native-image @nativeImageArgs
+          native-image @nativeImageArgs '--pgo-instrument' 'NativeImageMain' 'NCMConverter4a-instrumented'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $mt = (Get-Command mt.exe -ErrorAction SilentlyContinue).Source
           if (-not $mt) {
@@ -359,8 +370,8 @@ jobs:
               Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
           }
           if (-not $mt) { throw 'Windows SDK manifest tool mt.exe not found' }
-          $imagePath = Join-Path $PWD 'NCMConverter4a.exe'
-          & $mt -manifest $dpiManifest "-outputresource:$imagePath;#1"
+          $instrumentedPath = Join-Path $PWD 'NCMConverter4a-instrumented.exe'
+          & $mt -manifest $dpiManifest "-outputresource:$instrumentedPath;#1"
           if ($LASTEXITCODE -ne 0) { throw "Embedding DPI manifest failed: $LASTEXITCODE" }
           New-Item -ItemType Directory -Force bin | Out-Null
           Copy-Item -LiteralPath jawt.dll -Destination bin/jawt.dll -Force
@@ -370,6 +381,41 @@ jobs:
           if (-not (Test-Path $fontConfig)) { throw "Expected JDK font configuration at $fontConfig" }
           New-Item -ItemType Directory -Force lib | Out-Null
           Copy-Item -LiteralPath $fontConfig -Destination lib/fontconfig.bfc -Force
+          $pgoDir = Join-Path $PWD 'pgo'
+          $smokeAppData = Join-Path $PWD 'smoke-appdata'
+          New-Item -ItemType Directory -Force $pgoDir,(Join-Path $smokeAppData 'NCMConverter4a') | Out-Null
+          $originalAppData = $env:APPDATA
+          try {
+            $env:APPDATA = $smokeAppData
+            foreach ($gpu in @('true', 'false')) {
+              "gpuRendering=$gpu" | Set-Content -LiteralPath (Join-Path $smokeAppData 'NCMConverter4a/rendering.properties') -Encoding ascii
+              $rawProfile = Join-Path $PWD 'default.iprof'
+              if (Test-Path -LiteralPath $rawProfile) { throw "Unexpected profile already exists: $rawProfile" }
+              $stdout = Join-Path $PWD "pgo-train-$gpu.stdout.log"
+              $stderr = Join-Path $PWD "pgo-train-$gpu.stderr.log"
+              $process = Start-Process -FilePath $instrumentedPath -ArgumentList '--pgo-train' -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+              Get-Content -LiteralPath $stdout
+              Get-Content -LiteralPath $stderr
+              if ($process.ExitCode -ne 0) { throw "PGO training with gpuRendering=$gpu failed: $($process.ExitCode)" }
+              $profile = Get-Item -LiteralPath $rawProfile -ErrorAction Stop
+              if ($profile.Length -eq 0) { throw "PGO training produced an empty profile for gpuRendering=$gpu" }
+              $expected = if ($gpu -eq 'true') { 'DIRECT3D' } else { 'SOFTWARE_FAST' }
+              if (-not (Select-String -LiteralPath $stdout -Pattern "Skiko renderer: $expected" -SimpleMatch -Quiet)) {
+                throw "PGO training ignored gpuRendering=$gpu"
+              }
+              Move-Item -LiteralPath $rawProfile -Destination (Join-Path $pgoDir "startup-$gpu.iprof") -Force
+            }
+          } finally {
+            $env:APPDATA = $originalAppData
+          }
+          $profilePaths = @('true', 'false') | ForEach-Object { Join-Path $pgoDir "startup-$_.iprof" }
+          $profileOption = '--pgo=' + ($profilePaths -join ',')
+          native-image @nativeImageArgs $profileOption 'NativeImageMain' 'NCMConverter4a'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $imagePath = Join-Path $PWD 'NCMConverter4a.exe'
+          & $mt -manifest $dpiManifest "-outputresource:$imagePath;#1"
+          if ($LASTEXITCODE -ne 0) { throw "Embedding DPI manifest failed: $LASTEXITCODE" }
+          Copy-Item -LiteralPath jawt.dll -Destination bin/jawt.dll -Force
           # GUI-subsystem executables must be explicitly waited on by PowerShell.
           foreach ($smoke in @('--native-smoke', '--file-picker-smoke')) {
             $name = $smoke.TrimStart('-')
@@ -404,9 +450,9 @@ jobs:
             (Get-Item -LiteralPath (Join-Path $PWD 'lib/fontconfig.bfc'))
           )
           $runtimeBytes = ($runtimeFiles | Measure-Object -Property Length -Sum).Sum
-          Write-Host ("Native Image executable (-Ob): {0:N2} MiB ({1} bytes)" -f ($image.Length / 1MB), $image.Length)
+          Write-Host ("Native Image executable (PGO): {0:N2} MiB ({1} bytes)" -f ($image.Length / 1MB), $image.Length)
           Write-Host ("Windows runtime files: {0:N2} MiB ({1} bytes)" -f ($runtimeBytes / 1MB), $runtimeBytes)
-          "Native Image executable (-Ob): $($image.Length) bytes" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "Native Image executable (PGO): $($image.Length) bytes" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           "Windows runtime files (EXE, generated DLLs, font config): $runtimeBytes bytes" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           Pop-Location
           Get-ChildItem build/native-image -Recurse -File | Select-Object FullName,Length
@@ -415,5 +461,11 @@ jobs:
         if: always()
         with:
           name: NCMConverter4a-graalvm-windows-experiment
-          path: build/native-image/**
+          path: |
+            build/native-image/NCMConverter4a.exe
+            build/native-image/*.dll
+            build/native-image/bin/jawt.dll
+            build/native-image/lib/fontconfig.bfc
+            build/native-image/pgo/*.iprof
+            build/native-image/*.log
           if-no-files-found: warn

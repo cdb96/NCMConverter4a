@@ -32,7 +32,12 @@ public final class NativeImageMain {
             FilePickerSmoke.run();
             return;
         }
-        boolean startupSmoke = args.length == 1 && "--startup-smoke".equals(args[0]);
+        boolean pgoTraining = args.length == 1 && "--pgo-train".equals(args[0]);
+        if (pgoTraining) {
+            PgoTraining.run();
+            FilePickerSmoke.run();
+        }
+        boolean startupSmoke = pgoTraining || args.length == 1 && "--startup-smoke".equals(args[0]);
         if (startupSmoke) {
             Thread shutdown = new Thread(() -> {
                 try {
