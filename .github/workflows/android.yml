@@ -329,13 +329,6 @@ jobs:
             throw 'GraalVM tracing did not produce reachability-metadata.json'
           }
 
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: NCMConverter4a-graalvm-tracing-metadata
-          path: build/native-image/metadata/*
-          if-no-files-found: warn
-
       - name: Build and train PGO Native Image
         shell: pwsh
         run: |
@@ -458,7 +451,6 @@ jobs:
           Get-ChildItem build/native-image -Recurse -File | Select-Object FullName,Length
 
       - uses: actions/upload-artifact@v7
-        if: always()
         with:
           name: NCMConverter4a-graalvm-windows-experiment
           path: |
@@ -466,5 +458,4 @@ jobs:
             build/native-image/*.dll
             build/native-image/bin/jawt.dll
             build/native-image/lib/fontconfig.bfc
-            build/native-image/*.log
-          if-no-files-found: warn
+          if-no-files-found: error
