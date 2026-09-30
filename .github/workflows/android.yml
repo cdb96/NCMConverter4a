@@ -228,7 +228,7 @@ jobs:
         if: ${{ runner.os == 'Linux' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential zlib1g-dev libfreetype6-dev libfontconfig1-dev libx11-dev libxext-dev libxrender-dev libxi-dev libxtst-dev libgl1-mesa-dev libgl1-mesa-dri fonts-noto-cjk xvfb xauth
+          sudo apt-get install -y build-essential zlib1g-dev libfreetype6-dev libfontconfig1-dev libx11-dev libxext-dev libxrender-dev libxi-dev libxtst-dev libgl1-mesa-dev libgl1-mesa-dri mesa-utils fonts-noto-cjk xvfb xauth
 
       - name: 构建并验证 Linux Native Image
         if: ${{ runner.os == 'Linux' }}
@@ -404,6 +404,7 @@ jobs:
           $nativeImageArgs = @(
             '--no-fallback'
             '--enable-native-access=ALL-UNNAMED'
+            '-march=compatibility'
             # Keep GraalVM's mainCRTStartup entry while using the Windows GUI subsystem.
             '-H:NativeLinkerOption=/SUBSYSTEM:WINDOWS'
             '-H:NativeLinkerOption=/ENTRY:mainCRTStartup'
@@ -431,6 +432,10 @@ jobs:
           if (-not (Test-Path $fontConfig)) { throw "Expected JDK font configuration at $fontConfig" }
           New-Item -ItemType Directory -Force lib | Out-Null
           Copy-Item -LiteralPath $fontConfig -Destination lib/fontconfig.bfc -Force
+          # A portable build must not depend on a separately installed MSVC runtime.
+          foreach ($runtimeDll in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
+            Copy-Item -LiteralPath (Join-Path $env:JAVA_HOME "bin/$runtimeDll") -Destination $runtimeDll -Force
+          }
           $pgoDir = Join-Path $PWD 'pgo'
           $smokeAppData = Join-Path $PWD 'smoke-appdata'
           New-Item -ItemType Directory -Force $pgoDir,(Join-Path $smokeAppData 'NCMConverter4a') | Out-Null
@@ -510,6 +515,10 @@ jobs:
       - name: 打包 Windows Native Image
         shell: pwsh
         run: ./composeApp/tools/PackageNativeImageWindows.ps1 -RuntimeDirectory build/native-image -OutputArchive build/native-image/NCMConverter4a-windows-native-image.zip
+
+      - name: Verify portable Windows package without a JDK
+        shell: pwsh
+        run: ./composeApp/tools/VerifyNativeImageWindows.ps1 -ArchivePath build/native-image/NCMConverter4a-windows-native-image.zip
 
       - uses: actions/upload-artifact@v7
         with:

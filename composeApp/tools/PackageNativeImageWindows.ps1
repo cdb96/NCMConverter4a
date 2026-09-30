@@ -12,7 +12,8 @@ New-Item -ItemType Directory -Force -Path $archiveDirectory | Out-Null
 # Publish only runtime files. Metadata, profiles, logs, reports and the
 # instrumented training executable must stay outside the portable archive.
 $required = @('NCMConverter4a.exe', 'awt.dll', 'jawt.dll', 'fontmanager.dll',
-    'java.dll', 'jvm.dll', 'bin/jawt.dll', 'lib/fontconfig.bfc')
+    'java.dll', 'jvm.dll', 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll',
+    'bin/jawt.dll', 'lib/fontconfig.bfc')
 foreach ($relativePath in $required) {
     $file = Join-Path $runtimePath $relativePath
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {

@@ -31,7 +31,10 @@ mkdir -p "$metadata" "$classes" "$appdata/NCMConverter4a" "$build/pgo"
 export APPDATA="$appdata"
 # Mesa's software GL driver lets CI exercise Skiko's OpenGL backend under Xvfb.
 export LIBGL_ALWAYS_SOFTWARE=true
+# Skiko rejects llvmpipe. Mesa's softpipe still exercises the OpenGL backend.
+export GALLIUM_DRIVER=softpipe
 unset SKIKO_RENDER_API
+if command -v glxinfo >/dev/null 2>&1; then glxinfo -B; fi
 "$JAVA_HOME/bin/javac" -cp "$jar" -d "$classes" \
     .github/native-image/NativeImageMain.java \
     .github/native-image/FilePickerSmoke.java .github/native-image/PgoTraining.java
