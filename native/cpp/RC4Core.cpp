@@ -12,10 +12,10 @@
 // 256 byte cycle. ARM uses native NEON, x86 uses NEON_2_SSE (see SimdCompat.h).
 #include "NativeApi.h"
 #include "SimdCompat.h"
+#include "ContextMemory.h"
 
 #include <array>
 #include <cstdint>
-#include <new>
 #include <numeric>
 #include <utility>
 
@@ -99,7 +99,7 @@ void rc4DecryptAt(const NcmRc4Context& context, std::uint8_t* data, int length) 
 
 NcmRc4Context* ncm_rc4_create(const uint8_t* key, int key_len) {
     if (key == nullptr || key_len <= 0) return nullptr;
-    auto* context = new (std::nothrow) NcmRc4Context{};
+    auto* context = ncm::createContext<NcmRc4Context>();
     if (context != nullptr) ncm::rc4Init(*context, key, key_len);
     return context;
 }
@@ -109,5 +109,5 @@ void ncm_rc4_decrypt(NcmRc4Context* context, uint8_t* data, int length) {
 }
 
 void ncm_rc4_destroy(NcmRc4Context* context) {
-    delete context;
+    ncm::destroyContext(context);
 }

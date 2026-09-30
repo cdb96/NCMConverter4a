@@ -64,11 +64,11 @@ internal fun ConversionDashboard(
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 ImportPanel(conversionState, supportsRoot, onPickFiles)
-                OutputHint()
                 ConfigurationPanel(settings, databaseReady, automaticDatabase, onOpenSettings)
                 onBenchmark?.let { benchmark ->
                     BenchmarkCard(benchmark, !conversionState.isProcessing)
                 }
+                OutputHint()
             }
         }
     }

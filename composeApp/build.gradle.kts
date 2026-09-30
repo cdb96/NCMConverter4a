@@ -1,5 +1,4 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
-import org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask
 import org.jetbrains.compose.desktop.application.tasks.AbstractProguardTask
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JavaToolchainService
@@ -101,7 +100,6 @@ kotlin {
 // ---------------------------------------------------------------------------
 val nativeSourceDir = rootProject.layout.projectDirectory.dir("native")
 val nativeBuildDir = nativeSourceDir.dir("build")
-val msiRestoreInstallDirDll = layout.buildDirectory.file("generated/msi/ncm_msi_restore_install_dir.dll")
 val ncmHostOs = org.gradle.internal.os.OperatingSystem.current()
 val ncmNativeOsName = when {
     ncmHostOs.isWindows -> "windows"
@@ -212,16 +210,11 @@ val nativeBuild = tasks.register<Exec>("nativeBuild") {
     val buildDirectory = nativeBuildDir.asFile
     val resourceDirectory = ncmNativeResourceDir.asFile
     val nativeFileName = "ncmc4a.$ncmNativeExtension"
-    val buildMsiHelper = ncmHostOs.isWindows
-    val msiHelperOutput = msiRestoreInstallDirDll.get().asFile
 
     // The cmake build directory lives inside native/; excluding it keeps the
     // task's own output from invalidating its inputs on every run.
     inputs.files(fileTree(nativeSourceDir) { exclude("build/**") })
     outputs.file(ncmNativeResourceDir.file(nativeFileName))
-    if (buildMsiHelper) {
-        outputs.file(msiHelperOutput)
-    }
 
     doLast {
         val built = listOf(
@@ -232,15 +225,6 @@ val nativeBuild = tasks.register<Exec>("nativeBuild") {
         resourceDirectory.mkdirs()
         built.copyTo(File(resourceDirectory, nativeFileName), overwrite = true)
         logger.lifecycle("native core 已打包: ${File(resourceDirectory, nativeFileName)}")
-        if (buildMsiHelper) {
-            val helper = listOf(
-                File(buildDirectory, "ncm_msi_restore_install_dir.dll"),
-                File(buildDirectory, "Release/ncm_msi_restore_install_dir.dll"),
-            ).firstOrNull { it.isFile }
-                ?: throw GradleException("MSI install-directory helper was not built")
-            msiHelperOutput.parentFile.mkdirs()
-            helper.copyTo(msiHelperOutput, overwrite = true)
-        }
     }
 }
 
@@ -261,12 +245,11 @@ tasks.named<Test>("desktopTest") {
 
 compose.desktop {
     application {
-        // Compose packaging tasks default to the Gradle process JDK. Use the
-        // JDK 25 toolchain so the packaged runtime matches the compiled target.
+        // Use the JDK 25 toolchain for Gradle run, the UberJar and macOS DMG.
         javaHome = desktopJdk25Home.get()
         mainClass = "com.cdb96.ncmconverter4a.MainKt"
         jvmArgs += desktopObjectHeaderArgs
-        // These options reach both Gradle run and the installed launcher. A raw
+        // These options reach Gradle run and the macOS launcher. A raw
         // `java -jar` invocation needs to supply its own JVM options.
         // The UI has a small live heap; reserve room for concurrent conversions
         // without sizing the initial heap and GC infrastructure from host RAM.
@@ -293,25 +276,15 @@ compose.desktop {
             }
         }
         nativeDistributions {
-            targetFormats(TargetFormat.Msi, TargetFormat.Dmg, TargetFormat.Deb)
+            // Windows/Linux ship Native Image archives. macOS keeps its DMG
+            // while GraalVM's AWT support is unavailable on that platform.
             packageName = "NCMConverter4a"
             packageVersion = "4.0.0"
-            appResourcesRootDir.set(desktopNativeResources)
-
-            windows {
-                menu = true
-                menuGroup = "NCMConverter4a"
-                // Match the UpgradeCode of the previously released 4.0.0 MSI.
-                upgradeUuid = "047C03F4-286A-3122-9D04-7A2767347553"
+            if (ncmHostOs.isMacOsX) {
+                targetFormats(TargetFormat.Dmg)
+                appResourcesRootDir.set(desktopNativeResources)
+                modules("java.base", "java.desktop", "java.logging", "jdk.crypto.ec")
             }
-
-            // JRE modules — trimmed to the minimum needed at runtime
-            modules(
-                "java.base",
-                "java.desktop",
-                "java.logging",
-                "jdk.crypto.ec",
-            )
         }
     }
 }
@@ -338,42 +311,7 @@ val exportProguardRuntime = tasks.register<Exec>("exportProguardRuntime") {
     )
 }
 
-val sameVersionMsiUpgradeScript = layout.projectDirectory.file("tools/EnableSameVersionMsiUpgrade.ps1")
 afterEvaluate {
-    tasks.withType<AbstractJPackageTask>().configureEach {
-        if (targetFormat == TargetFormat.Msi) {
-            // Show the installer's choice for creating the Start menu shortcut.
-            freeArgs.add("--win-shortcut-prompt")
-            if (ncmHostOs.isWindows) {
-                val upgradeScriptFile = sameVersionMsiUpgradeScript.asFile
-                val helperDllFile = msiRestoreInstallDirDll.get().asFile
-                inputs.file(upgradeScriptFile)
-                inputs.file(helperDllFile)
-                dependsOn(nativeBuild)
-                doLast {
-                    val msiFiles = destinationDir.get().asFile.listFiles { file ->
-                        file.isFile && file.extension.equals("msi", ignoreCase = true)
-                    }.orEmpty()
-                    check(msiFiles.size == 1) { "Expected one MSI in ${destinationDir.get().asFile}" }
-
-                    val result = ProcessBuilder(
-                        "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                        "-File", upgradeScriptFile.absolutePath,
-                        "-MsiPath", msiFiles.single().absolutePath,
-                        "-PackageName", packageName.get(),
-                        "-PackageVersion", packageVersion.get(),
-                        // A 4.0.1 MSI was generated before returning to 4.0.0.
-                        "-ReplaceThroughVersion", "4.0.1",
-                        "-UpgradeCode", winUpgradeUuid.get(),
-                        "-LegacyUpgradeCodes", "B54BE228-D008-3EF6-932D-BFF24CC371FD",
-                        "-RestoreInstallDirDll", helperDllFile.absolutePath,
-                    ).inheritIO().start().waitFor()
-                    check(result == 0) { "Failed to enable same-version MSI upgrades" }
-                }
-            }
-        }
-    }
-
     tasks.withType<AbstractProguardTask>().configureEach {
         javaHome.set(desktopJdk25Home)
         if (proguardNeedsRuntimeExport) {

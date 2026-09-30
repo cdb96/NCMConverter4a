@@ -43,6 +43,9 @@ if(NCM_BUILD_JNI)
     endif()
 
     target_compile_features(ncmc4a PRIVATE cxx_std_17)
+    set_target_properties(ncmc4a PROPERTIES
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON)
 
     if(MSVC)
         # Keep the bundled DLL independent of the Visual C++ redistributable.
@@ -52,13 +55,16 @@ if(NCM_BUILD_JNI)
     endif()
 
     if(ANDROID)
+        # JNI reports errors as Java exceptions; the core needs neither C++
+        # exceptions nor RTTI. Keep static runtime symbols private so the linker
+        # can discard unused archive code instead of exporting it from this .so.
+        target_compile_options(ncmc4a PRIVATE -fno-exceptions -fno-rtti)
+        target_link_options(ncmc4a PRIVATE "-Wl,--exclude-libs,ALL")
         target_link_libraries(ncmc4a PRIVATE android log)
     else()
         # Desktop extracts its bundled library; Android uses libncmc4a.so.
         set_target_properties(ncmc4a PROPERTIES
-            PREFIX ""
-            CXX_VISIBILITY_PRESET hidden
-            VISIBILITY_INLINES_HIDDEN ON)
+            PREFIX "")
 
         if(WIN32)
             target_sources(ncmc4a PRIVATE "${CMAKE_CURRENT_LIST_DIR}/windows/NativeCaption.cpp")
@@ -81,13 +87,4 @@ if(NCM_BUILD_SELFTEST)
         ${NCM_CORE_SOURCES})
     target_include_directories(ncm_core_selftest PRIVATE "${CMAKE_CURRENT_LIST_DIR}/cpp")
     target_compile_features(ncm_core_selftest PRIVATE cxx_std_17)
-endif()
-
-if(WIN32 AND NOT ANDROID)
-    enable_language(C)
-    # Embedded in the MSI to reuse the directory of a related installation.
-    add_library(ncm_msi_restore_install_dir SHARED
-        "${CMAKE_CURRENT_LIST_DIR}/packaging/MsiRestoreInstallDir.c")
-    target_link_libraries(ncm_msi_restore_install_dir PRIVATE msi)
-    set_target_properties(ncm_msi_restore_install_dir PROPERTIES PREFIX "")
 endif()

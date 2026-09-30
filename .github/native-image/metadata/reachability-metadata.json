@@ -13,13 +13,6 @@
     { "type": "java.rmi.Remote" },
     { "type": "java.util.List" },
     {
-      "type": "org.jetbrains.skiko.redrawer.Direct3DRedrawer",
-      "jniAccessible": true,
-      "methods": [
-        { "name": "isAdapterSupported", "parameterTypes": ["java.lang.String"] }
-      ]
-    },
-    {
       "type": "java.awt.event.MouseEvent",
       "jniAccessible": true,
       "fields": [
@@ -68,32 +61,9 @@
           "parameterTypes": ["java.awt.Component", "int", "int", "int", "int", "long[]", "long"]
         }
       ]
-    },
-    {
-      "type": "sun.awt.windows.WDropTargetContextPeer",
-      "jniAccessible": true,
-      "methods": [
-        {"name": "getWDropTargetContextPeer", "parameterTypes": []}
-      ]
-    },
-    {
-      "type": "sun.awt.windows.WGlobalCursorManager",
-      "jniAccessible": true,
-      "methods": [
-        {"name": "nativeUpdateCursor", "parameterTypes": ["java.awt.Component"]}
-      ]
-    },
-    {
-      "type": "sun.awt.windows.WWindowPeer",
-      "jniAccessible": true,
-      "methods": [
-        {"name": "getActiveWindowHandles", "parameterTypes": ["java.awt.Component"]}
-      ]
     }
   ],
   "resources": [
-    { "module": "java.datatransfer", "glob": "sun/datatransfer/resources/flavormap.properties" },
-    { "glob": "ncmc4a/windows-x86_64/ncmc4a.dll" },
-    { "glob": "skiko-windows-x64.dll" }
+    { "module": "java.datatransfer", "glob": "sun/datatransfer/resources/flavormap.properties" }
   ]
 }

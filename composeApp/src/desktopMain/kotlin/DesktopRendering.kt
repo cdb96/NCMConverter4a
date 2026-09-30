@@ -35,7 +35,9 @@ internal object DesktopRendererRestart {
     fun restart(): Boolean = runCatching {
         val command = ProcessHandle.current().info().command().orElse(null) ?: return false
         val executable = Path.of(command).toAbsolutePath()
-        if (!executable.fileName.toString().equals("NCMConverter4a.exe", ignoreCase = true)
+        val name = executable.fileName.toString()
+        if ((!name.equals("NCMConverter4a.exe", ignoreCase = true)
+                && !name.equals("NCMConverter4a", ignoreCase = true))
             || !Files.isRegularFile(executable)) return false
         ProcessBuilder(executable.toString()).directory(executable.parent.toFile()).start()
         true

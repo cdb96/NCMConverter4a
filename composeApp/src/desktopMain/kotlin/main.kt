@@ -28,7 +28,12 @@ import java.io.File
 fun main() {
     val gpuEnabled = DesktopRenderingPreference.loadGpuEnabled()
     if (System.getenv("SKIKO_RENDER_API") == null && System.getProperty("skiko.renderApi") == null) {
-        System.setProperty("skiko.renderApi", if (gpuEnabled) "DIRECT3D" else "SOFTWARE")
+        val renderer = if (!gpuEnabled) "SOFTWARE" else when {
+            System.getProperty("os.name").startsWith("Windows", ignoreCase = true) -> "DIRECT3D"
+            System.getProperty("os.name").startsWith("Mac", ignoreCase = true) -> "METAL"
+            else -> "OPENGL"
+        }
+        System.setProperty("skiko.renderApi", renderer)
     }
     application {
         val windowState = rememberWindowState()

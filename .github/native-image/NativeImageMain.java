@@ -11,7 +11,7 @@ import java.awt.datatransfer.SystemFlavorMap;
 import java.nio.file.Path;
 import java.util.Arrays;
 
-/** Native Image entry point: prepare the Windows AWT support directory, then start Compose. */
+/** Native Image entry point: prepare the portable AWT support directory, then start Compose. */
 public final class NativeImageMain {
     public static void main(String[] args) {
         System.setProperty("sun.java2d.d3d", "false");
@@ -66,10 +66,11 @@ public final class NativeImageMain {
                     System.err.println("Compose desktop startup smoke test failed: no file drop target");
                     System.exit(1);
                 }
-                boolean fileDropMapped = ((SystemFlavorMap) SystemFlavorMap.getDefaultFlavorMap())
-                    .getNativesForFlavor(DataFlavor.javaFileListFlavor).contains("HDROP");
+                var fileDropFormats = ((SystemFlavorMap) SystemFlavorMap.getDefaultFlavorMap())
+                    .getNativesForFlavor(DataFlavor.javaFileListFlavor);
+                boolean fileDropMapped = isWindows() ? fileDropFormats.contains("HDROP") : !fileDropFormats.isEmpty();
                 if (!fileDropMapped) {
-                    System.err.println("Compose desktop startup smoke test failed: Windows file drops are not mapped");
+                    System.err.println("Compose desktop startup smoke test failed: file drops are not mapped");
                     System.exit(1);
                 }
                 SkiaLayer layer = Arrays.stream(Window.getWindows()).filter(Window::isShowing)
@@ -134,9 +135,13 @@ public final class NativeImageMain {
         if (!Arrays.equals(expected, actual)) {
             throw new IllegalStateException("ncmc4a RC4 JNI smoke test returned an unexpected vector");
         }
-        if (NativeCaption.INSTANCE.setColors(0L, 0, 0, false)) {
+        if (isWindows() && NativeCaption.INSTANCE.setColors(0L, 0, 0, false)) {
             throw new IllegalStateException("native caption JNI accepted an invalid window handle");
         }
         System.out.println("ncmc4a RC4 JNI smoke test passed");
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name").startsWith("Windows");
     }
 }

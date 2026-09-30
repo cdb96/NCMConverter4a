@@ -108,7 +108,7 @@ jobs:
           files: androidApp/build/outputs/apk/release/*.apk
 
   # PRs run tests plus a JVM compile check on one OS only.
-  # No installers, no jmods, no artifacts.
+  # No release distributions or artifacts.
   desktop-check:
     needs: changes
     if: ${{ needs.changes.outputs.full_build != 'true' }}
@@ -160,14 +160,16 @@ jobs:
         run: ./gradlew :composeApp:compileKotlinDesktop --configure-on-demand
 
   # ======================== Desktop Release Build ========================
-  # Push / manual run / published release: Unix installers and Uber Jars.
+  # Linux Native Image, macOS DMG, and platform-specific Uber Jars.
   desktop:
     needs: changes
     if: ${{ always() && !cancelled() && needs.changes.outputs.full_build == 'true' }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
     permissions:
       contents: write  # softprops/action-gh-release 发布 Release 需要
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
@@ -201,23 +203,44 @@ jobs:
         shell: bash
         run: ./gradlew :composeApp:desktopTest --configure-on-demand
 
-      - name: 构建桌面安装包 (release)
+      - name: 构建 macOS DMG (release)
+        if: ${{ runner.os == 'macOS' }}
         shell: bash
         run: |
           ./gradlew :composeApp:packageReleaseDistributionForCurrentOS --configure-on-demand --no-configuration-cache
 
       - name: 构建 Uber Jar (release)
-        # 独立编译, 产物在 composeApp/build/compose/jars/, 与安装包目录分开
+        # Native Image 的输入，同时保留 Jar 分发。
         shell: bash
         run: |
           ./gradlew :composeApp:packageReleaseUberJarForCurrentOS --configure-on-demand
 
-      - name: 上传桌面分发版 (Linux)
+      - name: 设置 Linux Native Image 工具链
+        if: ${{ runner.os == 'Linux' }}
+        uses: graalvm/setup-graalvm@v1
+        with:
+          distribution: graalvm
+          java-version: '25'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          native-image-job-reports: 'true'
+
+      - name: 安装 Linux GUI 构建及测试依赖
+        if: ${{ runner.os == 'Linux' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential zlib1g-dev libfreetype6-dev libfontconfig1-dev libx11-dev libxext-dev libxrender-dev libxi-dev libxtst-dev libgl1-mesa-dev libgl1-mesa-dri fonts-noto-cjk xvfb xauth
+
+      - name: 构建并验证 Linux Native Image
+        if: ${{ runner.os == 'Linux' }}
+        run: xvfb-run -a -s '-screen 0 1280x800x24 +extension GLX +render -noreset' bash composeApp/tools/BuildNativeImageLinux.sh
+
+      - name: 上传 Linux Native Image
         if: ${{ runner.os == 'Linux' }}
         uses: actions/upload-artifact@v7
         with:
-          name: NCMConverter4a-linux
-          path: composeApp/build/compose/binaries/main-release/deb/*.deb
+          name: NCMConverter4a-native-image-Linux
+          path: build/native-image/NCMConverter4a-linux-native-image.tar.gz
+          if-no-files-found: error
 
       - name: 上传桌面分发版 (macOS)
         if: ${{ runner.os == 'macOS' }}
@@ -232,46 +255,29 @@ jobs:
           name: NCMConverter4a-jar-${{ runner.os }}
           path: composeApp/build/compose/jars/*.jar
 
-      - name: 创建 GitHub Release (Desktop)
-        if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
+      - name: 创建 GitHub Release (Linux Native Image/Jar)
+        if: ${{ runner.os == 'Linux' && github.event_name == 'release' && github.event.action == 'published' }}
         uses: softprops/action-gh-release@v3
         with:
           draft: false
           prerelease: false
           files: |
-            composeApp/build/compose/binaries/main-release/deb/*.deb
+            build/native-image/NCMConverter4a-linux-native-image.tar.gz
+            composeApp/build/compose/jars/*.jar
+
+      - name: 创建 GitHub Release (macOS DMG/Jar)
+        if: ${{ runner.os == 'macOS' && github.event_name == 'release' && github.event.action == 'published' }}
+        uses: softprops/action-gh-release@v3
+        with:
+          draft: false
+          prerelease: false
+          files: |
             composeApp/build/compose/binaries/main-release/dmg/*.dmg
             composeApp/build/compose/jars/*.jar
 
-  # Build the Windows UberJar once for the installer and Native Image jobs.
+  # Test and build the Windows UberJar once for Native Image and Jar releases.
   windows-uberjar:
     needs: changes
-    if: ${{ needs.changes.outputs.full_build == 'true' }}
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          submodules: recursive
-
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '25'
-
-      - uses: gradle/actions/setup-gradle@v6
-
-      - name: Build Windows UberJar
-        shell: pwsh
-        run: ./gradlew.bat :composeApp:packageReleaseUberJarForCurrentOS --configure-on-demand
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: NCMConverter4a-jar-Windows
-          path: composeApp/build/compose/jars/*-release.jar
-          if-no-files-found: error
-
-  desktop-windows:
-    needs: [changes, windows-uberjar]
     if: ${{ needs.changes.outputs.full_build == 'true' }}
     runs-on: windows-latest
     permissions:
@@ -283,65 +289,48 @@ jobs:
 
       - uses: actions/setup-java@v5
         with:
-          java-version: '25'
           distribution: temurin
+          java-version: '25'
 
       - uses: gradle/actions/setup-gradle@v6
 
-      - name: 缓存 Gradle Configuration Cache
-        uses: actions/cache@v5
-        with:
-          path: .gradle/configuration-cache
-          key: gradle-config-${{ runner.os }}-desktop-${{ github.sha }}
-          restore-keys: |
-            gradle-config-${{ runner.os }}-desktop-
-
-      - name: 运行 Desktop/common 回归测试
-        shell: bash
-        run: ./gradlew :composeApp:desktopTest --configure-on-demand
+      - name: 运行 Windows Desktop/common 回归测试
+        shell: pwsh
+        run: ./gradlew.bat :composeApp:desktopTest --configure-on-demand
 
       - name: 验证 Windows native 库独立加载
         shell: pwsh
         run: |
           $dll = (Resolve-Path 'composeApp/build/generated/desktopNativeResources/ncmc4a/windows-x86_64/ncmc4a.dll').Path
-          $objdump = Get-Command objdump -ErrorAction SilentlyContinue
-          if ($objdump) { & $objdump.Source -p $dll | Select-String 'DLL Name:' }
           $env:PATH = "$env:JAVA_HOME\bin;$env:SystemRoot\System32;$env:SystemRoot"
           & "$env:JAVA_HOME\bin\java.exe" native/tests/NativeLibraryLoadCheck.java $dll
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: 构建桌面安装包 (release)
-        shell: bash
-        run: ./gradlew :composeApp:packageReleaseDistributionForCurrentOS --configure-on-demand --no-configuration-cache
+      - name: Build Windows UberJar
+        shell: pwsh
+        run: ./gradlew.bat :composeApp:packageReleaseUberJarForCurrentOS --configure-on-demand
 
-      - name: 上传桌面分发版 (Windows)
-        uses: actions/upload-artifact@v7
-        with:
-          name: NCMConverter4a-windows
-          path: composeApp/build/compose/binaries/main-release/msi/*.msi
-
-      - name: 获取 Windows UberJar 供 Release 发布
-        if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
-        uses: actions/download-artifact@v8
+      - uses: actions/upload-artifact@v7
         with:
           name: NCMConverter4a-jar-Windows
-          path: composeApp/build/compose/jars
+          path: composeApp/build/compose/jars/*-release.jar
+          if-no-files-found: error
 
-      - name: 创建 GitHub Release (Desktop Windows)
+      - name: 创建 GitHub Release (Windows Jar)
         if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
         uses: softprops/action-gh-release@v3
         with:
           draft: false
           prerelease: false
-          files: |
-            composeApp/build/compose/binaries/main-release/msi/*.msi
-            composeApp/build/compose/jars/*.jar
+          files: composeApp/build/compose/jars/*-release.jar
 
   # ======================== Windows Native Image ========================
   windows-native-image:
     needs: [changes, windows-uberjar]
     if: ${{ needs.changes.outputs.full_build == 'true' }}
     runs-on: windows-latest
+    permissions:
+      contents: write
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v6
@@ -404,6 +393,7 @@ jobs:
           if (-not $jar) { throw 'Release UberJar not found' }
           $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
           $staticMetadata = Join-Path $PWD.Path '.github/native-image/metadata'
+          $windowsMetadata = Join-Path $PWD.Path '.github/native-image/metadata-windows'
           $dpiManifest = Join-Path $PWD.Path '.github/native-image/NCMConverter4a.exe.manifest'
           Write-Host "UberJar: $($jar.FullName) ($($jar.Length) bytes)"
           New-Item -ItemType Directory -Force build/native-image | Out-Null
@@ -417,7 +407,7 @@ jobs:
             # Keep GraalVM's mainCRTStartup entry while using the Windows GUI subsystem.
             '-H:NativeLinkerOption=/SUBSYSTEM:WINDOWS'
             '-H:NativeLinkerOption=/ENTRY:mainCRTStartup'
-            "-H:ConfigurationFileDirectories=$metadata,$staticMetadata"
+            "-H:ConfigurationFileDirectories=$metadata,$staticMetadata,$windowsMetadata"
             '-cp', $classPath
           )
           native-image @nativeImageArgs '--pgo-instrument' 'NativeImageMain' 'NCMConverter4a-instrumented'
@@ -517,12 +507,20 @@ jobs:
           Pop-Location
           Get-ChildItem build/native-image -Recurse -File | Select-Object FullName,Length
 
+      - name: 打包 Windows Native Image
+        shell: pwsh
+        run: ./composeApp/tools/PackageNativeImageWindows.ps1 -RuntimeDirectory build/native-image -OutputArchive build/native-image/NCMConverter4a-windows-native-image.zip
+
       - uses: actions/upload-artifact@v7
         with:
-          name: NCMConverter4a-graalvm-windows-experiment
-          path: |
-            build/native-image/NCMConverter4a.exe
-            build/native-image/*.dll
-            build/native-image/bin/jawt.dll
-            build/native-image/lib/fontconfig.bfc
+          name: NCMConverter4a-native-image-Windows
+          path: build/native-image/NCMConverter4a-windows-native-image.zip
           if-no-files-found: error
+
+      - name: 创建 GitHub Release (Windows Native Image)
+        if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
+        uses: softprops/action-gh-release@v3
+        with:
+          draft: false
+          prerelease: false
+          files: build/native-image/NCMConverter4a-windows-native-image.zip

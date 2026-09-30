@@ -10,11 +10,11 @@
 // final partial block is handled byte by byte.
 #include "NativeApi.h"
 #include "SimdCompat.h"
+#include "ContextMemory.h"
 
 #include <array>
 #include <cstdint>
 #include <cstring>
-#include <new>
 
 #include "KgmTables.h"
 
@@ -190,7 +190,7 @@ int kgmDecrypt(NcmKgmContext& context, std::uint8_t* data, int offset, int bytes
 
 NcmKgmContext* ncm_kgm_create(const uint8_t* key, int key_len) {
     if (key == nullptr || key_len < 17) return nullptr;
-    auto* context = new (std::nothrow) NcmKgmContext{};
+    auto* context = ncm::createContext<NcmKgmContext>();
     if (context != nullptr) ncm::kgmInit(*context, key, 17);
     return context;
 }
@@ -200,5 +200,5 @@ int ncm_kgm_decrypt(NcmKgmContext* context, uint8_t* data, int offset, int lengt
 }
 
 void ncm_kgm_destroy(NcmKgmContext* context) {
-    delete context;
+    ncm::destroyContext(context);
 }
