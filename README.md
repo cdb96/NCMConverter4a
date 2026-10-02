@@ -4,9 +4,15 @@
 
 ### 程序界面
 
-![PC 端程序界面，包含转换卡片和当前输出路径](docs/images/desktop-screenshot.png)
+PC 端默认启动界面：
 
-PC 端界面，图中输出路径为示例配置。
+![PC 端默认启动的双列界面](docs/images/desktop-screenshot.png)
+
+单列布局，供手机端界面参考：
+
+![程序单列布局，供手机端界面参考](docs/images/single-column-screenshot.png)
+
+单列截图来自 PC 端窄窗口，两张截图中的输出路径均为示例配置。
 
 ### 使用方法：
 1.从右下角按钮选择文件 
