@@ -103,8 +103,9 @@ jobs:
         if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
         uses: softprops/action-gh-release@v3
         with:
-          draft: false
-          prerelease: false
+          tag_name: ${{ github.event.release.tag_name }}
+          prerelease: ${{ github.event.release.prerelease }}
+          fail_on_unmatched_files: true
           files: androidApp/build/outputs/apk/release/*.apk
 
   # PRs run tests plus a JVM compile check on one OS only.
@@ -259,8 +260,9 @@ jobs:
         if: ${{ runner.os == 'Linux' && github.event_name == 'release' && github.event.action == 'published' }}
         uses: softprops/action-gh-release@v3
         with:
-          draft: false
-          prerelease: false
+          tag_name: ${{ github.event.release.tag_name }}
+          prerelease: ${{ github.event.release.prerelease }}
+          fail_on_unmatched_files: true
           files: |
             build/native-image/NCMConverter4a-linux-native-image.tar.gz
             composeApp/build/compose/jars/*.jar
@@ -269,8 +271,9 @@ jobs:
         if: ${{ runner.os == 'macOS' && github.event_name == 'release' && github.event.action == 'published' }}
         uses: softprops/action-gh-release@v3
         with:
-          draft: false
-          prerelease: false
+          tag_name: ${{ github.event.release.tag_name }}
+          prerelease: ${{ github.event.release.prerelease }}
+          fail_on_unmatched_files: true
           files: |
             composeApp/build/compose/binaries/main-release/dmg/*.dmg
             composeApp/build/compose/jars/*.jar
@@ -320,8 +323,9 @@ jobs:
         if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
         uses: softprops/action-gh-release@v3
         with:
-          draft: false
-          prerelease: false
+          tag_name: ${{ github.event.release.tag_name }}
+          prerelease: ${{ github.event.release.prerelease }}
+          fail_on_unmatched_files: true
           files: composeApp/build/compose/jars/*-release.jar
 
   # ======================== Windows Native Image ========================
@@ -530,6 +534,7 @@ jobs:
         if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
         uses: softprops/action-gh-release@v3
         with:
-          draft: false
-          prerelease: false
+          tag_name: ${{ github.event.release.tag_name }}
+          prerelease: ${{ github.event.release.prerelease }}
+          fail_on_unmatched_files: true
           files: build/native-image/NCMConverter4a-windows-native-image.zip
