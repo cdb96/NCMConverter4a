@@ -1,47 +1,33 @@
 package com.cdb96.ncmconverter4a.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-
-import androidx.compose.material.icons.outlined.Settings
-
-import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.Key
-import androidx.compose.material.icons.outlined.Memory
-import androidx.compose.material.icons.outlined.Speed
-import androidx.compose.material.icons.outlined.SaveAlt
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SwitchDefaults
+import kotlin.math.roundToInt
 
 @Composable
 fun SettingsScreen(
@@ -59,15 +45,7 @@ fun SettingsScreen(
     outputDirectoryBusy: Boolean = false,
     outputDirectoryError: String? = null,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        onSelectOutputDirectory?.let { onSelect ->
-            OutputDirectoryCard(
-                directory = state.outputDirectory.orEmpty(),
-                enabled = state.enabled && !outputDirectoryBusy,
-                error = outputDirectoryError,
-                onSelect = onSelect,
-            )
-        }
+    val conversionSettings: @Composable () -> Unit = {
         SettingsCard(
             rawWriteMode = state.rawWriteMode,
             onRawWriteModeChange = onRawWriteModeChange,
@@ -76,21 +54,107 @@ fun SettingsScreen(
             threadCount = state.threadCount,
             onThreadCountChange = onThreadCountChange,
             enabled = state.enabled,
+            gpuRenderingEnabled = state.gpuRenderingEnabled,
+            onGpuRenderingChange = onGpuRenderingChange,
+            gpuRenderingBusy = gpuRenderingBusy,
+            gpuRenderingError = gpuRenderingError,
         )
-        onGpuRenderingChange?.let { onChange ->
-            GpuRenderingCard(
-                checked = state.gpuRenderingEnabled,
-                enabled = state.enabled && !gpuRenderingBusy,
-                error = gpuRenderingError,
-                onChange = onChange,
+    }
+    val fileSettings: @Composable () -> Unit = {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            onSelectOutputDirectory?.let { onSelect ->
+                OutputDirectoryCard(
+                    directory = state.outputDirectory.orEmpty(),
+                    enabled = state.enabled && !outputDirectoryBusy,
+                    busy = outputDirectoryBusy,
+                    error = outputDirectoryError,
+                    onSelect = onSelect,
+                )
+            }
+            KggDatabaseCard(
+                state = state,
+                onSelectClick = onSelectKggDatabase,
+                onRootModeChange = onKggRootModeChange,
+                supportsRoot = supportsRoot,
             )
         }
-        KggDatabaseCard(
-            state = state,
-            onSelectClick = onSelectKggDatabase,
-            onRootModeChange = onKggRootModeChange,
-            supportsRoot = supportsRoot,
-        )
+    }
+
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth >= 720.dp) {
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(Modifier.weight(1f)) { conversionSettings() }
+                Column(Modifier.weight(1f)) { fileSettings() }
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                conversionSettings()
+                fileSettings()
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSection(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    OutlinedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.outlinedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun SettingSwitch(
+    title: String,
+    description: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange)
+            .heightIn(min = 64.dp)
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            SettingDescription(description)
+        }
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+    }
+}
+
+@Composable
+private fun SettingDescription(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun SettingError(error: String?) {
+    if (error != null) {
+        Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
     }
 }
 
@@ -98,76 +162,16 @@ fun SettingsScreen(
 private fun OutputDirectoryCard(
     directory: String,
     enabled: Boolean,
+    busy: Boolean,
     error: String?,
     onSelect: () -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = colors.surfaceVariant),
-    ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Folder, contentDescription = null,
-                    tint = colors.onSurfaceVariant, modifier = Modifier.size(22.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("输出文件夹", style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium)
-                    Text("转换后的 NCM、KGM、KGG 音频将保存到此处，选择后立即生效。",
-                        style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-                }
-            }
-            Surface(shape = RoundedCornerShape(12.dp), color = colors.surface, modifier = Modifier.fillMaxWidth()) {
-                Text(directory, modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
-            }
-            if (error != null) {
-                Text(error, style = MaterialTheme.typography.bodySmall, color = colors.error)
-            }
-            Button(onClick = onSelect, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Outlined.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("更换输出文件夹")
-            }
-        }
-    }
-}
-
-@Composable
-private fun GpuRenderingCard(
-    checked: Boolean,
-    enabled: Boolean,
-    error: String?,
-    onChange: (Boolean) -> Unit,
-) {
-    val colors = MaterialTheme.colorScheme
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = colors.surfaceVariant),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().toggleable(
-                value = checked,
-                enabled = enabled,
-                role = Role.Switch,
-                onValueChange = onChange,
-            ).padding(20.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Outlined.Speed, contentDescription = null,
-                tint = colors.onSurfaceVariant, modifier = Modifier.size(22.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("GPU 渲染", style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium)
-                Text("开启后使用 GPU 加速渲染，关闭后使用软件渲染；切换后程序会自动重启。",
-                    style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-                if (error != null) {
-                    Text(error, style = MaterialTheme.typography.bodySmall, color = colors.error)
-                }
-            }
-            Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+    SettingsSection("输出文件夹") {
+        SettingDescription("NCM、KGM、KGG 转换结果保存至")
+        Text(directory, style = MaterialTheme.typography.bodyMedium)
+        SettingError(error)
+        OutlinedButton(onClick = onSelect, enabled = enabled) {
+            Text(if (busy) "正在保存…" else "更换文件夹")
         }
     }
 }
@@ -179,113 +183,36 @@ private fun KggDatabaseCard(
     onRootModeChange: (Boolean) -> Unit,
     supportsRoot: Boolean,
 ) {
-    val colors = MaterialTheme.colorScheme
     val automatic = supportsRoot && state.kggRootMode
     val hasDatabase = state.kggDatabase != null
-
-    Card(
-        modifier = Modifier.fillMaxWidth().animateContentSize(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = colors.surfaceVariant),
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Outlined.Key, contentDescription = null,
-                    tint = colors.onSurfaceVariant, modifier = Modifier.size(22.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("KGG 数据库", style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium)
-                    Text("用于读取 KGG 音频密钥，支持与 NCM、KGM 一起批量转换。",
-                        style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-                }
-            }
-            HorizontalDivider(color = colors.onSurfaceVariant.copy(alpha = 0.12f))
-
-            if (supportsRoot) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().toggleable(
-                        value = state.kggRootMode,
-                        enabled = state.enabled,
-                        role = Role.Switch,
-                        onValueChange = onRootModeChange,
-                    ).padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("自动获取数据库", style = MaterialTheme.typography.bodyLarge)
-                        Text("需要设备已 Root 并授予访问权限",
-                            style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-                    }
-                    Switch(checked = state.kggRootMode, onCheckedChange = null, enabled = state.enabled)
-                }
-            }
-
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = if (automatic) colors.secondaryContainer else colors.surface,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Icon(
-                        imageVector = if (automatic) Icons.Outlined.Key
-                            else Icons.AutoMirrored.Outlined.InsertDriveFile,
-                        contentDescription = null,
-                        tint = if (automatic) colors.onSecondaryContainer else colors.primary,
-                        modifier = Modifier.size(24.dp),
-                    )
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            text = when {
-                                automatic -> "转换时自动获取"
-                                hasDatabase -> "已选择数据库"
-                                else -> "尚未选择数据库"
-                            },
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (automatic) colors.onSecondaryContainer else colors.onSurfaceVariant,
-                        )
-                        Text(
-                            text = when {
-                                automatic -> "开始转换 KGG 时读取酷狗数据库，无需手动选择文件。"
-                                hasDatabase -> state.kggDatabaseName?.takeIf { it.isNotBlank() }
-                                    ?: "已选择数据库文件"
-                                else -> "添加对应的酷狗数据库后，即可转换 KGG 文件。"
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (automatic) colors.onSecondaryContainer else colors.onSurface,
-                            maxLines = if (hasDatabase && !automatic) 3 else Int.MAX_VALUE,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-
-            if (!automatic) {
+    SettingsSection("KGG 数据库") {
+        SettingDescription("仅转换 KGG 时需要，用于读取音频密钥。")
+        if (supportsRoot) {
+            SettingSwitch(
+                title = "自动获取数据库",
+                description = "需要 Root 权限",
+                checked = state.kggRootMode,
+                enabled = state.enabled,
+                onChange = onRootModeChange,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        }
+        if (automatic) {
+            Text("转换时自动读取酷狗数据库", style = MaterialTheme.typography.bodyMedium)
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = if (supportsRoot) "请选择包含音频密钥的 MMKV 文件"
-                        else "请选择包含音频密钥的 DB 或 MMKV 文件",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.onSurfaceVariant,
+                    text = if (hasDatabase) {
+                        state.kggDatabaseName?.takeIf { it.isNotBlank() } ?: "已选择数据库文件"
+                    } else "尚未选择数据库",
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Button(
-                    onClick = onSelectClick,
-                    enabled = state.enabled,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Outlined.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (hasDatabase) "更换数据库" else "选择数据库")
-                }
+                SettingDescription(if (supportsRoot) "支持 MMKV 文件" else "支持 DB / MMKV 文件")
+            }
+            OutlinedButton(onClick = onSelectClick, enabled = state.enabled) {
+                Text(if (hasDatabase) "更换数据库" else "选择数据库")
             }
         }
     }
@@ -299,139 +226,71 @@ fun SettingsCard(
     onDuplicateConflictMitigationChange: (Boolean) -> Unit,
     threadCount: Int,
     onThreadCountChange: (Int) -> Unit,
-    enabled: Boolean
+    enabled: Boolean,
+    gpuRenderingEnabled: Boolean = true,
+    onGpuRenderingChange: ((Boolean) -> Unit)? = null,
+    gpuRenderingBusy: Boolean = false,
+    gpuRenderingError: String? = null,
 ) {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        modifier = Modifier.fillMaxWidth().animateContentSize()
-    ) {
+    SettingsSection("转换与性能") {
+        Column {
+            SettingSwitch(
+                title = "原始写入模式",
+                description = "仅解密，不补写 NCM 元数据",
+                checked = rawWriteMode,
+                enabled = enabled,
+                onChange = onRawWriteModeChange,
+            )
+            SettingSwitch(
+                title = "处理重名文件",
+                description = "重名时添加序号，保留已有文件",
+                checked = duplicateConflictMitigation,
+                enabled = enabled,
+                onChange = onDuplicateConflictMitigationChange,
+            )
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Column {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Outlined.Settings, contentDescription = null,
-                        tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        "兼容性设置", style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium,
-                        color = if (enabled) MaterialTheme.colorScheme.onSurface
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("转换线程数", style = MaterialTheme.typography.bodyLarge)
+                    SettingDescription("1–8 个线程，推荐 4 个")
                 }
-
-            }
-
-            Box {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 20.dp)
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
                 ) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(bottom = 16.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)
+                    Text(
+                        "$threadCount",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.titleSmall,
                     )
-
-                    // Raw write mode
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Outlined.SaveAlt, contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
-                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text("原始写入模式", color = if (enabled) MaterialTheme.colorScheme.onSurface
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                        }
-                        Switch(
-                            checked = rawWriteMode, onCheckedChange = onRawWriteModeChange, enabled = enabled,
-                            thumbContent = if (rawWriteMode) {
-                                { Icon(Icons.Filled.Check, "原始写入模式已开启", modifier = Modifier.size(SwitchDefaults.IconSize)) }
-                            } else null
-                        )
-                    }
-
-                    // Duplicate conflict mitigation
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.AutoMirrored.Outlined.InsertDriveFile, contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
-                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text("重名文件冲突缓解", color = if (enabled) MaterialTheme.colorScheme.onSurface
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                        }
-                        Switch(
-                            checked = duplicateConflictMitigation, onCheckedChange = onDuplicateConflictMitigationChange,
-                            enabled = enabled,
-                            thumbContent = if (duplicateConflictMitigation) {
-                                { Icon(Icons.Filled.Check, "重名文件冲突缓解已开启", modifier = Modifier.size(SwitchDefaults.IconSize)) }
-                            } else null
-                        )
-                    }
-
-                    // Thread count
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Outlined.Memory, contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
-                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text("线程数: $threadCount", color = if (enabled) MaterialTheme.colorScheme.onSurface
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Slider(
-                            value = threadCount.toFloat(), onValueChange = { onThreadCountChange(it.toInt()) },
-                            valueRange = 1f..8f, steps = 6, enabled = enabled,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("1", style = MaterialTheme.typography.bodySmall,
-                                color = if (enabled) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
-                            Text("8", style = MaterialTheme.typography.bodySmall,
-                                color = if (enabled) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
-                        }
-                        Text(
-                            "请根据设备情况合理选择，推荐为4",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (enabled) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
                 }
             }
+            Slider(
+                value = threadCount.toFloat(),
+                onValueChange = { onThreadCountChange(it.roundToInt()) },
+                valueRange = 1f..8f,
+                steps = 6,
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        onGpuRenderingChange?.let { onChange ->
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            SettingSwitch(
+                title = "GPU 渲染",
+                description = if (gpuRenderingBusy) "正在切换…"
+                    else "关闭后使用软件渲染；切换会重启程序",
+                checked = gpuRenderingEnabled,
+                enabled = enabled && !gpuRenderingBusy,
+                onChange = onChange,
+            )
+            SettingError(gpuRenderingError)
         }
     }
 }
