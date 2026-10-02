@@ -25,7 +25,7 @@ try {
     $env:TEMP = $temp
     $env:TMP = $temp
     Remove-Item Env:SKIKO_RENDER_API -ErrorAction SilentlyContinue
-    foreach ($test in @('native-smoke','file-picker-smoke','startup-true','startup-false','conversion-true','conversion-false')) {
+    foreach ($test in @('native-smoke','file-picker-smoke','file-picker-app-smoke','startup-true','startup-false','conversion-true','conversion-false')) {
         $gpu = if ($test.EndsWith('false')) { 'false' } else { 'true' }
         "gpuRendering=$gpu" | Set-Content -LiteralPath (Join-Path $appData 'NCMConverter4a/rendering.properties') -Encoding ascii
         $flag = if ($test.StartsWith('startup-')) { '--startup-smoke' } elseif ($test.StartsWith('conversion-')) { '--pgo-train' } else { "--$test" }
@@ -38,6 +38,10 @@ try {
         Get-Content -LiteralPath $stdout
         Get-Content -LiteralPath $stderr
         if ($process.ExitCode -ne 0) { throw "Packaged $test failed: $($process.ExitCode)" }
+        # Native AWT can print JNI errors without a nonzero process exit code.
+        if (Select-String -LiteralPath $stderr -Pattern 'Exception in thread|NoSuchMethodError|UnsatisfiedLinkError|MissingReflectionRegistrationError|MissingJNIRegistrationError|Fatal error|Uncaught smoke failure' -Quiet) {
+            throw "Packaged $test reported a runtime error; see $stderr"
+        }
         if ($test -match '^(startup|conversion)-') {
             $expected = if ($gpu -eq 'true') { 'DIRECT3D' } else { 'SOFTWARE_FAST' }
             if (-not (Select-String -LiteralPath $stdout -Pattern "Skiko renderer: $expected" -SimpleMatch -Quiet)) { throw "Renderer mismatch: $test" }

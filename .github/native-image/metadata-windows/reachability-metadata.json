@@ -1,6 +1,16 @@
 {
   "reflection": [
     {
+      "type": "java.awt.event.KeyEvent",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": ["java.awt.Component", "int", "long", "int", "int", "char", "int"]
+        }
+      ]
+    },
+    {
       "type": "org.jetbrains.skiko.redrawer.Direct3DRedrawer",
       "jniAccessible": true,
       "methods": [

@@ -14,6 +14,15 @@ import java.util.Arrays;
 /** Native Image entry point: prepare the portable AWT support directory, then start Compose. */
 public final class NativeImageMain {
     public static void main(String[] args) {
+        // AWT and coroutine failures can leave the main thread alive. Smoke
+        // runs must fail on background exceptions instead of reporting success.
+        if (args.length == 1 && (args[0].endsWith("-smoke") || "--pgo-train".equals(args[0]))) {
+            Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
+                System.err.println("Uncaught smoke failure on " + thread.getName());
+                error.printStackTrace();
+                System.exit(1);
+            });
+        }
         System.setProperty("sun.java2d.d3d", "false");
 
         String javaHome = System.getProperty("java.home");
@@ -88,6 +97,31 @@ public final class NativeImageMain {
             shutdown.start();
         }
 
+        if (args.length == 1 && "--file-picker-app-smoke".equals(args[0])) {
+            Thread picker = new Thread(() -> {
+                try {
+                    for (int attempt = 0; attempt < 200; attempt++) {
+                        boolean appShowing = Arrays.stream(Window.getWindows())
+                            .anyMatch(window -> window.isShowing() && window instanceof Frame frame
+                                && "NCMConverter4a".equals(frame.getTitle()));
+                        if (appShowing) {
+                            FilePickerSmoke.run();
+                            if (Arrays.stream(Window.getWindows()).noneMatch(Window::isShowing)) {
+                                throw new IllegalStateException("App window closed after file picker smoke");
+                            }
+                            System.out.println("Compose file picker smoke test passed");
+                            System.exit(0);
+                        }
+                        Thread.sleep(100);
+                    }
+                    throw new IllegalStateException("App window did not appear for file picker smoke");
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("App file picker smoke interrupted", error);
+                }
+            }, "app-file-picker-smoke");
+            picker.start();
+        }
         MainKt.main();
     }
 
