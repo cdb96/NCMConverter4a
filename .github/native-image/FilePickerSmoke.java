@@ -54,8 +54,12 @@ public final class FilePickerSmoke {
                     if (!DesktopFilePicker.INSTANCE.pickFiles(true, false).isEmpty()) {
                         throw new IllegalStateException("File picker smoke unexpectedly selected a file");
                     }
+                    if (DesktopFilePicker.INSTANCE.pickDirectory(System.getProperty("user.home")) != null) {
+                        throw new IllegalStateException("Directory picker smoke unexpectedly selected a folder");
+                    }
                 } finally {
                     exercisePicker.stop();
+                    for (Window window : Window.getWindows()) window.dispose();
                 }
             });
         } catch (InterruptedException error) {

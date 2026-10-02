@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.font.FontWeight
@@ -48,8 +49,9 @@ internal fun ConversionDashboard(
                         conversionState, supportsRoot, onPickFiles,
                         modifier = Modifier.weight(1f),
                         stretch = true,
+                        outputDirectory = settings.outputDirectory,
                     )
-                    OutputHint()
+                    if (settings.outputDirectory == null) OutputHint()
                 }
                 Column(
                     modifier = Modifier.weight(1f),
@@ -63,26 +65,32 @@ internal fun ConversionDashboard(
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                ImportPanel(conversionState, supportsRoot, onPickFiles)
+                ImportPanel(conversionState, supportsRoot, onPickFiles, outputDirectory = settings.outputDirectory)
                 ConfigurationPanel(settings, databaseReady, automaticDatabase, onOpenSettings)
                 onBenchmark?.let { benchmark ->
                     BenchmarkCard(benchmark, !conversionState.isProcessing)
                 }
-                OutputHint()
+                if (settings.outputDirectory == null) OutputHint()
             }
         }
     }
 }
 
 @Composable
-private fun OutputHint() {
+private fun OutputHint(
+    outputDirectory: String? = null,
+    contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
-        Icon(Icons.Outlined.Folder, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Column {
-            Text("保存至 Music / NCMConverter4A", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(Icons.Outlined.Folder, null, Modifier.size(18.dp), tint = contentColor)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(if (outputDirectory != null) "当前输出路径" else "保存至 Music / NCMConverter4A",
+                style = MaterialTheme.typography.bodySmall, color = contentColor)
+            if (outputDirectory != null) {
+                Text(outputDirectory, style = MaterialTheme.typography.bodyMedium, color = contentColor)
+            }
             Text("输出格式由音频内容决定，原始文件会保留。", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                color = contentColor)
         }
     }
 }
@@ -94,6 +102,7 @@ private fun ImportPanel(
     onPickFiles: () -> Unit,
     modifier: Modifier = Modifier,
     stretch: Boolean = false,
+    outputDirectory: String? = null,
 ) {
     val processing = state.isProcessing
     val colors = MaterialTheme.colorScheme
@@ -127,6 +136,17 @@ private fun ImportPanel(
                         style = MaterialTheme.typography.bodyMedium, color = colors.onPrimaryContainer)
                 }
                 HorizontalDivider(color = colors.onPrimaryContainer.copy(alpha = 0.12f))
+                if (outputDirectory != null) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = colors.surface.copy(alpha = 0.7f),
+                    ) {
+                        Box(Modifier.padding(16.dp)) {
+                            OutputHint(outputDirectory, colors.onSurface)
+                        }
+                    }
+                }
                 if (state.hasConversionStarted) {
                     ConversionStatusContent(state)
                 } else {

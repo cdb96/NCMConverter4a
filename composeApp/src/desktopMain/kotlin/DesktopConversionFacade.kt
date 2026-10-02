@@ -33,11 +33,9 @@ internal fun desktopBufferSize(inputCount: Int, threadCount: Int): Int {
     return size - size % 256
 }
 
-class DesktopConversionFacade {
+class DesktopConversionFacade(private val outputDirectory: File = defaultDesktopOutputDirectory()) {
     private val log = Logger("DesktopConversion")
-    private val outputAllocator = DesktopOutputAllocator(
-        File(System.getProperty("user.home"), "Music/NCMConverter4A")
-    )
+    private val outputAllocator = DesktopOutputAllocator(outputDirectory)
 
     suspend fun processFiles(
         filePaths: List<String>,
@@ -116,7 +114,7 @@ class DesktopConversionFacade {
             when (format) {
                 EncryptedFormat.KGG -> {
                     require(kggDatabase != null) { "请先在设置中选择 KGG 数据库" }
-                    DesktopKggDecrypt().decrypt(path, kggDatabase, duplicateConflictMitigation)
+                    DesktopKggDecrypt(outputDirectory).decrypt(path, kggDatabase, duplicateConflictMitigation)
                 }
                 EncryptedFormat.KGM -> convertKGM(
                     input,

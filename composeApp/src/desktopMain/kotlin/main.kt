@@ -60,11 +60,18 @@ fun NCMConverter4aDesktopApp(window: ComposeWindow, gpuEnabled: Boolean, onClose
 fun DesktopMainScreen(gpuEnabled: Boolean, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     var conversionState by remember { mutableStateOf(ConversionUiState()) }
-    var settingsState by remember { mutableStateOf(SettingsUiState(gpuRenderingEnabled = gpuEnabled)) }
+    val outputPreference = remember { DesktopOutputDirectoryPreference() }
+    var settingsState by remember {
+        mutableStateOf(SettingsUiState(
+            gpuRenderingEnabled = gpuEnabled,
+            outputDirectory = outputPreference.load().absolutePath,
+        ))
+    }
     var showBenchmark by remember { mutableStateOf(false) }
     var gpuSwitching by remember { mutableStateOf(false) }
     var gpuError by remember { mutableStateOf<String?>(null) }
-    val desktopFacade = remember { DesktopConversionFacade() }
+    var outputDirectorySaving by remember { mutableStateOf(false) }
+    var outputDirectoryError by remember { mutableStateOf<String?>(null) }
     val benchmarkService = remember { BenchmarkService() }
 
     LaunchedEffect(Unit) {
@@ -79,11 +86,14 @@ fun DesktopMainScreen(gpuEnabled: Boolean, onClose: () -> Unit) {
     fun startConversion(files: List<String>) {
         if (files.isEmpty() || conversionState.isProcessing) return
         val selectedSettings = settingsState
+        val selectedFacade = DesktopConversionFacade(
+            selectedSettings.outputDirectory?.let(::File) ?: defaultDesktopOutputDirectory()
+        )
         conversionState = conversionState.start(files.size)
         scope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
-                    desktopFacade.processFiles(
+                    selectedFacade.processFiles(
                         filePaths = files,
                         threadCount = selectedSettings.threadCount,
                         rawWriteMode = selectedSettings.rawWriteMode,
@@ -121,6 +131,27 @@ fun DesktopMainScreen(gpuEnabled: Boolean, onClose: () -> Unit) {
             onThreadCountChange = { settingsState = settingsState.copy(threadCount = it) },
             onPickFiles = { startConversion(DesktopFilePicker.pickFiles()) },
             onBenchmark = { showBenchmark = true },
+            onSelectOutputDirectory = {
+                if (!outputDirectorySaving && !conversionState.isProcessing) {
+                    DesktopFilePicker.pickDirectory(settingsState.outputDirectory.orEmpty())?.let { selected ->
+                        outputDirectorySaving = true
+                        outputDirectoryError = null
+                        scope.launch {
+                            val saved = withContext(Dispatchers.IO) {
+                                runCatching { outputPreference.save(File(selected)) }
+                            }
+                            if (saved.isSuccess) {
+                                settingsState = settingsState.copy(outputDirectory = selected)
+                            } else {
+                                outputDirectoryError = "无法保存输出文件夹：${saved.exceptionOrNull()?.message ?: "请重试"}"
+                            }
+                            outputDirectorySaving = false
+                        }
+                    }
+                }
+            },
+            outputDirectoryBusy = outputDirectorySaving,
+            outputDirectoryError = outputDirectoryError,
             onGpuRenderingChange = { enabled ->
                 if (!gpuSwitching) {
                     gpuSwitching = true

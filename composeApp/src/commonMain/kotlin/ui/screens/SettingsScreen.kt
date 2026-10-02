@@ -55,8 +55,19 @@ fun SettingsScreen(
     onGpuRenderingChange: ((Boolean) -> Unit)? = null,
     gpuRenderingBusy: Boolean = false,
     gpuRenderingError: String? = null,
+    onSelectOutputDirectory: (() -> Unit)? = null,
+    outputDirectoryBusy: Boolean = false,
+    outputDirectoryError: String? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        onSelectOutputDirectory?.let { onSelect ->
+            OutputDirectoryCard(
+                directory = state.outputDirectory.orEmpty(),
+                enabled = state.enabled && !outputDirectoryBusy,
+                error = outputDirectoryError,
+                onSelect = onSelect,
+            )
+        }
         SettingsCard(
             rawWriteMode = state.rawWriteMode,
             onRawWriteModeChange = onRawWriteModeChange,
@@ -80,6 +91,45 @@ fun SettingsScreen(
             onRootModeChange = onKggRootModeChange,
             supportsRoot = supportsRoot,
         )
+    }
+}
+
+@Composable
+private fun OutputDirectoryCard(
+    directory: String,
+    enabled: Boolean,
+    error: String?,
+    onSelect: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = colors.surfaceVariant),
+    ) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Folder, contentDescription = null,
+                    tint = colors.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("输出文件夹", style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium)
+                    Text("转换后的 NCM、KGM、KGG 音频将保存到此处，选择后立即生效。",
+                        style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                }
+            }
+            Surface(shape = RoundedCornerShape(12.dp), color = colors.surface, modifier = Modifier.fillMaxWidth()) {
+                Text(directory, modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
+            }
+            if (error != null) {
+                Text(error, style = MaterialTheme.typography.bodySmall, color = colors.error)
+            }
+            Button(onClick = onSelect, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Outlined.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("更换输出文件夹")
+            }
+        }
     }
 }
 
@@ -111,7 +161,7 @@ private fun GpuRenderingCard(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("GPU 渲染", style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium)
-                Text("开启使用 Direct3D，关闭使用软件渲染；切换后程序会自动重启。",
+                Text("开启后使用 GPU 加速渲染，关闭后使用软件渲染；切换后程序会自动重启。",
                     style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                 if (error != null) {
                     Text(error, style = MaterialTheme.typography.bodySmall, color = colors.error)

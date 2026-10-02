@@ -16,8 +16,9 @@ import java.io.File
 import java.io.FileInputStream
 
 /** Desktop implementation of KGG decryption using bounded stream buffers. */
-class DesktopKggDecrypt {
+class DesktopKggDecrypt(outputDirectory: File = defaultDesktopOutputDirectory()) {
     private val log = Logger("DesktopKggDecrypt")
+    private val outputAllocator = DesktopOutputAllocator(outputDirectory)
 
     fun decrypt(audioFilePath: String, dbFilePath: String?, mitigateConflicts: Boolean = true) {
         val audioFile = File(audioFilePath)
@@ -47,8 +48,6 @@ class DesktopKggDecrypt {
             BinaryInput(audioStream::read).skipFully(audioOffset - headerChunk.size)
 
             val audioFormat = detectAudioFormat(audioStream, cipher)
-            val outputDir = File(System.getProperty("user.home"), "Music/NCMConverter4A")
-            val outputAllocator = DesktopOutputAllocator(outputDir)
             // audioFile.name is the real source file name (e.g. song.kgg): strip
             // its extension before it becomes the output basename.
             val outputBaseName = FileNameUtils.removeLastExtension(audioFile.name)

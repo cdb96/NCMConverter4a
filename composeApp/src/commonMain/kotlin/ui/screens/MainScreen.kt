@@ -106,6 +106,7 @@ data class SettingsUiState(
     val kggDatabaseName: String? = null,
     val kggRootMode: Boolean = false,
     val gpuRenderingEnabled: Boolean = true,
+    val outputDirectory: String? = null,
 )
 
 // ======================== Main Screen ========================
@@ -127,6 +128,9 @@ fun MainScreen(
     onGpuRenderingChange: ((Boolean) -> Unit)? = null,
     gpuRenderingBusy: Boolean = false,
     gpuRenderingError: String? = null,
+    onSelectOutputDirectory: (() -> Unit)? = null,
+    outputDirectoryBusy: Boolean = false,
+    outputDirectoryError: String? = null,
 ) {
     var settingsSelected by remember { mutableStateOf(false) }
     val conversionScroll = rememberScrollState()
@@ -182,6 +186,9 @@ fun MainScreen(
                         onGpuRenderingChange = onGpuRenderingChange,
                         gpuRenderingBusy = gpuRenderingBusy,
                         gpuRenderingError = gpuRenderingError,
+                        onSelectOutputDirectory = onSelectOutputDirectory,
+                        outputDirectoryBusy = outputDirectoryBusy,
+                        outputDirectoryError = outputDirectoryError,
                     )
                 } else {
                     ConversionDashboard(
