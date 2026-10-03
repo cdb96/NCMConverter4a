@@ -15,10 +15,13 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.cdb96.ncmconverter4a.service.BenchmarkService
+import com.cdb96.ncmconverter4a.service.DirectoryScanService
+import com.cdb96.ncmconverter4a.service.ScanDirectory
 import com.cdb96.ncmconverter4a.ui.BenchmarkDialog
 import com.cdb96.ncmconverter4a.ui.screens.ConversionUiState
 import com.cdb96.ncmconverter4a.ui.screens.MainScreen
 import com.cdb96.ncmconverter4a.ui.screens.SettingsUiState
+import com.cdb96.ncmconverter4a.ui.screens.DirectoryScanController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.swing.Swing
@@ -73,6 +76,11 @@ fun DesktopMainScreen(gpuEnabled: Boolean, onClose: () -> Unit) {
     var outputDirectorySaving by remember { mutableStateOf(false) }
     var outputDirectoryError by remember { mutableStateOf<String?>(null) }
     val benchmarkService = remember { BenchmarkService() }
+    val scanPreference = remember { DesktopScanDirectoryPreference() }
+    val scanController = remember {
+        DirectoryScanController(DirectoryScanService(DesktopDirectoryBrowser()), scope,
+            Dispatchers.IO, Dispatchers.Swing, scanPreference.load(), scanPreference::save)
+    }
 
     LaunchedEffect(Unit) {
         val detected = withContext(Dispatchers.IO) {
@@ -181,6 +189,13 @@ fun DesktopMainScreen(gpuEnabled: Boolean, onClose: () -> Unit) {
                     settingsState = settingsState.copy(kggDatabase = it, kggDatabaseName = File(it).name)
                 }
             },
+            scanController = scanController,
+            onSelectScanDirectory = { format ->
+                DesktopFilePicker.pickDirectory(scanController.state.directories[format]?.path.orEmpty(),
+                    "选择 ${format.name} 扫描目录")?.let { scanController.setDirectory(format, ScanDirectory(it)) }
+            },
+            onScanDirectories = scanController::start,
+            onConvertScannedFiles = ::startConversion,
         )
     }
 

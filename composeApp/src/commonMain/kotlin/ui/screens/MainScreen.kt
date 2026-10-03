@@ -4,6 +4,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import com.cdb96.ncmconverter4a.service.ConversionResult
 import com.cdb96.ncmconverter4a.service.FileConversionResult
+import com.cdb96.ncmconverter4a.service.ScanFormat
+import com.cdb96.ncmconverter4a.service.ScanDirectory
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -111,6 +113,8 @@ data class SettingsUiState(
 
 // ======================== Main Screen ========================
 
+enum class AppPage { CONVERSION, SCAN, SETTINGS }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -131,8 +135,12 @@ fun MainScreen(
     onSelectOutputDirectory: (() -> Unit)? = null,
     outputDirectoryBusy: Boolean = false,
     outputDirectoryError: String? = null,
+    scanController: DirectoryScanController? = null,
+    onSelectScanDirectory: (ScanFormat) -> Unit = {},
+    onScanDirectories: (Set<ScanFormat>) -> Unit = {},
+    onConvertScannedFiles: (List<String>) -> Unit = {},
 ) {
-    var settingsSelected by remember { mutableStateOf(false) }
+    var page by remember { mutableStateOf(AppPage.CONVERSION) }
     val conversionScroll = rememberScrollState()
     val settingsScroll = rememberScrollState()
     val enabled = settingsState.enabled && !conversionState.isProcessing
@@ -141,7 +149,11 @@ fun MainScreen(
             if (!desktopMode) TopAppBar(
                 title = {
                     Column {
-                        Text(if (settingsSelected) "设置" else "NCMConverter4A", fontWeight = FontWeight.Bold)
+                        Text(when (page) {
+                            AppPage.SETTINGS -> "设置"
+                            AppPage.SCAN -> "目录扫描"
+                            AppPage.CONVERSION -> "NCMConverter4A"
+                        }, fontWeight = FontWeight.Bold)
                     }
                 },
                 actions = {
@@ -160,47 +172,67 @@ fun MainScreen(
             )
         },
         bottomBar = {
-            AppBottomBar(settingsSelected, onSelectSettings = { settingsSelected = it })
+            AppBottomBar(page, onSelect = { page = it }, showScan = scanController != null)
         },
     ) { innerPadding ->
         Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.TopCenter) {
-            Column(
-                modifier = Modifier
-                    .widthIn(max = 1120.dp)
-                    .fillMaxSize()
-                    .verticalScroll(if (settingsSelected) settingsScroll else conversionScroll)
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 24.dp)
-            ) {
-                Spacer(modifier = Modifier.height(16.dp))
-
-                if (settingsSelected) {
-                    SettingsScreen(
-                        state = settingsState.copy(enabled = enabled),
-                        onRawWriteModeChange = onRawWriteModeChange,
-                        onDuplicateConflictMitigationChange = onDuplicateConflictMitigationChange,
-                        onThreadCountChange = onThreadCountChange,
-                        onSelectKggDatabase = onSelectKggDatabase,
-                        onKggRootModeChange = onKggRootModeChange,
-                        supportsRoot = supportsRoot,
-                        onGpuRenderingChange = onGpuRenderingChange,
-                        gpuRenderingBusy = gpuRenderingBusy,
-                        gpuRenderingError = gpuRenderingError,
-                        onSelectOutputDirectory = onSelectOutputDirectory,
-                        outputDirectoryBusy = outputDirectoryBusy,
-                        outputDirectoryError = outputDirectoryError,
-                    )
-                } else {
-                    ConversionDashboard(
-                        conversionState = conversionState,
-                        settings = settingsState,
-                        supportsRoot = supportsRoot,
-                        onPickFiles = onPickFiles,
-                        onOpenSettings = { settingsSelected = true },
-                        onBenchmark = if (desktopMode) onBenchmark else null,
+            if (page == AppPage.SCAN && scanController != null) {
+                Box(Modifier.widthIn(max = 1120.dp).fillMaxSize()) {
+                    DirectoryScanScreen(
+                        state = scanController.state, enabled = enabled,
+                        onOpenSettings = { page = AppPage.SETTINGS },
+                        onScan = onScanDirectories, onCancel = scanController::cancel,
+                        onRecursiveChange = scanController::setRecursive, onSelectFile = scanController::selectFile,
+                        onSelectAll = scanController::selectAll,
+                        onConvert = {
+                            onConvertScannedFiles(scanController.selectedSources())
+                            page = AppPage.CONVERSION
+                        },
                     )
                 }
-                Spacer(modifier = Modifier.height(16.dp))
+            } else {
+                Column(
+                    modifier = Modifier
+                        .widthIn(max = 1120.dp)
+                        .fillMaxSize()
+                        .verticalScroll(if (page == AppPage.SETTINGS) settingsScroll else conversionScroll)
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = 24.dp)
+                ) {
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (page == AppPage.SETTINGS) {
+                        SettingsScreen(
+                            state = settingsState.copy(enabled = enabled),
+                            onRawWriteModeChange = onRawWriteModeChange,
+                            onDuplicateConflictMitigationChange = onDuplicateConflictMitigationChange,
+                            onThreadCountChange = onThreadCountChange,
+                            onSelectKggDatabase = onSelectKggDatabase,
+                            onKggRootModeChange = onKggRootModeChange,
+                            supportsRoot = supportsRoot,
+                            onGpuRenderingChange = onGpuRenderingChange,
+                            gpuRenderingBusy = gpuRenderingBusy,
+                            gpuRenderingError = gpuRenderingError,
+                            onSelectOutputDirectory = onSelectOutputDirectory,
+                            outputDirectoryBusy = outputDirectoryBusy,
+                            outputDirectoryError = outputDirectoryError,
+                            scanDirectories = scanController?.state?.directories,
+                            scanDirectoryBusy = scanController?.state?.isScanning == true,
+                            onSelectScanDirectory = onSelectScanDirectory,
+                            onClearScanDirectory = { scanController?.setDirectory(it, ScanDirectory()) },
+                        )
+                    } else {
+                        ConversionDashboard(
+                            conversionState = conversionState,
+                            settings = settingsState,
+                            supportsRoot = supportsRoot,
+                            onPickFiles = onPickFiles,
+                            onOpenSettings = { page = AppPage.SETTINGS },
+                            onBenchmark = if (desktopMode) onBenchmark else null,
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
             }
         }
     }

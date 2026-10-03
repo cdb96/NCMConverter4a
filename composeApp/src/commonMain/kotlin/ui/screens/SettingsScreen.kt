@@ -9,10 +9,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
@@ -27,6 +32,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.cdb96.ncmconverter4a.service.ScanDirectory
+import com.cdb96.ncmconverter4a.service.ScanFormat
 import kotlin.math.roundToInt
 
 @Composable
@@ -44,6 +51,10 @@ fun SettingsScreen(
     onSelectOutputDirectory: (() -> Unit)? = null,
     outputDirectoryBusy: Boolean = false,
     outputDirectoryError: String? = null,
+    scanDirectories: Map<ScanFormat, ScanDirectory>? = null,
+    scanDirectoryBusy: Boolean = false,
+    onSelectScanDirectory: (ScanFormat) -> Unit = {},
+    onClearScanDirectory: (ScanFormat) -> Unit = {},
 ) {
     val conversionSettings: @Composable () -> Unit = {
         SettingsCard(
@@ -69,6 +80,14 @@ fun SettingsScreen(
                     busy = outputDirectoryBusy,
                     error = outputDirectoryError,
                     onSelect = onSelect,
+                )
+            }
+            scanDirectories?.let { directories ->
+                ScanDirectorySettingsCard(
+                    directories = directories,
+                    enabled = state.enabled && !scanDirectoryBusy,
+                    onSelect = onSelectScanDirectory,
+                    onClear = onClearScanDirectory,
                 )
             }
             KggDatabaseCard(
@@ -172,6 +191,37 @@ private fun OutputDirectoryCard(
         SettingError(error)
         OutlinedButton(onClick = onSelect, enabled = enabled) {
             Text(if (busy) "正在保存…" else "更换文件夹")
+        }
+    }
+}
+
+@Composable
+private fun ScanDirectorySettingsCard(
+    directories: Map<ScanFormat, ScanDirectory>,
+    enabled: Boolean,
+    onSelect: (ScanFormat) -> Unit,
+    onClear: (ScanFormat) -> Unit,
+) {
+    SettingsSection("扫描目录") {
+        SettingDescription("为各格式选择文件夹，然后在“扫描”页查找音乐文件。")
+        ScanFormat.entries.forEachIndexed { index, format ->
+            if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            val directory = directories[format] ?: ScanDirectory()
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${format.name} 目录", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    if (directory.configured) {
+                        IconButton(onClick = { onClear(format) }, enabled = enabled) {
+                            Icon(Icons.Outlined.Close, "清除 ${format.name} 扫描目录", Modifier.size(18.dp))
+                        }
+                    }
+                }
+                Text(directory.path.ifBlank { "待配置" }, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                OutlinedButton(onClick = { onSelect(format) }, enabled = enabled) {
+                    Text("${if (directory.configured) "更改" else "选择"} ${format.name} 目录")
+                }
+            }
         }
     }
 }

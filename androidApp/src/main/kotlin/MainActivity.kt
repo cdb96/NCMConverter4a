@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.cdb96.ncmconverter4a.service.BenchmarkService
 import com.cdb96.ncmconverter4a.service.FileConversionService
 import com.cdb96.ncmconverter4a.ui.BenchmarkDialog
+import com.cdb96.ncmconverter4a.ui.rememberAndroidDirectoryScan
 import com.cdb96.ncmconverter4a.ui.screens.ConversionUiState
 import com.cdb96.ncmconverter4a.ui.screens.MainScreen
 import com.cdb96.ncmconverter4a.ui.screens.SettingsUiState
@@ -62,6 +63,7 @@ class MainActivity : ComponentActivity() {
             var conversionState by remember { mutableStateOf(ConversionUiState()) }
             var settingsState by remember { mutableStateOf(SettingsUiState(threadCount = threadCount)) }
             var showBenchmark by remember { mutableStateOf(false) }
+            val directoryScan = rememberAndroidDirectoryScan(conversionState.isProcessing)
 
             fun startConversion(selectedUris: List<Uri>) {
                 if (selectedUris.isEmpty()) return
@@ -130,6 +132,10 @@ class MainActivity : ComponentActivity() {
                     onSelectKggDatabase = { dbPicker.launch(arrayOf("*/*")) },
                     onKggRootModeChange = { settingsState = settingsState.copy(kggRootMode = it) },
                     supportsRoot = true,
+                    scanController = directoryScan.controller,
+                    onSelectScanDirectory = directoryScan.selectDirectory,
+                    onScanDirectories = directoryScan.scan,
+                    onConvertScannedFiles = { sources -> startConversion(sources.map(Uri::parse)) },
                 )
 
                 if (showBenchmark) {
