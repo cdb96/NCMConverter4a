@@ -9,6 +9,7 @@ import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.cdb96.ncmconverter4a.converter.EncryptedFormat
 import com.cdb96.ncmconverter4a.converter.kgg.KggDecoder
+import com.cdb96.ncmconverter4a.converter.kgg.KggBatchKeys
 import com.cdb96.ncmconverter4a.converter.KGMConverter
 import com.cdb96.ncmconverter4a.converter.NCMConverter
 import com.cdb96.ncmconverter4a.converter.detectEncryptedFormat
@@ -52,6 +53,10 @@ class FileConversionService(private val context: Context) {
         val startTime = System.currentTimeMillis()
         val completedCount = AtomicInteger(0)
         val totalFiles = uris.size
+        val kggDecoder = KggDecoder(context)
+        val kggKeys = if (kggRootMode || kggDatabase != null) {
+            kggDecoder.createBatchKeys(kggDatabase, kggRootMode)
+        } else null
 
         if (duplicateConflictMitigation) {
             withContext(Dispatchers.IO) { scanExistingFiles() }
@@ -70,8 +75,8 @@ class FileConversionService(private val context: Context) {
                             rawWriteMode,
                             duplicateConflictMitigation,
                             fileName,
-                            kggDatabase,
-                            kggRootMode,
+                            kggDecoder,
+                            kggKeys,
                         )
                         FileConversionResult(
                             fileName = fileName,
@@ -110,8 +115,8 @@ class FileConversionService(private val context: Context) {
         rawWriteMode: Boolean,
         duplicateConflictMitigation: Boolean,
         fileName: String,
-        kggDatabase: Uri?,
-        kggRootMode: Boolean,
+        kggDecoder: KggDecoder,
+        kggKeys: KggBatchKeys?,
     ): Boolean = withFileInputStream(uri) { input ->
         input.mark(24)
         val header = ByteArray(24)
@@ -121,8 +126,8 @@ class FileConversionService(private val context: Context) {
         Log.i(TAG, "使用${format}解密器")
         when (format) {
             EncryptedFormat.KGG -> {
-                check(kggRootMode || kggDatabase != null) { "请先在设置中选择 KGG 数据库" }
-                KggDecoder(context).decryptToOutput(input, kggDatabase, kggRootMode) { format, write ->
+                check(kggKeys != null) { "请先在设置中选择 KGG 数据库" }
+                kggDecoder.decryptToOutput(input, kggKeys) { format, write ->
                     withFileOutputStream(format, FileNameUtils.removeLastExtension(fileName), duplicateConflictMitigation, write)
                 }
             }

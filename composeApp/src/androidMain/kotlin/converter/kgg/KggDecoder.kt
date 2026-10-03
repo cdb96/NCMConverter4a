@@ -5,6 +5,7 @@ import com.cdb96.ncmconverter4a.io.BinaryInput
 import android.content.Context
 import android.net.Uri
 import com.cdb96.ncmconverter4a.converter.KGMConverter
+import com.cdb96.ncmconverter4a.converter.kgg.root.RootDatabaseReader
 import com.cdb96.ncmconverter4a.io.readChunk
 import com.cdb96.ncmconverter4a.io.readFully
 import com.cdb96.ncmconverter4a.io.skipFully
@@ -13,18 +14,25 @@ import java.io.InputStream
 
 class KggDecoder(context: Context) {
     private val contentResolver = context.contentResolver
+    private val rootDatabaseReader by lazy { RootDatabaseReader(context.cacheDir) }
 
     suspend fun decryptToOutput(
         input: BufferedInputStream,
         dbFileUri: Uri?,
         isRooted: Boolean,
         output: suspend (String, (java.io.OutputStream) -> Unit) -> Boolean,
+    ): Boolean = decryptToOutput(input, createBatchKeys(dbFileUri, isRooted), output)
+
+    internal suspend fun decryptToOutput(
+        input: BufferedInputStream,
+        keys: KggBatchKeys,
+        output: suspend (String, (java.io.OutputStream) -> Unit) -> Boolean,
     ): Boolean {
         val bytes = ByteArray(KGMConverter.HEADER_LENGTH)
         BinaryInput(input::read).readFully(bytes)
         val header = parseKgmHeader(bytes)
         require(header.cryptoVersion == 5u) { "不是 KGG 文件" }
-        val cipher = getCipher(header.audioHash, dbFileUri, isRooted)
+        val cipher = QmcCipher.createCipher(keys.getKey(header.audioHash))
         BinaryInput(input::read).skipFully(header.audioOffset.toLong() - bytes.size)
         val format = detectAudioFormat(input, cipher)
         return output(format) { stream ->
@@ -44,35 +52,25 @@ class KggDecoder(context: Context) {
         audioHash: String,
         dbFileUri: Uri?,
         isRooted: Boolean
-    ): QmcCipher.QmcStreamCipher {
-        val key = if (isRooted) {
-            getKeyAsRoot(audioHash)
+    ): QmcCipher.QmcStreamCipher = QmcCipher.createCipher(createBatchKeys(dbFileUri, isRooted).getKey(audioHash))
+
+    internal fun createBatchKeys(dbFileUri: Uri?, isRooted: Boolean): KggBatchKeys = KggBatchKeys {
+        val bytes = if (isRooted) {
+            rootDatabaseReader.read()
         } else {
-            val uri = dbFileUri ?: throw IllegalStateException("请先选择mmkv数据库文件")
+            val uri = dbFileUri ?: throw IllegalStateException("请先在设置中选择 KGG 数据库")
             val dbInput = contentResolver.openInputStream(uri)
                 ?: throw IllegalStateException("无法打开mmkv数据库文件，Uri: $uri")
-            dbInput.use { getKey(it, audioHash) }
+            dbInput.use { it.readBytes() }
         }
-        return QmcCipher.createCipher(key)
+        val parser = MMKVParser(bytes)
+        KggKeyDatabase(parser::getBytes)
     }
 
     fun getKey(inputStream: InputStream, audioHash: String): ByteArray {
         val mmkvParser = MMKVParser(inputStream.readBytes())
         val eKeyBytes = mmkvParser.getBytes(audioHash) ?: throw IllegalStateException("ekey解析失败")
         return deriveKey(eKeyBytes)
-    }
-
-    private fun getKeyAsRoot(audioHash: String): ByteArray {
-        val mmkvPath = "/data/data/com.kugou.android/files/mmkv/mggkey_multi_process"
-        val processBuilder = ProcessBuilder("su", "-c", "cat \"$mmkvPath\"")
-        processBuilder.redirectErrorStream(true)
-        val process = processBuilder.start()
-        val key = process.inputStream.use { getKey(it, audioHash) }
-        val exitCode = process.waitFor()
-        if (exitCode != 0) {
-            throw IllegalStateException("Root获取密钥失败，请确认已授予Root权限")
-        }
-        return key
     }
 
     private fun detectAudioFormat(

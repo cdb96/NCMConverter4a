@@ -4,6 +4,7 @@ import com.cdb96.ncmconverter4a.converter.EncryptedFormat
 import com.cdb96.ncmconverter4a.converter.KGMConverter
 import com.cdb96.ncmconverter4a.converter.NCMConverter
 import com.cdb96.ncmconverter4a.converter.detectEncryptedFormat
+import com.cdb96.ncmconverter4a.converter.kgg.KggBatchKeys
 import com.cdb96.ncmconverter4a.io.readAtMost
 import com.cdb96.ncmconverter4a.io.BinaryInput
 import com.cdb96.ncmconverter4a.io.BinaryOutput
@@ -51,6 +52,10 @@ class DesktopConversionFacade(private val outputDirectory: File = defaultDesktop
         val workerCount = minOf(filePaths.size.coerceAtLeast(1), threadCount.coerceAtLeast(1))
         val bufferSize = desktopBufferSize(filePaths.size, threadCount)
         val dispatcher = Executors.newFixedThreadPool(workerCount).asCoroutineDispatcher()
+        val kggDecrypt = DesktopKggDecrypt(outputDirectory)
+        val kggKeys = kggDatabase?.let { path ->
+            KggBatchKeys { loadDesktopKggDatabase(path) }
+        }
 
         try {
             val results = supervisorScope {
@@ -58,7 +63,7 @@ class DesktopConversionFacade(private val outputDirectory: File = defaultDesktop
                     async(dispatcher) {
                         val fileName = sourceNames[index]
                         val result = try {
-                            convertFile(path, rawWriteMode, duplicateConflictMitigation, bufferSize, kggDatabase)
+                            convertFile(path, rawWriteMode, duplicateConflictMitigation, bufferSize, kggDecrypt, kggKeys)
                             FileConversionResult(fileName = fileName, success = true)
                         } catch (cancelled: CancellationException) {
                             throw cancelled
@@ -100,7 +105,8 @@ class DesktopConversionFacade(private val outputDirectory: File = defaultDesktop
         rawWriteMode: Boolean,
         duplicateConflictMitigation: Boolean,
         bufferSize: Int,
-        kggDatabase: String?,
+        kggDecrypt: DesktopKggDecrypt,
+        kggKeys: KggBatchKeys?,
     ) {
         val file = File(path)
         require(file.isFile) { "输入文件不存在: $path" }
@@ -113,8 +119,8 @@ class DesktopConversionFacade(private val outputDirectory: File = defaultDesktop
             val format = detectEncryptedFormat(header.copyOf(size))
             when (format) {
                 EncryptedFormat.KGG -> {
-                    require(kggDatabase != null) { "请先在设置中选择 KGG 数据库" }
-                    DesktopKggDecrypt(outputDirectory).decrypt(path, kggDatabase, duplicateConflictMitigation)
+                    require(kggKeys != null) { "请先在设置中选择 KGG 数据库" }
+                    kggDecrypt.decrypt(path, duplicateConflictMitigation, kggKeys)
                 }
                 EncryptedFormat.KGM -> convertKGM(
                     input,

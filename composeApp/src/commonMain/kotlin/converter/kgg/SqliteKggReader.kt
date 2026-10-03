@@ -51,16 +51,11 @@ object SqliteKggReader {
         val colKey = schema.colKey.let { if (it >= 0) it else 1 }
 
         dump.dumpCells = true
-        val rows = collectRows(db, pageNum = schema.rootPage, headerOffset = 0, dump = dump)
-        log.i("data rows: ${rows.size} (colId=$colId colKey=$colKey)")
-        rows.take(3).forEachIndexed { i, row ->
-            log.d("  row[$i] cols=${row.size}: ${row.mapIndexed { ci, v -> "[$ci]=${v?.take(48)}" }}")
-        }
-
         val mapping = LinkedHashMap<String, String>()
-        for (row in rows) {
-            val id = row.getOrNull(colId)?.takeIf { it.isNotEmpty() } ?: continue
-            val key = row.getOrNull(colKey) ?: continue
+        // Decode only the two required columns and consume each row immediately.
+        traverseBTree(db, schema.rootPage, 0, dump, HashSet(), setOf(colId, colKey)) row@ { row ->
+            val id = row.getOrNull(colId)?.takeIf { it.isNotEmpty() } ?: return@row
+            val key = row.getOrNull(colKey) ?: return@row
             mapping[id] = key
         }
         log.i("mapping: ${mapping.size} entries")
@@ -92,21 +87,10 @@ object SqliteKggReader {
         //   3) binary: 16 字节二进制 MD5
         val typedNeedle = ByteArray(1 + needle.size) { if (it == 0) 0x4D else needle[it - 1] }
         val passes = mutableListOf(
-            MatchPattern(typedNeedle, hashOffset = 1, hashLen = needle.size, label = "typed(0x4D+hash)"),
-            MatchPattern(needle, hashOffset = 0, hashLen = needle.size, label = "string"),
+            MatchPattern(typedNeedle, hashOffset = 1, hashLen = needle.size),
+            MatchPattern(needle, hashOffset = 0, hashLen = needle.size),
         )
-        if (binNeedle != null) passes.add(MatchPattern(binNeedle, 0, binNeedle.size, "binary"))
-
-        // 统计并记录各模式的出现次数
-        for (p in passes) {
-            log.i("${p.label} occurrences: ${countOccurrences(dbBytes, p.needle)}")
-            val first = indexOf(dbBytes, p.needle, 0)
-            if (first >= 0) {
-                val s = maxOf(0, first - 48)
-                val e = minOf(dbBytes.size, first + p.needle.size + 48)
-                log.d("first ${p.label} at $first, context hex: ${dbBytes.copyOfRange(s, e).joinToString(" ") { hexByte(it) }}")
-            }
-        }
+        if (binNeedle != null) passes.add(MatchPattern(binNeedle, 0, binNeedle.size))
 
         // 依次扫描各模式, 首个校验通过的 record 即返回
         for (p in passes) {
@@ -246,7 +230,8 @@ object SqliteKggReader {
 
     private fun traverseBTree(
         db: Db, pageNum: Int, headerOffset: Int,
-        dump: DebugDump, visited: HashSet<Int>, onRow: (List<String?>) -> Unit
+        dump: DebugDump, visited: HashSet<Int>, columns: Set<Int>? = null,
+        onRow: (List<String?>) -> Unit
     ) {
         if (!visited.add(pageNum)) return  // 防止环路导致无限递归
         require(pageNum in 1..db.maxPage) {
@@ -280,7 +265,7 @@ object SqliteKggReader {
                 for (i in 0 until numCells) {
                     val co = db.u16(cellPtrArrayStart + i * 2)
                     if (co < contentStart || co >= db.pageSize) continue
-                    val record = readCellRecord(db, db.pageOffset(pageNum) + co, dump)
+                    val record = readCellRecord(db, db.pageOffset(pageNum) + co, dump, columns)
                     if (record != null) onRow(record)
                 }
             }
@@ -297,7 +282,7 @@ object SqliteKggReader {
                 val rightChild = db.u32(hdrBase + 8)
                 if (rightChild in 1..db.maxPage) children.add(rightChild)
                 for (child in children) {
-                    traverseBTree(db, child, 0, dump, visited, onRow)
+                    traverseBTree(db, child, 0, dump, visited, columns, onRow)
                 }
             }
         }
@@ -305,7 +290,7 @@ object SqliteKggReader {
 
     // ── Record 解码 ─────────────────────────────────────────────────────
 
-    private fun readCellRecord(db: Db, cellStart: Int, dump: DebugDump): List<String?>? {
+    private fun readCellRecord(db: Db, cellStart: Int, dump: DebugDump, columns: Set<Int>?): List<String?>? {
         val data = db.data
         val usableSize = db.usableSize
         val maxLocal = usableSize - 35
@@ -331,6 +316,7 @@ object SqliteKggReader {
         if (recordSize <= 0 || recordSize > minOf(db.data.size, MAX_PAYLOAD)) return null
 
         val dumpCell = dump.nextCell()
+        var payloadOffset = 0
         val payload = if (recordSize > maxLocal) {
             // 溢出: local 部分留在本页, 其余在溢出页链上; local 按真实 recordSize 计算
             val minLocal = ((usableSize - 12) * 32 / 255) - 23
@@ -349,12 +335,18 @@ object SqliteKggReader {
                 log.d("  rawCell[cellStart..+$rawN] hex: ${data.copyOfRange(cellStart, cellStart + rawN).joinToString(" ") { hexByte(it) }}")
             }
             val copyLen = minOf(recordSize, maxOf(0, data.size - recStart))
-            ByteArray(recordSize).also { out -> data.copyInto(out, 0, recStart, recStart + copyLen) }
+            if (copyLen == recordSize) {
+                // A complete local record can be decoded directly from the snapshot.
+                payloadOffset = recStart
+                data
+            } else {
+                ByteArray(recordSize).also { out -> data.copyInto(out, 0, recStart, recStart + copyLen) }
+            }
         }
-        val record = decodeRecord(payload, 0, recordSize)
+        val record = decodeRecord(payload, payloadOffset, recordSize, columns)
         if (dumpCell) {
-            val n = minOf(128, payload.size)
-            log.d("  payload[0..$n] hex: ${payload.copyOfRange(0, n).joinToString(" ") { hexByte(it) }}")
+            val n = minOf(128, recordSize)
+            log.d("  payload[0..$n] hex: ${payload.copyOfRange(payloadOffset, payloadOffset + n).joinToString(" ") { hexByte(it) }}")
             log.d("  decoded cols=${record.size}: ${record.mapIndexed { i, v -> "[$i]=${v?.take(40)}" }}")
         }
         return record
@@ -417,15 +409,23 @@ object SqliteKggReader {
         return hdrLen to serialTypes
     }
 
-    private fun decodeRecord(data: ByteArray, recordStart: Int, recordLen: Int): List<String?> {
+    private fun decodeRecord(data: ByteArray, recordStart: Int, recordLen: Int, columns: Set<Int>?): List<String?> {
         val (hdrLen, serialTypes) = parseRecordHeader(data, recordStart, recordLen)
         val bodyStart = recordStart + hdrLen
         val bodyEnd = minOf(recordStart + recordLen, data.size)
         var bodyPos = bodyStart
         val row = mutableListOf<String?>()
 
-        for (st in serialTypes) {
+        for ((column, st) in serialTypes.withIndex()) {
             if (bodyPos > bodyEnd) break
+            if (columns != null && column !in columns) {
+                if (st == 10L || st == 11L) break
+                val size = serialTypeSize(st)
+                if (bodyPos + size > bodyEnd) break
+                row.add(null)
+                bodyPos += size
+                continue
+            }
             when {
                 // NULL
                 st == 0L -> row.add(null)
@@ -501,20 +501,7 @@ object SqliteKggReader {
         val needle: ByteArray,
         val hashOffset: Int,
         val hashLen: Int,
-        val label: String,
     )
-
-    private fun countOccurrences(data: ByteArray, needle: ByteArray): Int {
-        var count = 0
-        var from = 0
-        while (true) {
-            val i = indexOf(data, needle, from)
-            if (i < 0) break
-            count++
-            from = i + 1
-        }
-        return count
-    }
 
     private fun hexToBytes(hex: String): ByteArray? {
         if (hex.length % 2 != 0) return null

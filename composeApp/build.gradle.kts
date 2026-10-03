@@ -69,6 +69,11 @@ kotlin {
                 implementation(kotlin("test"))
             }
         }
+        getByName("desktopTest") {
+            // Exercise the Android Root subprocess reader on the JVM without
+            // Android stubs; this directory contains only platform-neutral I/O.
+            kotlin.srcDir("src/androidMain/kotlin/converter/kgg/root")
+        }
         getByName("androidMain") {
             dependencies {
                 implementation(libs.androidx.activity.compose)

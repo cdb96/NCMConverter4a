@@ -1,15 +1,12 @@
 package com.cdb96.ncmconverter4a
 
 import com.cdb96.ncmconverter4a.io.BinaryInput
-import com.cdb96.ncmconverter4a.converter.kgg.KggDbDecryptor
-import com.cdb96.ncmconverter4a.converter.kgg.MMKVParser
+import com.cdb96.ncmconverter4a.converter.kgg.KggBatchKeys
 import com.cdb96.ncmconverter4a.converter.kgg.QmcCipher
-import com.cdb96.ncmconverter4a.converter.kgg.deriveKey
 import com.cdb96.ncmconverter4a.converter.kgg.parseKgmHeader
 import com.cdb96.ncmconverter4a.io.readChunk
 import com.cdb96.ncmconverter4a.io.readFully
 import com.cdb96.ncmconverter4a.io.skipFully
-import com.cdb96.ncmconverter4a.platform.Logger
 import com.cdb96.ncmconverter4a.util.FileNameUtils
 import java.io.BufferedInputStream
 import java.io.File
@@ -17,10 +14,17 @@ import java.io.FileInputStream
 
 /** Desktop implementation of KGG decryption using bounded stream buffers. */
 class DesktopKggDecrypt(outputDirectory: File = defaultDesktopOutputDirectory()) {
-    private val log = Logger("DesktopKggDecrypt")
     private val outputAllocator = DesktopOutputAllocator(outputDirectory)
 
     fun decrypt(audioFilePath: String, dbFilePath: String?, mitigateConflicts: Boolean = true) {
+        val keys = KggBatchKeys {
+            val path = dbFilePath ?: error("桌面版本需要选择DB文件")
+            loadDesktopKggDatabase(path)
+        }
+        decrypt(audioFilePath, mitigateConflicts, keys)
+    }
+
+    internal fun decrypt(audioFilePath: String, mitigateConflicts: Boolean, keys: KggBatchKeys) {
         val audioFile = File(audioFilePath)
         require(audioFile.isFile) { "音频文件不存在: $audioFilePath" }
 
@@ -32,13 +36,7 @@ class DesktopKggDecrypt(outputDirectory: File = defaultDesktopOutputDirectory())
                 "不是KGG文件 (cryptoVersion=${header.cryptoVersion})"
             }
 
-            val key = if (dbFilePath != null) {
-                val dbFile = File(dbFilePath)
-                require(dbFile.isFile) { "数据库文件不存在: $dbFilePath" }
-                getKeyFromFile(dbFile, header.audioHash)
-            } else {
-                error("桌面版本需要选择DB文件")
-            }
+            val key = keys.getKey(header.audioHash)
 
             val cipher = QmcCipher.createCipher(key)
             val audioOffset = header.audioOffset.toLong()
@@ -68,23 +66,6 @@ class DesktopKggDecrypt(outputDirectory: File = defaultDesktopOutputDirectory())
                 }
             }
         }
-    }
-
-    private fun getKeyFromFile(dbFile: File, audioHash: String): ByteArray {
-        val dbBytes = dbFile.readBytes()
-        val isSqlite = KggDbDecryptor.isSqliteDatabase(dbBytes)
-        log.i("dbFile=${dbFile.name} size=${dbBytes.size} isSqliteDatabase=$isSqlite")
-        val eKeyBytes = if (isSqlite) {
-            // Decrypted in place: the file is held in memory exactly once.
-            val decrypted = KggDbDecryptor.decryptDatabase(dbBytes)
-            val mapping = KggDbDecryptor.extractKeyMapping(decrypted)
-            log.i("map size=${mapping.size}, audioHash in map: ${mapping.containsKey(audioHash)}")
-            mapping[audioHash]?.encodeToByteArray()
-                ?: KggDbDecryptor.extractEkey(decrypted, audioHash)
-        } else {
-            MMKVParser(dbBytes).getBytes(audioHash)
-        } ?: throw IllegalStateException("ekey解析失败: hash=$audioHash")
-        return deriveKey(eKeyBytes)
     }
 
     private fun detectAudioFormat(
