@@ -32,5 +32,11 @@
     public static void main(...);
 }
 
+# Native Image trace helpers compile separately against the shrunk release jar.
+# Preserve the Java-facing picker overloads and singleton field they call.
+-keep class com.cdb96.ncmconverter4a.DesktopFilePicker {
+    public *;
+}
+
 -keep class com.cdb96.ncmconverter4a.jni.RC4Decrypt { *; }
 -keep class com.cdb96.ncmconverter4a.jni.KGMDecrypt { *; }

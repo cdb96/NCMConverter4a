@@ -10,6 +10,7 @@ import java.io.File
  * Swing components must be created and shown on EDT.
  */
 object DesktopFilePicker {
+    @JvmOverloads
     fun pickDirectory(currentDirectory: String, title: String = "选择输出文件夹"): String? {
         check(SwingUtilities.isEventDispatchThread()) {
             "DesktopFilePicker.pickDirectory must be called on the Swing EDT"
