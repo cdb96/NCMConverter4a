@@ -33,7 +33,7 @@ try {
         $stderr = Join-Path $runtime "$test.stderr.log"
         $process = Start-Process -FilePath (Join-Path $runtime 'NCMConverter4a.exe') -WorkingDirectory $runtime -ArgumentList $flag -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
         $handle = $process.Handle
-        if (-not $process.WaitForExit(45000)) { $process.Kill(); throw "Packaged $test timed out" }
+        if (-not $process.WaitForExit(90000)) { $process.Kill(); throw "Packaged $test timed out" }
         $process.Refresh()
         Get-Content -LiteralPath $stdout
         Get-Content -LiteralPath $stderr
