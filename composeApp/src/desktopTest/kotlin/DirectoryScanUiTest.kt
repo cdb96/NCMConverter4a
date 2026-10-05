@@ -112,7 +112,7 @@ class DirectoryScanUiTest {
         var requestedFormats: Set<ScanFormat>? = null
         var requestedDirectory: ScanFormat? = null
         var convertedSources: List<String>? = null
-        val scene = ImageComposeScene(width = 390, height = 1000)
+        val scene = ImageComposeScene(width = 390, height = 780)
         var frame = 0L
         fun render() { frame += 16000000; scene.render(frame).close() }
         fun nodes(): List<SemanticsNode> {
@@ -136,7 +136,10 @@ class DirectoryScanUiTest {
                     MainScreen(ConversionUiState(), SettingsUiState(),
                         onRawWriteModeChange = {}, onDuplicateConflictMitigationChange = {}, onThreadCountChange = {},
                         onPickFiles = {}, onBenchmark = {}, onSelectKggDatabase = {}, scanController = controller,
-                        onSelectScanDirectory = { requestedDirectory = it },
+                        onSelectScanDirectory = {
+                            requestedDirectory = it
+                            controller.setDirectory(it, ScanDirectory("/sdcard/Download/酷狗音乐/${it.name}", "content://test/tree/${it.name}"))
+                        },
                         onScanDirectories = { requestedFormats = it }, onConvertScannedFiles = { convertedSources = it })
                 }
             }
@@ -147,6 +150,18 @@ class DirectoryScanUiTest {
             assertTrue(nodes().any { it.config.getOrNull(SemanticsProperties.Text)?.any { text -> text.text == ANDROID_NCM_SCAN_DIRECTORY } == true })
             click("选择 KGG 目录")
             assertEquals(ScanFormat.KGG, requestedDirectory)
+            assertEquals("/sdcard/Download/酷狗音乐/KGG", controller.state.directories[ScanFormat.KGG]?.path)
+            repeat(30) { render() }
+            val screenshot = File("build/scan-directory-dialog-android.png")
+            screenshot.parentFile.mkdirs()
+            scene.render(frame).use { image ->
+                image.encodeToData(EncodedImageFormat.PNG)!!.use { screenshot.writeBytes(it.bytes) }
+            }
+            click("完成")
+            assertFalse(nodes().any { it.config.getOrNull(SemanticsProperties.Text)?.any { text -> text.text == "NCM 目录" } == true })
+            assertTrue(nodes().any { it.config.getOrNull(SemanticsProperties.Text)?.any { text -> text.text == "查找音乐文件" } == true })
+            click("设置", Role.Tab)
+            assertFalse(nodes().any { it.config.getOrNull(SemanticsProperties.Text)?.any { text -> text.text == "扫描目录" || text.text == "配置扫描目录" } == true })
             click("扫描", Role.Tab)
             click("扫描全部")
             assertEquals(ScanFormat.entries.toSet(), requestedFormats)

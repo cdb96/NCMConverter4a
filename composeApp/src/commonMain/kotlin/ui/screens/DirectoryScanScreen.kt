@@ -23,7 +23,7 @@ import com.cdb96.ncmconverter4a.service.ScannedAudioFile
 internal fun DirectoryScanScreen(
     state: DirectoryScanUiState,
     enabled: Boolean,
-    onOpenSettings: () -> Unit,
+    onConfigureDirectories: () -> Unit,
     onScan: (Set<ScanFormat>) -> Unit,
     onCancel: () -> Unit,
     onRecursiveChange: (Boolean) -> Unit,
@@ -45,7 +45,7 @@ internal fun DirectoryScanScreen(
             }
         }
         item {
-            TextButton(onClick = onOpenSettings) { Text("配置扫描目录") }
+            TextButton(onClick = onConfigureDirectories) { Text("配置扫描目录") }
         }
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

@@ -146,10 +146,8 @@ fun MainScreen(
     val settingsScroll = rememberScrollState()
     val enabled = settingsState.enabled && !conversionState.isProcessing
     val configureScanDirectories: () -> Unit = {
-        if (desktopMode) {
-            scanController?.clearMessage()
-            showScanDirectoryDialog = true
-        } else page = AppPage.SETTINGS
+        scanController?.clearMessage()
+        showScanDirectoryDialog = true
     }
     Scaffold(
         topBar = {
@@ -187,7 +185,7 @@ fun MainScreen(
                 Box(Modifier.widthIn(max = 1120.dp).fillMaxSize()) {
                     DirectoryScanScreen(
                         state = scanController.state, enabled = enabled,
-                        onOpenSettings = configureScanDirectories,
+                        onConfigureDirectories = configureScanDirectories,
                         onScan = onScanDirectories, onCancel = scanController::cancel,
                         onRecursiveChange = scanController::setRecursive, onSelectFile = scanController::selectFile,
                         onSelectAll = scanController::selectAll,
@@ -223,10 +221,6 @@ fun MainScreen(
                             onSelectOutputDirectory = onSelectOutputDirectory,
                             outputDirectoryBusy = outputDirectoryBusy,
                             outputDirectoryError = outputDirectoryError,
-                            scanDirectories = if (desktopMode) null else scanController?.state?.directories,
-                            scanDirectoryBusy = scanController?.state?.isScanning == true,
-                            onSelectScanDirectory = onSelectScanDirectory,
-                            onClearScanDirectory = { scanController?.setDirectory(it, ScanDirectory()) },
                         )
                     } else {
                         ConversionDashboard(

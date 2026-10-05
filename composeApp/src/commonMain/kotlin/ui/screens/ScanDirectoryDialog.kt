@@ -30,6 +30,7 @@ internal fun ScanDirectoryDialog(
 ) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         BoxWithConstraints(Modifier.padding(24.dp)) {
+            val compact = maxWidth < 480.dp
             Surface(
                 modifier = Modifier.widthIn(max = 680.dp).fillMaxWidth().heightIn(max = maxHeight),
                 shape = RoundedCornerShape(24.dp),
@@ -62,16 +63,18 @@ internal fun ScanDirectoryDialog(
                                             Icon(Icons.Outlined.Close, "清除 ${format.name} 扫描目录", Modifier.size(18.dp))
                                         }
                                     }
-                                    OutlinedButton(onClick = { onSelect(format) }, enabled = enabled) {
-                                        Icon(Icons.Outlined.Folder, null, Modifier.size(18.dp))
-                                        Spacer(Modifier.width(8.dp))
-                                        Text("${if (directory.configured) "更改" else "选择"} ${format.name} 目录")
+                                    if (!compact) {
+                                        SelectScanDirectoryButton(format, directory.configured, enabled, onSelect)
                                     }
                                 }
                                 SelectionContainer {
                                     Text(directory.path.ifBlank { "尚未选择文件夹" },
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                if (compact) {
+                                    SelectScanDirectoryButton(format, directory.configured, enabled, onSelect,
+                                        modifier = Modifier.fillMaxWidth())
                                 }
                             }
                         }
@@ -86,5 +89,20 @@ internal fun ScanDirectoryDialog(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SelectScanDirectoryButton(
+    format: ScanFormat,
+    configured: Boolean,
+    enabled: Boolean,
+    onSelect: (ScanFormat) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedButton(onClick = { onSelect(format) }, enabled = enabled, modifier = modifier) {
+        Icon(Icons.Outlined.Folder, null, Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text("${if (configured) "更改" else "选择"} ${format.name} 目录")
     }
 }
