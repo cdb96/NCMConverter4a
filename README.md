@@ -21,9 +21,11 @@ PC 端默认启动界面：
 
 PS:上述方法均支持批量选择文件
 
-3.在“设置 → 扫描目录”中配置 NCM、KGG、KGM 各自的目录，再到“扫描”页扫描子目录、勾选结果并批量转换。目录选择会在重启后保留。
+3.配置 NCM、KGG、KGM 各自的扫描目录，再到“扫描”页扫描子目录、勾选结果并批量转换。目录选择会在重启后保留。
 
-Android 的 NCM 默认目录为 `/sdcard/Download/netease/cloudmusic/Music`，首次扫描时在系统目录选择器中授权该文件夹。KGG 和 KGM 暂无默认目录，需要自行选择。扫描按文件扩展名匹配，支持大小写。
+PC 端在“扫描”页点击“配置扫描目录”，在弹窗中选择或清除各格式的文件夹，修改后自动保存。Android 端在“设置 → 扫描目录”中配置文件夹。
+
+Android 的 NCM 默认目录为 `/sdcard/Download/netease/cloudmusic/Music`，首次扫描时在系统目录选择器中授权该文件夹。KGG 和 KGM 暂无默认目录，需要自行选择。扫描支持 `.ncm`、`.kgg`、`.kgg.flac`、`.kgm`、`.kgm.flac` 后缀，忽略大小写。
 
 NCM 文件可解密为 MP3、FLAC 或 M4A。M4A 会保留原有的 MP4 容器和已有标签，不会从 NCM 头部补写标签。
 

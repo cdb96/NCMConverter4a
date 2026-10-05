@@ -52,6 +52,7 @@ class DirectoryScanController(
 
     fun setRecursive(value: Boolean) { if (!state.isScanning) state = state.copy(recursive = value) }
     fun showMessage(message: String) { state = state.copy(message = message) }
+    fun clearMessage() { state = state.copy(message = null) }
     fun selectFile(id: String, selected: Boolean) {
         if (!state.isScanning && state.files.any { it.id == id }) {
             state = state.copy(selectedIds = if (selected) state.selectedIds + id else state.selectedIds - id)

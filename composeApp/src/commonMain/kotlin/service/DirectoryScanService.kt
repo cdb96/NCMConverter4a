@@ -5,12 +5,14 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlin.time.TimeSource
 
-enum class ScanFormat {
-    NCM, KGG, KGM;
+enum class ScanFormat(private vararg val extensions: String) {
+    NCM("ncm"), KGG("kgg", "kgg.flac"), KGM("kgm", "kgm.flac");
 
     companion object {
         fun fromFileName(name: String): ScanFormat? =
-            entries.firstOrNull { name.substringAfterLast('.', "").equals(it.name, ignoreCase = true) }
+            entries.firstOrNull { format ->
+                format.extensions.any { name.endsWith(".$it", ignoreCase = true) }
+            }
     }
 }
 

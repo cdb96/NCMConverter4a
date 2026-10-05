@@ -141,9 +141,16 @@ fun MainScreen(
     onConvertScannedFiles: (List<String>) -> Unit = {},
 ) {
     var page by remember { mutableStateOf(AppPage.CONVERSION) }
+    var showScanDirectoryDialog by remember { mutableStateOf(false) }
     val conversionScroll = rememberScrollState()
     val settingsScroll = rememberScrollState()
     val enabled = settingsState.enabled && !conversionState.isProcessing
+    val configureScanDirectories: () -> Unit = {
+        if (desktopMode) {
+            scanController?.clearMessage()
+            showScanDirectoryDialog = true
+        } else page = AppPage.SETTINGS
+    }
     Scaffold(
         topBar = {
             if (!desktopMode) TopAppBar(
@@ -180,7 +187,7 @@ fun MainScreen(
                 Box(Modifier.widthIn(max = 1120.dp).fillMaxSize()) {
                     DirectoryScanScreen(
                         state = scanController.state, enabled = enabled,
-                        onOpenSettings = { page = AppPage.SETTINGS },
+                        onOpenSettings = configureScanDirectories,
                         onScan = onScanDirectories, onCancel = scanController::cancel,
                         onRecursiveChange = scanController::setRecursive, onSelectFile = scanController::selectFile,
                         onSelectAll = scanController::selectAll,
@@ -216,7 +223,7 @@ fun MainScreen(
                             onSelectOutputDirectory = onSelectOutputDirectory,
                             outputDirectoryBusy = outputDirectoryBusy,
                             outputDirectoryError = outputDirectoryError,
-                            scanDirectories = scanController?.state?.directories,
+                            scanDirectories = if (desktopMode) null else scanController?.state?.directories,
                             scanDirectoryBusy = scanController?.state?.isScanning == true,
                             onSelectScanDirectory = onSelectScanDirectory,
                             onClearScanDirectory = { scanController?.setDirectory(it, ScanDirectory()) },
@@ -235,6 +242,16 @@ fun MainScreen(
                 }
             }
         }
+    }
+    if (showScanDirectoryDialog && scanController != null) {
+        ScanDirectoryDialog(
+            directories = scanController.state.directories,
+            enabled = enabled && !scanController.state.isScanning,
+            message = scanController.state.message,
+            onSelect = onSelectScanDirectory,
+            onClear = { scanController.setDirectory(it, ScanDirectory()) },
+            onDismiss = { showScanDirectoryDialog = false },
+        )
     }
 }
 

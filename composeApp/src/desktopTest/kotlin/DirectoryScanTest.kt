@@ -24,9 +24,11 @@ class DirectoryScanTest {
             File(root, "One.NCM").writeText("one")
             File(root, "Two.kGg").writeText("two")
             File(root, "Three.KGM").writeText("three")
+            File(root, "无损.kGg.FlAc").writeText("kgg lossless")
             File(root, "ignored.ncm.bak").writeText("ignored")
             val child = File(root, "中文/目录.ncm").apply { mkdirs() }
             File(child, "歌曲.ncm").writeText("nested")
+            File(child, "歌曲.KgM.fLaC").writeText("kgm lossless")
             val directories = ScanFormat.entries.associateWith { ScanDirectory(root.path) }
             val calls = mutableListOf<String>()
             val delegate = DesktopDirectoryBrowser()
@@ -39,13 +41,34 @@ class DirectoryScanTest {
             var visited = 0
             var found = 0
             val result = DirectoryScanService(browser).scan(directories, true) { count, files -> visited = count; found = files }
-            assertEquals(setOf("One.NCM", "Two.kGg", "Three.KGM", "歌曲.ncm"), result.files.map { it.name }.toSet())
+            assertEquals(setOf("One.NCM", "Two.kGg", "Three.KGM", "歌曲.ncm", "无损.kGg.FlAc", "歌曲.KgM.fLaC"),
+                result.files.map { it.name }.toSet())
             assertEquals(3, calls.size)
             assertEquals(calls.size, calls.distinct().size)
             assertEquals(3, visited)
-            assertEquals(4, found)
+            assertEquals(6, found)
             assertTrue(result.warnings.isEmpty())
             assertEquals(2, result.files.count { it.format == ScanFormat.NCM })
+            assertEquals(2, result.files.count { it.format == ScanFormat.KGG })
+            assertEquals(2, result.files.count { it.format == ScanFormat.KGM })
+        }
+    }
+
+    @Test
+    fun compoundFlacSuffixesRespectRequestedFormatAndExcludePlainAudioAndBackups() = runBlocking {
+        withFiles { root ->
+            File(root, "song.kgg.flac").writeText("kgg")
+            File(root, "song.kgm.flac").writeText("kgm")
+            File(root, "plain.flac").writeText("plain audio")
+            File(root, "backup.kgg.flac.bak").writeText("backup")
+            File(root, "unsupported.ncm.flac").writeText("unsupported suffix")
+            val scanner = DirectoryScanService(DesktopDirectoryBrowser())
+            for (format in listOf(ScanFormat.KGG, ScanFormat.KGM)) {
+                val result = scanner.scan(mapOf(format to ScanDirectory(root.path)), false)
+                assertEquals(listOf("song.${format.name.lowercase()}.flac"), result.files.map { it.name })
+                assertEquals(format, result.files.single().format)
+                assertTrue(result.warnings.isEmpty())
+            }
         }
     }
 
