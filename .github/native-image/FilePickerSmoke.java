@@ -37,6 +37,11 @@ public final class FilePickerSmoke {
         AtomicBoolean inputStarted = new AtomicBoolean();
         AtomicBoolean inputFinished = new AtomicBoolean();
         boolean windows = System.getProperty("os.name").startsWith("Windows");
+        if (windows) {
+            // Pasting into a picker initializes WClipboard and its native
+            // callbacks. Inspect formats without changing clipboard contents.
+            Toolkit.getDefaultToolkit().getSystemClipboard().getAvailableDataFlavors();
+        }
         AWTEventListener wheelListener = event -> {
             if (event instanceof MouseWheelEvent) wheelReceived.set(true);
             if (event instanceof KeyEvent key && key.getKeyCode() == KeyEvent.VK_F8) {
@@ -64,9 +69,18 @@ public final class FilePickerSmoke {
                             if (windows && inputStarted.compareAndSet(false, true)) {
                                 window.setAlwaysOnTop(true);
                                 window.toFront();
+                                var dialogLocation = window.getLocationOnScreen();
+                                int titleX = dialogLocation.x + window.getWidth() / 2;
+                                int titleY = dialogLocation.y + 10;
                                 Thread input = new Thread(() -> {
                                     try {
                                         Robot robot = new Robot();
+                                        // A background launch cannot always
+                                        // take keyboard focus with toFront().
+                                        // Click the dialog title before typing.
+                                        robot.mouseMove(titleX, titleY);
+                                        robot.mousePress(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
+                                        robot.mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
                                         for (int attempt = 0; attempt < 8 &&
                                             !(keyPressed.get() && keyReleased.get()); attempt++) {
                                             robot.delay(500);

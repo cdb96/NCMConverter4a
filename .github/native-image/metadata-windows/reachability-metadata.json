@@ -11,6 +11,14 @@
       ]
     },
     {
+      "type": "sun.awt.windows.WClipboard",
+      "jniAccessible": true,
+      "methods": [
+        { "name": "lostSelectionOwnershipImpl", "parameterTypes": [] },
+        { "name": "handleContentsChanged", "parameterTypes": [] }
+      ]
+    },
+    {
       "type": "org.jetbrains.skiko.redrawer.Direct3DRedrawer",
       "jniAccessible": true,
       "methods": [
