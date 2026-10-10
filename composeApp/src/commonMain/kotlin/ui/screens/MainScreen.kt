@@ -437,9 +437,11 @@ fun StatChip(
         ) {
             Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Column {
-                Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = tint)
-                Text(label, style = MaterialTheme.typography.labelSmall, color = tint.copy(alpha = 0.7f))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+                    color = tint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(label, style = MaterialTheme.typography.labelSmall, color = tint.copy(alpha = 0.7f),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
