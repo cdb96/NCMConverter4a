@@ -20,6 +20,88 @@ import kotlin.test.assertTrue
 
 class RootDatabaseReaderTest {
     @Test
+    fun defaultReadUsesGlobalMountNamespace() = withFiles { source, cache ->
+        val bytes = ByteArray(64) { it.toByte() }
+        source.writeBytes(bytes)
+        val commands = mutableListOf<List<String>>()
+        val reader = RootDatabaseReader(cache) { arguments ->
+            commands += arguments
+            child("warning", source)
+        }
+        assertContentEquals(bytes, reader.read())
+        assertEquals(1, commands.size)
+        assertEquals(listOf("su", "-M", "-c"), commands.single().take(3))
+        assertTrue(cache.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun unsupportedMountMasterFallsBackWithoutMixingOptionErrorIntoDatabase() = withFiles { source, cache ->
+        val bytes = ByteArray(64) { (255 - it).toByte() }
+        source.writeBytes(bytes)
+        for (mode in listOf("unsupported-stdout", "unsupported-stderr")) {
+            val commands = mutableListOf<List<String>>()
+            val reader = RootDatabaseReader(cache) { arguments ->
+                commands += arguments
+                child(if ("-M" in arguments) mode else "warning", source)
+            }
+            assertContentEquals(bytes, reader.read())
+            assertEquals(2, commands.size)
+            assertEquals(listOf("su", "-c"), commands.last().take(2))
+            assertEquals(commands.first().last(), commands.last().last())
+            assertTrue(cache.listFiles().orEmpty().isEmpty())
+        }
+    }
+
+    @Test
+    fun deniedRootRequestDoesNotRetryWithoutMountMaster() = withFiles { source, cache ->
+        source.writeBytes(ByteArray(64))
+        var launches = 0
+        val reader = RootDatabaseReader(cache) {
+            launches++
+            child("denied", source)
+        }
+        val error = assertFailsWith<IllegalStateException> { reader.read() }
+        assertTrue(error.message.orEmpty().contains("Permission denied"))
+        assertEquals(1, launches)
+        assertTrue(cache.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun shellPrefersCurrentUserAndQuotesPathsWithSpacesAndApostrophes() = withFiles { source, cache ->
+        val bytes = ByteArray(64) { it.toByte() }
+        source.writeBytes(bytes)
+        otherUserDatabase(cache, "0").writeBytes(ByteArray(64) { 99 })
+        val reader = RootDatabaseReader(cache) { shell(it, cache) }
+        assertContentEquals(bytes, reader.read())
+        assertTrue(cache.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun shellFindsMainUserOrCloneWhenCurrentUserHasNoDatabase() {
+        for (user in listOf("0", "999")) withFiles { _, cache ->
+            val bytes = ByteArray(64) { (it * 17).toByte() }
+            otherUserDatabase(cache, user).writeBytes(bytes)
+            val reader = RootDatabaseReader(cache) { shell(it, cache) }
+            assertContentEquals(bytes, reader.read())
+            assertTrue(cache.listFiles().orEmpty().isEmpty())
+        }
+    }
+
+    @Test
+    fun shellReportsInvisibleDatabaseSeparatelyFromIncompleteDatabase() = withFiles { source, cache ->
+        val reader = RootDatabaseReader(cache) { shell(it, cache) }
+        val missing = assertFailsWith<IllegalStateException> { reader.read() }
+        assertTrue(missing.message.orEmpty().contains("exit=44"))
+        assertTrue(missing.message.orEmpty().contains("未找到可见"))
+        source.writeBytes(ByteArray(4))
+        otherUserDatabase(cache, "0").writeBytes(ByteArray(64))
+        val incomplete = assertFailsWith<IllegalStateException> { reader.read() }
+        assertTrue(incomplete.message.orEmpty().contains("为空或不完整"))
+        assertTrue(incomplete.message.orEmpty().contains(source.invariantSeparatorsPath))
+        assertTrue(cache.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
     fun successfulBinaryReadIgnoresLargeStderrAndRemovesTemporaryDiagnostics() = withFiles { source, cache ->
         val bytes = ByteArray(4096) { (it * 17).toByte() }
         source.writeBytes(bytes)
@@ -91,11 +173,32 @@ class RootDatabaseReaderTest {
         return ProcessBuilder(executable.path, "-cp", classpath, RootProcessFixture::class.java.name, mode, source.path)
     }
 
+    private fun otherUserDatabase(cache: File, user: String): File =
+        File(cache.parentFile.parentFile, "users/$user/${RootDatabaseReader.DATABASE_PATH.substringAfter("/data/data/")}")
+            .apply { parentFile.mkdirs() }
+
+    private fun shell(arguments: List<String>, cache: File): ProcessBuilder {
+        val executable = if (System.getProperty("os.name").startsWith("Windows")) {
+            File("C:/Program Files/Git/bin/bash.exe")
+        } else File("/bin/sh")
+        check(executable.isFile) { "Root shell regression tests require a POSIX shell: $executable" }
+        // Run the production search script against a fake Android filesystem.
+        val command = arguments.last()
+            .replace("/data/user/", "users/")
+            .replace("/data/data/", "legacy/")
+        // Use a script file so Windows command-line escaping cannot change the
+        // POSIX quotes we want to exercise on the JVM.
+        val script = File(cache.parentFile.parentFile, "read-database.sh").apply { writeText(command) }
+        return ProcessBuilder(executable.path, script.invariantSeparatorsPath).directory(cache.parentFile.parentFile)
+    }
+
     private fun withFiles(test: (File, File) -> Unit) {
-        val root = Files.createTempDirectory("kgg-root-reader").toFile()
+        val root = Files.createTempDirectory("kgg-root-reader space ' ").toFile()
         try {
-            val cache = File(root, "cache").apply { mkdirs() }
-            test(File(root, "database.mmkv"), cache)
+            val cache = File(root, "com.cdb96.ncmconverter4a/cache").apply { mkdirs() }
+            val source = File(root, RootDatabaseReader.DATABASE_PATH.substringAfter("/data/data/"))
+                .apply { parentFile.mkdirs() }
+            test(source, cache)
         } finally {
             root.deleteRecursively()
         }
@@ -107,6 +210,11 @@ object RootProcessFixture {
     @JvmStatic
     fun main(args: Array<String>) {
         val mode = args[0]
+        if (mode.startsWith("unsupported-")) {
+            val output = if (mode == "unsupported-stdout") System.out else System.err
+            output.println("su: unrecognized option '-M'")
+            exitProcess(2)
+        }
         if (mode == "denied") System.err.println("cat: Permission denied")
         else repeat(4096) { System.err.println("su diagnostic warning") }
         System.out.write(Files.readAllBytes(Paths.get(args[1])))
