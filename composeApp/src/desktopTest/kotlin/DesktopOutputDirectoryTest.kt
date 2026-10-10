@@ -65,7 +65,7 @@ class DesktopOutputDirectoryTest {
                     byteArrayOf(0x0A, 0, ekey.size.toByte()) + ekey)
             }
 
-            val result = DesktopConversionFacade(destination).processFiles(
+            val result = createFileConversionService(destination).processFiles(
                 listOf(ncm.path, kgm.path, kgg.path), 3, true, false, database.path,
             ) { _, _, _ -> }
 
@@ -89,7 +89,7 @@ class DesktopOutputDirectoryTest {
             val audio = "ID3audio".toByteArray()
             val input = File(root, "song.ncm").apply { writeBytes(ncmFile(audio)) }
             suspend fun convert(destination: File, mitigate: Boolean = false) =
-                DesktopConversionFacade(destination).processFiles(listOf(input.path), 1, true, mitigate) { _, _, _ -> }
+                createFileConversionService(destination).processFiles(listOf(input.path), 1, true, mitigate) { _, _, _ -> }
 
             assertEquals(1, convert(first).successCount)
             assertEquals(1, convert(second).successCount)

@@ -132,16 +132,16 @@ class KggDatabaseCacheTest {
             val files = (1..3).map { index -> File(root, "song-$index.kgg").apply { writeBytes(kgg(hash(index), audio)) } }
             val database = File(root, "keys.mmkv").apply { writeBytes(mmkv((1..3).map { hash(it) to ekey })) }
             val output = File(root, "output")
-            val facade = DesktopConversionFacade(output)
-            val first = facade.processFiles(files.map { it.path }, 1, true, true, database.path) { processed, _, _ ->
+            val service = createFileConversionService(output)
+            val first = service.processFiles(files.map { it.path }, 1, true, true, database.path) { processed, _, _ ->
                 if (processed == 1) database.writeBytes(byteArrayOf(0))
             }
             assertEquals(3, first.successCount, first.failedFiles.toString())
             files.forEach { assertContentEquals(audio, File(output, "${it.nameWithoutExtension}.mp3").readBytes()) }
-            val second = facade.processFiles(files.map { it.path }, 3, true, true, database.path) { _, _, _ -> }
+            val second = service.processFiles(files.map { it.path }, 3, true, true, database.path) { _, _, _ -> }
             assertEquals(3, second.failureCount)
             database.writeBytes(mmkv((1..3).map { hash(it) to ekey }))
-            val third = facade.processFiles(files.map { it.path }, 3, true, true, database.path) { _, _, _ -> }
+            val third = service.processFiles(files.map { it.path }, 3, true, true, database.path) { _, _, _ -> }
             assertEquals(3, third.successCount, third.failedFiles.toString())
         } finally {
             root.deleteRecursively()

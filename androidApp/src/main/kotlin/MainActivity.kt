@@ -12,21 +12,20 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import com.cdb96.ncmconverter4a.service.BenchmarkService
-import com.cdb96.ncmconverter4a.service.FileConversionService
+import com.cdb96.ncmconverter4a.service.createFileConversionService
 import com.cdb96.ncmconverter4a.ui.BenchmarkDialog
 import com.cdb96.ncmconverter4a.ui.rememberAndroidDirectoryScan
 import com.cdb96.ncmconverter4a.ui.screens.ConversionUiState
 import com.cdb96.ncmconverter4a.ui.screens.MainScreen
 import com.cdb96.ncmconverter4a.ui.screens.SettingsUiState
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private fun getDisplayName(uri: Uri): String? = runCatching {
@@ -36,17 +35,7 @@ class MainActivity : ComponentActivity() {
         }
     }.getOrNull()
 
-    private var threadCount by mutableIntStateOf(4)
     private val pendingIntentUris = mutableStateOf<List<Uri>>(emptyList())
-
-    @OptIn(ExperimentalCoroutinesApi::class)
-    private var fileProcessingDispatcher = Dispatchers.Default.limitedParallelism(threadCount)
-
-    @OptIn(ExperimentalCoroutinesApi::class)
-    private fun updateThreadPool(newThreadCount: Int) {
-        threadCount = newThreadCount
-        fileProcessingDispatcher = Dispatchers.Default.limitedParallelism(threadCount)
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,13 +44,13 @@ class MainActivity : ComponentActivity() {
         pendingIntentUris.value = extractIntentUris(intent)
 
         setContent {
-            val fileConversionService = remember { FileConversionService(this@MainActivity) }
+            val fileConversionService = remember { createFileConversionService(this@MainActivity) }
             val benchmarkService = remember { BenchmarkService() }
             val context = LocalContext.current
             val scope = rememberCoroutineScope()
 
             var conversionState by remember { mutableStateOf(ConversionUiState()) }
-            var settingsState by remember { mutableStateOf(SettingsUiState(threadCount = threadCount)) }
+            var settingsState by remember { mutableStateOf(SettingsUiState()) }
             var showBenchmark by remember { mutableStateOf(false) }
             val directoryScan = rememberAndroidDirectoryScan(conversionState.isProcessing)
 
@@ -78,18 +67,20 @@ class MainActivity : ComponentActivity() {
                 scope.launch {
                     try {
                         val result = fileConversionService.processFiles(
-                            uris = selectedUris,
+                            sources = selectedUris.map(Uri::toString),
+                            threadCount = selectedSettings.threadCount,
                             rawWriteMode = selectedSettings.rawWriteMode,
                             duplicateConflictMitigation = selectedSettings.duplicateConflictMitigation,
-                            fileCoroutineDispatcher = fileProcessingDispatcher,
-                            kggDatabase = selectedSettings.kggDatabase?.let(Uri::parse),
+                            kggDatabase = selectedSettings.kggDatabase,
                             kggRootMode = selectedSettings.kggRootMode,
                         ) { processed, total, fileName ->
-                            conversionState = conversionState.copy(
-                                processedCount = processed,
-                                totalCount = total,
-                                currentFile = fileName,
-                            )
+                            withContext(Dispatchers.Main.immediate) {
+                                conversionState = conversionState.copy(
+                                    processedCount = processed,
+                                    totalCount = total,
+                                    currentFile = fileName,
+                                )
+                            }
                         }
                         conversionState = conversionState.complete(result)
                     } catch (e: Exception) {
@@ -126,7 +117,7 @@ class MainActivity : ComponentActivity() {
                     settingsState = settingsState,
                     onRawWriteModeChange = { settingsState = settingsState.copy(rawWriteMode = it) },
                     onDuplicateConflictMitigationChange = { settingsState = settingsState.copy(duplicateConflictMitigation = it) },
-                    onThreadCountChange = { updateThreadPool(it); settingsState = settingsState.copy(threadCount = it) },
+                    onThreadCountChange = { settingsState = settingsState.copy(threadCount = it) },
                     onPickFiles = { filePicker.launch("*/*") },
                     onBenchmark = { showBenchmark = true },
                     onSelectKggDatabase = { dbPicker.launch(arrayOf("*/*")) },

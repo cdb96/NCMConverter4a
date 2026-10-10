@@ -1,8 +1,8 @@
 package com.cdb96.ncmconverter4a
 
+import com.cdb96.ncmconverter4a.service.OutputExistsException
 import com.cdb96.ncmconverter4a.util.FileNameUtils
 import java.io.File
-import java.io.IOException
 import java.io.OutputStream
 import java.nio.file.Files
 import java.nio.file.FileAlreadyExistsException
@@ -13,7 +13,7 @@ internal data class ReservedDesktopOutput(
     val stream: OutputStream
 )
 
-internal class DesktopOutputExistsException(file: File) : IOException(
+internal class DesktopOutputExistsException(file: File) : OutputExistsException(
     "目标文件已存在，原文件未覆盖：${file.absolutePath}。" +
         "可开启“重名文件冲突缓解”后重试，自动添加序号另存。"
 )

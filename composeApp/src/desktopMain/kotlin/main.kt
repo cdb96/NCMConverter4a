@@ -94,15 +94,15 @@ fun DesktopMainScreen(gpuEnabled: Boolean, onClose: () -> Unit) {
     fun startConversion(files: List<String>) {
         if (files.isEmpty() || conversionState.isProcessing) return
         val selectedSettings = settingsState
-        val selectedFacade = DesktopConversionFacade(
+        val fileConversionService = createFileConversionService(
             selectedSettings.outputDirectory?.let(::File) ?: defaultDesktopOutputDirectory()
         )
         conversionState = conversionState.start(files.size)
         scope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
-                    selectedFacade.processFiles(
-                        filePaths = files,
+                    fileConversionService.processFiles(
+                        sources = files,
                         threadCount = selectedSettings.threadCount,
                         rawWriteMode = selectedSettings.rawWriteMode,
                         duplicateConflictMitigation = selectedSettings.duplicateConflictMitigation,

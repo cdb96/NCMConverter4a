@@ -22,7 +22,7 @@ class KggBatchRoutingTest {
             ).copyOf(1024).apply { this[20] = 5 })
             other.writeText("invalid")
             val progress = java.util.concurrent.atomic.AtomicInteger()
-            val result = DesktopConversionFacade().processFiles(
+            val result = createFileConversionService().processFiles(
                 listOf(kgg.absolutePath, other.absolutePath), 2, false, false,
             ) { _, _, _ -> progress.incrementAndGet() }
             assertEquals(2, result.failureCount)
