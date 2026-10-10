@@ -43,8 +43,9 @@ class AndroidScanDirectoryPreference(context: Context) {
     private val preferences = context.getSharedPreferences("scan_directories", Context.MODE_PRIVATE)
 
     fun load(): Map<ScanFormat, ScanDirectory> = defaultScanDirectories(android = true).mapValues { (format, default) ->
-        ScanDirectory(preferences.getString("${format.name}_path", default.path).orEmpty(),
-            preferences.getString("${format.name}_uri", null))
+        val path = preferences.getString("${format.name}_path", default.path).orEmpty()
+        val treeUri = preferences.getString("${format.name}_uri", null)
+        ScanDirectory(path, treeUri, suggested = default.suggested && path == default.path && treeUri == null)
     }
 
     fun save(format: ScanFormat, directory: ScanDirectory) {

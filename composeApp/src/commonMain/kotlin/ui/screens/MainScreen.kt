@@ -187,6 +187,7 @@ fun MainScreen(
                         state = scanController.state, enabled = enabled,
                         onConfigureDirectories = configureScanDirectories,
                         onScan = onScanDirectories, onCancel = scanController::cancel,
+                        onFormatSelectionChange = scanController::selectFormat,
                         onRecursiveChange = scanController::setRecursive, onSelectFile = scanController::selectFile,
                         onSelectAll = scanController::selectAll,
                         onConvert = {

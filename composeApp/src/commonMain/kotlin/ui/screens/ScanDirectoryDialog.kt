@@ -68,7 +68,8 @@ internal fun ScanDirectoryDialog(
                                     }
                                 }
                                 SelectionContainer {
-                                    Text(directory.path.ifBlank { "尚未选择文件夹" },
+                                    Text(if (directory.suggested) "建议目录：${directory.path}"
+                                        else directory.path.ifBlank { "尚未选择文件夹" },
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }

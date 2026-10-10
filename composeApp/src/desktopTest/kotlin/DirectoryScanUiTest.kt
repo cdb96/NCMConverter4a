@@ -1,8 +1,12 @@
 package com.cdb96.ncmconverter4a
 
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.*
+import androidx.compose.ui.text.TextLayoutResult
 import com.cdb96.ncmconverter4a.service.*
 import com.cdb96.ncmconverter4a.ui.screens.*
 import com.cdb96.ncmconverter4a.ui.theme.NCMConverter4aTheme
@@ -13,6 +17,98 @@ import kotlin.test.*
 
 @OptIn(ExperimentalComposeUiApi::class)
 class DirectoryScanUiTest {
+    @Test
+    fun resultNamesWrapToTwoLinesAndConversionStaysVisibleWhileScrolling() {
+        val shortName = "夜曲.ncm"
+        val wrappingName = "歌手 - 这是一首需要换行的音乐文件.ncm"
+        val overflowingName = "非常长的音乐文件名".repeat(10) + ".ncm"
+        val names = listOf(shortName, wrappingName, overflowingName) + List(30) { "音乐文件 $it.ncm" }
+        val files = names.mapIndexed { index, name ->
+            ScannedAudioFile("file-$index", "source-$index", name, "/sdcard/Music/收藏", ScanFormat.NCM, 4 * 1024 * 1024L)
+        }
+        val state = DirectoryScanUiState(
+            directories = mapOf(ScanFormat.NCM to ScanDirectory("/sdcard/Music/收藏")),
+            files = files,
+            selectedIds = files.map { it.id }.toSet(),
+        )
+        for ((width, height) in listOf(320 to 600, 390 to 780)) {
+            val scene = ImageComposeScene(width = width, height = height)
+            var frame = 0L
+            var converted = false
+            fun render() { frame += 16000000; scene.render(frame).close() }
+            fun nodes(merged: Boolean = true): List<SemanticsNode> {
+                fun collect(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::collect)
+                return scene.semanticsOwners.flatMap {
+                    collect(if (merged) it.rootSemanticsNode else it.unmergedRootSemanticsNode)
+                }
+            }
+            fun textNode(text: String, merged: Boolean = true) = nodes(merged).firstOrNull { node ->
+                node.config.getOrNull(SemanticsProperties.Text)?.any { it.text == text } == true
+            }.let { assertNotNull(it, "Missing text: $text ($width x $height)") }
+            fun textLayout(text: String): TextLayoutResult {
+                val layouts = mutableListOf<TextLayoutResult>()
+                val action = textNode(text, merged = false).config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action
+                assertNotNull(action)
+                assertTrue(action(layouts))
+                return layouts.single()
+            }
+            fun capture(name: String) {
+                scene.render(frame).use { image ->
+                    image.encodeToData(EncodedImageFormat.PNG)!!.use {
+                        File("build/$name-$width.png").apply { parentFile.mkdirs() }.writeBytes(it.bytes)
+                    }
+                }
+            }
+            try {
+                scene.setContent {
+                    NCMConverter4aTheme(darkTheme = false) {
+                        Surface(Modifier.fillMaxSize()) {
+                            DirectoryScanScreen(state, enabled = true, onConfigureDirectories = {}, onScan = {},
+                                onCancel = {}, onFormatSelectionChange = { _, _ -> }, onRecursiveChange = {},
+                                onSelectFile = { _, _ -> }, onSelectAll = {}, onConvert = { converted = true })
+                        }
+                    }
+                }
+                repeat(30) { render() }
+                ScanFormat.entries.forEach { format ->
+                    textLayout(format.name).let {
+                        assertEquals(1, it.lineCount)
+                        assertFalse(it.multiParagraph.didExceedMaxLines)
+                        assertEquals(format.name.length, it.getLineEnd(0, visibleEnd = true))
+                    }
+                }
+                assertEquals(1, textLayout(shortName).lineCount)
+                textLayout(wrappingName).let {
+                    assertEquals(2, it.lineCount)
+                    assertFalse(it.hasVisualOverflow)
+                    assertEquals(wrappingName.length, it.getLineEnd(1, visibleEnd = true))
+                }
+                textLayout(overflowingName).let {
+                    assertEquals(2, it.lineCount)
+                    // Skia's isLineEllipsized always returns false; check the visible text boundary instead.
+                    assertTrue(it.hasVisualOverflow)
+                    assertTrue(it.getLineEnd(1, visibleEnd = true) < overflowingName.length)
+                }
+                val buttonText = "转换 (${files.size})"
+                val buttonBounds = textNode(buttonText).boundsInRoot
+                assertTrue(buttonBounds.bottom <= height)
+                assertTrue(buttonBounds.top >= height - 64)
+                capture("scan-page-long-names")
+
+                val scroll = nodes().first { it.config.getOrNull(SemanticsActions.ScrollToIndex)?.action != null }
+                assertTrue(scroll.config[SemanticsActions.ScrollToIndex].action!!.invoke(files.size + 1))
+                repeat(30) { render() }
+                assertEquals(buttonBounds, textNode(buttonText).boundsInRoot)
+                assertTrue(textNode(files.last().name).boundsInRoot.bottom <= buttonBounds.top)
+                capture("scan-page-scrolled")
+                assertTrue(textNode(buttonText).config[SemanticsActions.OnClick].action!!.invoke())
+                assertTrue(converted)
+            } finally {
+                scene.close()
+            }
+        }
+    }
+
     @Test
     fun desktopDirectoryDialogKeepsTheCurrentPageAndSavesFolderChanges() {
         for ((width, height) in listOf(1180 to 800, 600 to 600)) {
@@ -59,11 +155,11 @@ class DirectoryScanUiTest {
                 }
                 render()
                 click("扫描")
-                controller.showMessage("扫描完成，共 0 个文件")
+                controller.showMessage("扫描失败: 目录无法读取")
                 click("配置扫描目录")
                 assertTrue(hasText("NCM 目录"))
                 assertTrue(hasText(ncmDirectory.path))
-                assertFalse(hasText("扫描完成，共 0 个文件"))
+                assertFalse(hasText("扫描失败: 目录无法读取"))
                 click("选择 KGG 目录")
                 assertEquals(ScanDirectory("D:\\酷狗音乐\\KGG"), savedDirectories[ScanFormat.KGG])
                 assertTrue(hasText("D:\\酷狗音乐\\KGG"))
@@ -79,6 +175,12 @@ class DirectoryScanUiTest {
                 click("完成")
                 assertFalse(hasText("NCM 目录"))
                 assertTrue(hasText("查找音乐文件"))
+                repeat(30) { render() }
+                scene.render(frame).use { image ->
+                    image.encodeToData(EncodedImageFormat.PNG)!!.use {
+                        File("build/scan-page-$width.png").writeBytes(it.bytes)
+                    }
+                }
                 click("设置")
                 assertFalse(hasText("NCM 目录"))
                 assertFalse(hasText("扫描目录"))
@@ -145,9 +247,16 @@ class DirectoryScanUiTest {
             }
             render()
             click("扫描", Role.Tab)
+            repeat(30) { render() }
+            scene.render(frame).use { image ->
+                image.encodeToData(EncodedImageFormat.PNG)!!.use {
+                    File("build/scan-page-android-empty.png").apply { parentFile.mkdirs() }.writeBytes(it.bytes)
+                }
+            }
             assertFalse(nodes().any { it.config.getOrNull(SemanticsProperties.Text)?.any { text -> text.text == "NCM 目录" } == true })
             click("配置扫描目录")
-            assertTrue(nodes().any { it.config.getOrNull(SemanticsProperties.Text)?.any { text -> text.text == ANDROID_NCM_SCAN_DIRECTORY } == true })
+            assertTrue(nodes().any { it.config.getOrNull(SemanticsProperties.Text)?.any { text -> text.text == "建议目录：$ANDROID_NCM_SCAN_DIRECTORY" } == true })
+            assertFalse(nodes().any { it.config.getOrNull(SemanticsProperties.ContentDescription)?.contains("清除 NCM 扫描目录") == true })
             click("选择 KGG 目录")
             assertEquals(ScanFormat.KGG, requestedDirectory)
             assertEquals("/sdcard/Download/酷狗音乐/KGG", controller.state.directories[ScanFormat.KGG]?.path)
@@ -163,12 +272,43 @@ class DirectoryScanUiTest {
             click("设置", Role.Tab)
             assertFalse(nodes().any { it.config.getOrNull(SemanticsProperties.Text)?.any { text -> text.text == "扫描目录" || text.text == "配置扫描目录" } == true })
             click("扫描", Role.Tab)
-            click("扫描全部")
-            assertEquals(ScanFormat.entries.toSet(), requestedFormats)
-            click("扫描 NCM")
+            click("开始扫描")
+            assertEquals(setOf(ScanFormat.KGG), requestedFormats)
+            click("配置扫描目录")
+            click("选择 NCM 目录")
+            assertEquals(ScanFormat.NCM, requestedDirectory)
+            click("完成")
+            click("开始扫描")
+            assertEquals(setOf(ScanFormat.NCM, ScanFormat.KGG), requestedFormats)
+            repeat(30) { render() }
+            scene.render(frame).use { image ->
+                image.encodeToData(EncodedImageFormat.PNG)!!.use {
+                    File("build/scan-page-android-formats.png").writeBytes(it.bytes)
+                }
+            }
+            click("KGG")
+            assertEquals(setOf(ScanFormat.NCM), controller.state.selectedFormats)
+            assertEquals(setOf(ScanFormat.NCM, ScanFormat.KGG), requestedFormats)
+            click("设置", Role.Tab)
+            click("扫描", Role.Tab)
+            assertEquals(setOf(ScanFormat.NCM), controller.state.selectedFormats)
+            click("NCM")
+            assertTrue(controller.state.selectedFormats.isEmpty())
+            assertTrue(nodes().any { node ->
+                node.config.getOrNull(SemanticsProperties.Text)?.any { it.text == "开始扫描" } == true &&
+                    node.config.getOrNull(SemanticsProperties.Disabled) != null
+            })
+            click("NCM")
+            click("开始扫描")
             assertEquals(setOf(ScanFormat.NCM), requestedFormats)
             controller.start(setOf(ScanFormat.NCM))
             render()
+            repeat(30) { render() }
+            scene.render(frame).use { image ->
+                image.encodeToData(EncodedImageFormat.PNG)!!.use {
+                    File("build/scan-page-android-results.png").writeBytes(it.bytes)
+                }
+            }
             click("one.ncm")
             assertEquals(listOf("source-two"), controller.selectedSources())
             click("转换 (1)")

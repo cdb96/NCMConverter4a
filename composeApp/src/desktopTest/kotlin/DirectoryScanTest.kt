@@ -13,9 +13,45 @@ class DirectoryScanTest {
         val defaults = defaultScanDirectories(android = true)
         assertEquals("/sdcard/Download/netease/cloudmusic/Music", defaults[ScanFormat.NCM]?.path)
         assertNull(defaults[ScanFormat.NCM]?.treeUri)
+        assertTrue(defaults.getValue(ScanFormat.NCM).suggested)
+        assertFalse(defaults.getValue(ScanFormat.NCM).configured)
         assertFalse(defaults.getValue(ScanFormat.KGG).configured)
         assertFalse(defaults.getValue(ScanFormat.KGM).configured)
         assertTrue(defaultScanDirectories(android = false).values.none { it.configured })
+    }
+
+    @Test
+    fun scanningAllAfterConfiguringKggDoesNotOpenTheSuggestedNcmDirectory() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val openedDirectories = mutableListOf<ScanDirectory>()
+        val browser = object : ScanDirectoryBrowser {
+            override fun root(directory: ScanDirectory): ScanNode {
+                openedDirectories += directory
+                return folder(directory.path)
+            }
+            override suspend fun children(directory: ScanNode) = listOf(audio("song", "song.kgg"))
+        }
+        val savedDirectories = mutableMapOf<ScanFormat, ScanDirectory>()
+        val controller = DirectoryScanController(DirectoryScanService(browser), scope,
+            Dispatchers.Unconfined, Dispatchers.Unconfined, defaultScanDirectories(android = true),
+            { format, directory -> savedDirectories[format] = directory })
+        val kggDirectory = ScanDirectory("/sdcard/Kugou", "content://test/tree/Kugou")
+        try {
+            controller.setDirectory(ScanFormat.KGG, kggDirectory)
+            assertEquals(kggDirectory, savedDirectories[ScanFormat.KGG])
+            controller.start(ScanFormat.entries.toSet())
+            assertEquals(listOf(kggDirectory), openedDirectories)
+            assertEquals(listOf("song.kgg"), controller.state.files.map { it.name })
+            assertTrue(controller.state.warnings.isEmpty())
+
+            // Clearing the selected directory must not activate the suggestion.
+            controller.setDirectory(ScanFormat.KGG, ScanDirectory())
+            controller.start(ScanFormat.entries.toSet())
+            assertEquals(listOf(kggDirectory), openedDirectories)
+            assertEquals("请先选择要扫描的目录", controller.state.message)
+        } finally {
+            scope.cancel()
+        }
     }
 
     @Test

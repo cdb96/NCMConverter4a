@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 
 data class DirectoryScanUiState(
     val directories: Map<ScanFormat, ScanDirectory> = emptyMap(),
+    val selectedFormats: Set<ScanFormat> = directories.filterValues { it.configured }.keys,
     val recursive: Boolean = true,
     val isScanning: Boolean = false,
     val visitedDirectories: Int = 0,
@@ -42,7 +43,13 @@ class DirectoryScanController(
         if (state.isScanning) return
         try {
             saveDirectory(format, directory)
+            val selectedFormats = when {
+                !directory.configured -> state.selectedFormats - format
+                state.directories[format]?.configured != true -> state.selectedFormats + format
+                else -> state.selectedFormats
+            }
             state = state.copy(directories = state.directories + (format to directory),
+                selectedFormats = selectedFormats,
                 files = emptyList(), selectedIds = emptySet(), foundFiles = 0, visitedDirectories = 0,
                 message = null, warnings = emptyList())
         } catch (error: Exception) {
@@ -51,6 +58,11 @@ class DirectoryScanController(
     }
 
     fun setRecursive(value: Boolean) { if (!state.isScanning) state = state.copy(recursive = value) }
+    fun selectFormat(format: ScanFormat, selected: Boolean) {
+        if (!state.isScanning && state.directories[format]?.configured == true) {
+            state = state.copy(selectedFormats = if (selected) state.selectedFormats + format else state.selectedFormats - format)
+        }
+    }
     fun showMessage(message: String) { state = state.copy(message = message) }
     fun clearMessage() { state = state.copy(message = null) }
     fun selectFile(id: String, selected: Boolean) {
@@ -82,7 +94,7 @@ class DirectoryScanController(
                 }
                 state = state.copy(files = result.files, selectedIds = result.files.map { it.id }.toSet(),
                     foundFiles = result.files.size, warnings = result.warnings,
-                    message = if (result.files.isEmpty()) "未找到匹配的文件" else "扫描完成，共 ${result.files.size} 个文件")
+                    message = if (result.files.isEmpty()) "未找到匹配的文件" else null)
             } catch (cancelled: CancellationException) {
                 state = state.copy(message = "已取消扫描")
                 throw cancelled

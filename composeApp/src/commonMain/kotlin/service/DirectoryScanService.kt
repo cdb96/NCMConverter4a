@@ -16,15 +16,16 @@ enum class ScanFormat(private vararg val extensions: String) {
     }
 }
 
-data class ScanDirectory(val path: String = "", val treeUri: String? = null) {
-    val configured: Boolean get() = path.isNotBlank() || treeUri != null
+data class ScanDirectory(val path: String = "", val treeUri: String? = null, val suggested: Boolean = false) {
+    val configured: Boolean get() = treeUri != null || (!suggested && path.isNotBlank())
 }
 
 const val ANDROID_NCM_SCAN_DIRECTORY = "/sdcard/Download/netease/cloudmusic/Music"
 
 fun defaultScanDirectories(android: Boolean): Map<ScanFormat, ScanDirectory> =
     ScanFormat.entries.associateWith { format ->
-        ScanDirectory(if (android && format == ScanFormat.NCM) ANDROID_NCM_SCAN_DIRECTORY else "")
+        if (android && format == ScanFormat.NCM) ScanDirectory(ANDROID_NCM_SCAN_DIRECTORY, suggested = true)
+        else ScanDirectory()
     }
 
 data class ScannedAudioFile(
