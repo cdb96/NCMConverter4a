@@ -1,6 +1,5 @@
 package com.cdb96.ncmconverter4a.converter
 
-import com.cdb96.ncmconverter4a.crypto.AESDecrypt
 import com.cdb96.ncmconverter4a.io.BinaryInput
 import com.cdb96.ncmconverter4a.io.BinaryOutput
 import com.cdb96.ncmconverter4a.io.readAtMost
@@ -12,6 +11,8 @@ import com.cdb96.ncmconverter4a.tag.FLACMetadataGenerator
 import com.cdb96.ncmconverter4a.tag.ID3TagBuilder
 import com.cdb96.ncmconverter4a.util.LengthUtils
 import com.cdb96.ncmconverter4a.util.SimpleJsonParser
+import javax.crypto.Cipher
+import javax.crypto.spec.SecretKeySpec
 import kotlin.io.encoding.Base64
 
 data class NcmFileInfo(
@@ -160,9 +161,12 @@ object NCMConverter {
         }
     }
 
-    /** Kept for platform-independent AES regression tests and key extraction. */
-    fun decrypt(key: ByteArray, encryptedBytes: ByteArray): ByteArray =
-        AESDecrypt.decryptEcbPkcs5(key, encryptedBytes)
+    /** Decrypts the NCM key and metadata blocks. */
+    fun decrypt(key: ByteArray, encryptedBytes: ByteArray): ByteArray {
+        val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"))
+        return cipher.doFinal(encryptedBytes)
+    }
 
     private fun readRc4Key(input: BinaryInput): ByteArray {
         val keyLength = readLength(input, "key", minimum = 1, maximum = MAX_KEY_LENGTH)
