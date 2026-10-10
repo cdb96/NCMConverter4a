@@ -178,20 +178,17 @@ object NCMConverter {
 
         val decrypted = decrypt(coreKey, encryptedKey)
         require(decrypted.size > 17) { "NCM RC4 key payload is truncated" }
-        return decrypted.copyOfRange(17, decrypted.size).also {
-            require(it.isNotEmpty()) { "NCM RC4 key is empty" }
-        }
+        return decrypted.copyOfRange(17, decrypted.size)
     }
 
     private fun readMetadata(input: BinaryInput): ByteArray {
-        val metadataLength = readLength(input, "metadata", minimum = 22, maximum = MAX_METADATA_LENGTH)
+        val metadataLength = readLength(input, "metadata", minimum = 23, maximum = MAX_METADATA_LENGTH)
         val raw = ByteArray(metadataLength)
         input.readFully(raw)
         for (index in raw.indices) {
             raw[index] = (raw[index].toInt() xor 0x63).toByte()
         }
 
-        require(raw.size > 22) { "NCM metadata payload is empty" }
         val decoded = Base64.decode(raw, startIndex = 22)
         return decrypt(metaKey, decoded)
     }
@@ -230,7 +227,7 @@ object NCMConverter {
         // The parser appends key/value pairs, so keys sit at even indices. A
         // value that happens to equal a key name must not be mistaken for it.
         for (index in values.indices step 2) {
-            if (values[index] == field && index + 1 < values.size) return values[index + 1]
+            if (values[index] == field) return values[index + 1]
         }
         throw IllegalArgumentException("NCM metadata is missing field: $field")
     }
@@ -337,22 +334,10 @@ object NCMConverter {
             return total
         }
 
-        fun readFully(buffer: ByteArray) {
-            readFully(buffer, 0, buffer.size)
-        }
-
-        fun readFully(buffer: ByteArray, offset: Int, length: Int) {
-            require(offset >= 0 && length >= 0 && offset <= buffer.size - length) {
-                "invalid payload read range"
-            }
-            var position = offset
-            val end = offset + length
-            while (position < end) {
-                val bytesRead = read(buffer, position, end - position)
-                if (bytesRead <= 0) {
-                    throw IllegalArgumentException("unexpected end of decrypted NCM payload")
-                }
-                position += bytesRead
+        fun readFully(buffer: ByteArray, offset: Int = 0, length: Int = buffer.size - offset) {
+            // read validates the range and loops across decrypt buffers until length or EOF.
+            if (read(buffer, offset, length) != length) {
+                throw IllegalArgumentException("unexpected end of decrypted NCM payload")
             }
         }
 

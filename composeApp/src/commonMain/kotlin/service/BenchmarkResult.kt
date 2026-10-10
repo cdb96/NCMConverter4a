@@ -3,6 +3,8 @@ package com.cdb96.ncmconverter4a.service
 data class BenchmarkResult(
     val kgmResults: List<SizeThroughput>,
     val ncmResults: List<SizeThroughput>,
+    val kggRc4Results: List<SizeThroughput>,
+    val kggMapResults: List<SizeThroughput>,
     val totalDuration: Long
 )
 
@@ -17,6 +19,7 @@ enum class TestStatus {
     WARMING,
     TESTING_KGM,
     TESTING_NCM,
+    TESTING_KGG,
     COMPLETED
 }
 

@@ -2,7 +2,6 @@
 package com.cdb96.ncmconverter4a.converter.kgg
 
 import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.math.abs
 import kotlin.math.tan
 
@@ -23,8 +22,8 @@ private const val RAW_KEY_PREFIX_V2 = "QQMusic EncV2,Key:"
 /**
  * 派生密钥
  */
-fun deriveKey(rawKey: ByteArray?): ByteArray {
-    val rawKeyDec = Base64.decode(rawKey!!.decodeToString())
+fun deriveKey(rawKey: ByteArray): ByteArray {
+    val rawKeyDec = Base64.decode(rawKey.decodeToString())
 
     val processed = if (rawKeyDec.startsWith(RAW_KEY_PREFIX_V2.toByteArray())) {
         val trimmed = rawKeyDec.copyOfRange(RAW_KEY_PREFIX_V2.length, rawKeyDec.size)
@@ -102,7 +101,9 @@ fun decryptTencentTea(inBuf: ByteArray, key: ByteArray): ByteArray {
         ivPrev = ivCur
         ivCur = inBuf.copyOfRange(inBufPos, inBufPos + 8)
 
-        xor8Bytes(destBuf, destBuf, inBuf.copyOfRange(inBufPos, inBufPos + 8))
+        for (i in destBuf.indices) {
+            destBuf[i] = (destBuf[i].toInt() xor ivCur[i].toInt()).toByte()
+        }
         blk.decrypt(destBuf, destBuf)
 
         inBufPos += 8
@@ -141,12 +142,6 @@ fun decryptTencentTea(inBuf: ByteArray, key: ByteArray): ByteArray {
     }
 
     return out
-}
-
-fun xor8Bytes(dst: ByteArray, a: ByteArray, b: ByteArray) {
-    for (i in 0 until 8) {
-        dst[i] = (a[i].toInt() xor b[i].toInt()).toByte()
-    }
 }
 
 fun ByteArray.startsWith(prefix: ByteArray): Boolean {

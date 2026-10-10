@@ -34,12 +34,6 @@ object LengthUtils {
         data[offset + 3] = (value shr 24).toByte()
     }
 
-    fun writeShortBE(data: ByteArray, offset: Int, value: Int) {
-        require(offset >= 0 && offset <= data.size - 2) { "invalid big-endian short offset" }
-        data[offset] = (value shr 8).toByte()
-        data[offset + 1] = value.toByte()
-    }
-
     fun toSyncSafeIntegerBytes(value: Int): ByteArray {
         require(value >= 0 && value <= 0x0FFFFFFF) { "invalid sync-safe integer: $value" }
         return byteArrayOf(
@@ -61,7 +55,7 @@ object LengthUtils {
 
     fun getSyncSafeInteger(bytes: ByteArray): Int {
         require(bytes.size >= 4) { "need four bytes for a sync-safe integer" }
-        require(bytes.take(4).all { (it.toInt() and 0x80) == 0 }) {
+        require((0..3).all { (bytes[it].toInt() and 0x80) == 0 }) {
             "invalid sync-safe integer"
         }
         return ((bytes[0].toInt() and 0x7F) shl 21) +

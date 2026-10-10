@@ -81,6 +81,7 @@ data class ConversionUiState(
         failureCount = 0,
         currentFile = "",
         convertResult = null,
+        conversionDurationMillis = null,
         successfulFileNames = emptyList(),
         failedFileNames = emptyList(),
         failedFiles = emptyList(),
@@ -227,6 +228,7 @@ fun MainScreen(
                         ConversionDashboard(
                             conversionState = conversionState,
                             settings = settingsState,
+                            desktopMode = desktopMode,
                             supportsRoot = supportsRoot,
                             onPickFiles = onPickFiles,
                             onOpenSettings = { page = AppPage.SETTINGS },
@@ -312,9 +314,7 @@ internal fun ConversionStatusContent(
                 Spacer(modifier = Modifier.height(8.dp))
                 LinearProgressIndicator(
                     progress = {
-                        if (conversionState.totalCount > 0)
-                            conversionState.processedCount.toFloat() / conversionState.totalCount
-                        else 0f
+                        conversionState.processedCount.toFloat() / conversionState.totalCount
                     },
                     modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
                     color = MaterialTheme.colorScheme.primary,

@@ -222,7 +222,7 @@ private fun StartContent(onStart: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "• 测试 KGM 和 NCM 解密算法性能\n• 结果取多次运行中的最高吞吐量",
+                    text = "• 测试 KGM、NCM 和 KGG 解密算法性能\n• KGG 包含 RC4 和 Map 两种模式，计入初始化耗时\n• 结果取多次运行中的最高吞吐量",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                     lineHeight = MaterialTheme.typography.bodyMedium.lineHeight * 1.3
@@ -264,6 +264,7 @@ private fun TestingContent(status: TestStatus) {
         TestStatus.WARMING -> 0.15f
         TestStatus.TESTING_KGM -> 0.4f
         TestStatus.TESTING_NCM -> 0.65f
+        TestStatus.TESTING_KGG -> 0.85f
         TestStatus.COMPLETED -> 1f
     }
 
@@ -318,7 +319,8 @@ private fun StepIndicator(currentStatus: TestStatus) {
     val steps = listOf(
         TestStatus.WARMING to "预热",
         TestStatus.TESTING_KGM to "KGM",
-        TestStatus.TESTING_NCM to "NCM"
+        TestStatus.TESTING_NCM to "NCM",
+        TestStatus.TESTING_KGG to "KGG"
     )
 
     Row(
@@ -392,6 +394,20 @@ private fun ResultsContent(
             icon = Icons.Default.Star,
             results = result.ncmResults,
             gradientColors = listOf(Color(0xFF10B981), Color(0xFF34D399))
+        )
+
+        PerformanceCard(
+            title = "KGG 解密（RC4）",
+            icon = Icons.Default.Star,
+            results = result.kggRc4Results,
+            gradientColors = listOf(Color(0xFFF59E0B), Color(0xFFFBBF24))
+        )
+
+        PerformanceCard(
+            title = "KGG 解密（Map）",
+            icon = Icons.Default.Star,
+            results = result.kggMapResults,
+            gradientColors = listOf(Color(0xFF0EA5E9), Color(0xFF38BDF8))
         )
 
         SummaryCard(totalDuration = result.totalDuration)
@@ -556,9 +572,10 @@ private fun SummaryCard(totalDuration: Long) {
 private fun getStatusDisplayName(status: TestStatus): String {
     return when (status) {
         TestStatus.IDLE -> "准备就绪"
-        TestStatus.WARMING -> "正在预热 JNI..."
+        TestStatus.WARMING -> "正在预热解密算法..."
         TestStatus.TESTING_KGM -> "测试 KGM 解密性能..."
         TestStatus.TESTING_NCM -> "测试 NCM 解密..."
+        TestStatus.TESTING_KGG -> "测试 KGG 解密性能..."
         TestStatus.COMPLETED -> "测试完成"
     }
 }

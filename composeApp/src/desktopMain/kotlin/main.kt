@@ -18,7 +18,7 @@ import com.cdb96.ncmconverter4a.service.BenchmarkService
 import com.cdb96.ncmconverter4a.service.DirectoryScanService
 import com.cdb96.ncmconverter4a.service.ScanDirectory
 import com.cdb96.ncmconverter4a.ui.BenchmarkDialog
-import com.cdb96.ncmconverter4a.ui.screens.ConversionUiState
+import com.cdb96.ncmconverter4a.ui.screens.ConversionController
 import com.cdb96.ncmconverter4a.ui.screens.MainScreen
 import com.cdb96.ncmconverter4a.ui.screens.SettingsUiState
 import com.cdb96.ncmconverter4a.ui.screens.DirectoryScanController
@@ -62,7 +62,12 @@ fun NCMConverter4aDesktopApp(window: ComposeWindow, gpuEnabled: Boolean, onClose
 @Composable
 fun DesktopMainScreen(gpuEnabled: Boolean, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
-    var conversionState by remember { mutableStateOf(ConversionUiState()) }
+    val conversion = remember {
+        ConversionController(scope, Dispatchers.Swing, { settings ->
+            createFileConversionService(settings.outputDirectory?.let(::File) ?: defaultDesktopOutputDirectory())
+        })
+    }
+    val conversionState = conversion.state
     val outputPreference = remember { DesktopOutputDirectoryPreference() }
     var settingsState by remember {
         mutableStateOf(SettingsUiState(
@@ -92,36 +97,7 @@ fun DesktopMainScreen(gpuEnabled: Boolean, onClose: () -> Unit) {
     }
 
     fun startConversion(files: List<String>) {
-        if (files.isEmpty() || conversionState.isProcessing) return
-        val selectedSettings = settingsState
-        val fileConversionService = createFileConversionService(
-            selectedSettings.outputDirectory?.let(::File) ?: defaultDesktopOutputDirectory()
-        )
-        conversionState = conversionState.start(files.size)
-        scope.launch {
-            try {
-                val result = withContext(Dispatchers.IO) {
-                    fileConversionService.processFiles(
-                        sources = files,
-                        threadCount = selectedSettings.threadCount,
-                        rawWriteMode = selectedSettings.rawWriteMode,
-                        duplicateConflictMitigation = selectedSettings.duplicateConflictMitigation,
-                        kggDatabase = selectedSettings.kggDatabase,
-                    ) { processed, total, fileName ->
-                        withContext(Dispatchers.Swing) {
-                            conversionState = conversionState.copy(
-                                processedCount = processed, totalCount = total, currentFile = fileName,
-                            )
-                        }
-                    }
-                }
-                conversionState = conversionState.complete(result)
-            } catch (e: Exception) {
-                conversionState = conversionState.copy(
-                    isProcessing = false, convertResult = "处理过程中发生错误: ${e.message}",
-                )
-            }
-        }
+        conversion.start(files, settingsState)
     }
 
     DesktopFileDropArea(

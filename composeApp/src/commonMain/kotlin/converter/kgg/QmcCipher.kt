@@ -13,9 +13,7 @@ object QmcCipher {
 
     /**
      * Read buffer for streaming decryption. A multiple of [RC4_SEGMENT_SIZE]
-     * keeps every buffer boundary on a segment boundary, so no call has to
-     * replay the key stream up to the middle of a segment before it can emit
-     * its first byte.
+     * keeps buffer boundaries aligned with key stream segments.
      */
     const val STREAM_BUFFER_SIZE = 64 * RC4_SEGMENT_SIZE
 
@@ -46,43 +44,57 @@ object QmcCipher {
         }
     }
 
-    /**
-     * RC4Cipher 是使用特定密钥的 RC4 实例
-     */
+    /** All segments use slices of the same precomputed RC4 key stream. */
     private class QmcRC4Cipher(
         private val key: ByteArray,
     ): QmcStreamCipher {
         private val n: Int = key.size
-        private var hash: UInt = 1u
+        private val hash: UInt = getHashBase()
 
-        // The boxed state as unsigned ints, so the segment loop never has to
-        // mask sign-extended bytes.
-        private val boxValues: IntArray
+        private val firstSegmentMasks: ByteArray
+        private val keyStream: ByteArray
 
         init {
-            // The segment loop reduces sums of a state byte (< 256) and an index
-            // (< n) by one conditional subtraction, which needs n > 255.
-            require(n > 255) { "QMC RC4 key is too short: $n" }
-            val box = ByteArray(n)
-
-            for (i in 0 until n) {
-                box[i] = i.toByte()
+            // createCipher selects RC4 only for n > 300, so a state byte (< 256)
+            // plus an index (< n) needs at most one conditional subtraction.
+            require(n <= Int.MAX_VALUE - (RC4_SEGMENT_SIZE - 1)) {
+                "QMC RC4 key is too long: $n"
             }
+            val state = IntArray(n) { it and 0xFF }
 
             var j = 0
             for (i in 0 until n) {
-                j = (j + (box[i].toInt() and 0xFF) + (key[i % n].toInt() and 0xFF)) % n
-                val temp = box[i]
-                box[i] = box[j]
-                box[j] = temp
+                j = (j + state[i] + (key[i].toInt() and 0xFF)) % n
+                val temp = state[i]
+                state[i] = state[j]
+                state[j] = temp
             }
-            boxValues = IntArray(n) { box[it].toInt() and 0xFF }
 
-            getHashBase()
+            // Every segment restarts this state and skips 0..n-1 bytes. Its
+            // payload then consumes at most 5120 bytes, so one stream of
+            // n-1 + 5120 bytes covers every segment and partial-buffer offset.
+            keyStream = ByteArray(n - 1 + RC4_SEGMENT_SIZE)
+            j = 0
+            var k = 0
+            for (i in keyStream.indices) {
+                if (++j == n) j = 0
+                val atJ = state[j]
+                k += atJ
+                if (k >= n) k -= n
+                val atK = state[k]
+                state[j] = atK
+                state[k] = atJ
+                var index = atK + atJ
+                if (index >= n) index -= n
+                keyStream[i] = state[index].toByte()
+            }
+            firstSegmentMasks = ByteArray(RC4_FIRST_SEGMENT_SIZE) {
+                key[getSegmentSkip(it.toLong())]
+            }
         }
 
-        private fun getHashBase() {
-            hash = 1u
+        private fun getHashBase(): UInt {
+            var hash = 1u
             for (i in 0 until n) {
                 val v = (key[i].toInt() and 0xFF).toUInt()
                 if (v == 0u) {
@@ -94,6 +106,7 @@ object QmcCipher {
                 }
                 hash = nextHash
             }
+            return hash
         }
 
         override fun decrypt(data: ByteArray, offset: Long, length: Int) {
@@ -102,69 +115,30 @@ object QmcCipher {
             var processed = 0
             var toProcess = length
 
-            // 处理第一段
+            // The first 128 bytes use key-derived masks instead of RC4 output.
             if (currentOffset < RC4_FIRST_SEGMENT_SIZE) {
                 val blockSize = minOf(toProcess, (RC4_FIRST_SEGMENT_SIZE - currentOffset).toInt())
-                encFirstSegment(data, 0, blockSize, currentOffset)
+                xorKeyStream(firstSegmentMasks, currentOffset.toInt(), data, 0, blockSize)
                 currentOffset += blockSize
                 processed += blockSize
                 toProcess -= blockSize
             }
             if (toProcess == 0) return
 
-            // One scratch copy of the key state per call instead of one per segment.
-            val state = IntArray(n)
             while (toProcess > 0) {
-                val segmentRemaining = RC4_SEGMENT_SIZE - (currentOffset % RC4_SEGMENT_SIZE).toInt()
-                val blockSize = minOf(toProcess, segmentRemaining)
-                encASegment(data, processed, blockSize, currentOffset, state)
+                val segmentOffset = (currentOffset % RC4_SEGMENT_SIZE).toInt()
+                val blockSize = minOf(toProcess, RC4_SEGMENT_SIZE - segmentOffset)
+                val streamStart = segmentOffset + getSegmentSkip(currentOffset / RC4_SEGMENT_SIZE)
+                xorKeyStream(keyStream, streamStart, data, processed, blockSize)
                 currentOffset += blockSize
                 processed += blockSize
                 toProcess -= blockSize
             }
         }
 
-        private fun encFirstSegment(buf: ByteArray, start: Int, length: Int, offset: Long) {
+        private fun xorKeyStream(masks: ByteArray, maskStart: Int, data: ByteArray, start: Int, length: Int) {
             for (i in 0 until length) {
-                buf[start + i] = (buf[start + i].toInt() xor key[getSegmentSkip(offset + i.toLong())].toInt()).toByte()
-            }
-        }
-
-        /**
-         * Applies one segment of the key stream to `buf[start, start + length)`.
-         * The stream restarts from [boxValues] for every segment, discards
-         * `offset % segment + segmentSkip` bytes, then XORs the payload. All
-         * modulo-n reductions of the original are replaced by conditional
-         * subtractions: both operands are always below n or below 256.
-         */
-        private fun encASegment(buf: ByteArray, start: Int, length: Int, offset: Long, state: IntArray) {
-            boxValues.copyInto(state)
-            val n = n
-            var j = 0
-            var k = 0
-
-            val skipLen = (offset % RC4_SEGMENT_SIZE.toLong()).toInt() +
-                getSegmentSkip(offset / RC4_SEGMENT_SIZE.toLong())
-            repeat(skipLen) {
-                if (++j == n) j = 0
-                val atJ = state[j]
-                k += atJ
-                if (k >= n) k -= n
-                state[j] = state[k]
-                state[k] = atJ
-            }
-
-            for (i in start until start + length) {
-                if (++j == n) j = 0
-                val atJ = state[j]
-                k += atJ
-                if (k >= n) k -= n
-                val atK = state[k]
-                state[j] = atK
-                state[k] = atJ
-                var index = atK + atJ
-                if (index >= n) index -= n
-                buf[i] = (buf[i].toInt() xor state[index]).toByte()
+                data[start + i] = (data[start + i].toInt() xor masks[maskStart + i].toInt()).toByte()
             }
         }
 

@@ -15,24 +15,9 @@ fun interface BinaryOutput {
 class BinaryInputException(message: String) : IllegalArgumentException(message)
 
 fun BinaryInput.readFully(buffer: ByteArray, offset: Int = 0, length: Int = buffer.size - offset) {
-    require(offset >= 0 && length >= 0 && offset <= buffer.size - length) {
-        "invalid read range: offset=$offset length=$length bufferSize=${buffer.size}"
-    }
-
-    var position = offset
-    val end = offset + length
-    while (position < end) {
-        val bytesRead = read(buffer, position, end - position)
-        when {
-            bytesRead < 0 -> throw BinaryInputException(
-                "unexpected end of input while reading $length bytes"
-            )
-            bytesRead == 0 -> throw BinaryInputException("input returned zero bytes")
-            bytesRead > end - position -> throw BinaryInputException(
-                "input returned too many bytes: $bytesRead"
-            )
-            else -> position += bytesRead
-        }
+    // readAtMost validates the range and fills it across short reads.
+    if (readAtMost(buffer, offset, length) != length) {
+        throw BinaryInputException("unexpected end of input while reading $length bytes")
     }
 }
 

@@ -62,8 +62,7 @@ void applyKeyStream(const NcmRc4Context& context, std::uint8_t* data, int bytesR
 }  // namespace
 
 void rc4Init(NcmRc4Context& context, const std::uint8_t* key, int keyLength) {
-    if (key == nullptr || keyLength <= 0) return;
-
+    // The sole caller, ncm_rc4_create, validates key and keyLength.
     std::array<std::uint8_t, 256> sBox{};
     std::iota(sBox.begin(), sBox.end(), std::uint8_t{0});
 

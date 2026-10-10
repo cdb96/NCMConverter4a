@@ -36,6 +36,20 @@ NCM 文件可解密为 MP3、FLAC 或 M4A。M4A 会保留原有的 MP4 容器和
 
 3.PC 端输出文件夹：在“设置”中选择输出文件夹，NCM、KGM、KGG 转换后的音频统一保存到所选目录。默认使用用户目录下的 `Music/NCMConverter4A`，选择会在重启后保留。
 
+### 代码复用与验证
+
+PC 和 Android 共用 `composeApp/src/commonMain` 中的界面、转换状态控制器、批量转换服务、格式解析和元数据写入。两端入口通过 `ConversionController` 启动批次，文件选择、目录权限、数据库来源和输出创建保留各自的平台实现。
+
+NCM 和 KGM 共用 `native/cpp` 的 C++ 解密核心，由桌面构建和 Android NDK 编译同一份源码。共享控制器只负责批次和界面状态，不进入逐块解密循环；各端继续使用原有缓冲区策略和 SIMD 实现。无需新增模块或通用平台框架。
+
+修改共享逻辑后，运行：
+
+```shell
+./gradlew :composeApp:desktopTest :androidApp:assembleDebug
+```
+
+桌面测试覆盖共享逻辑、JNI 解密和流式边界；Android 构建覆盖 arm64 和 x86_64，设备上的性能可通过应用内基准测试检查。C++ 独立自检方法见 [native/README.md](native/README.md)。
+
 ### 免责声明：
 本项目仅用于学习用途，请确保您已充分了解相关版权协议，否则请勿使用。
 ### 代码参考

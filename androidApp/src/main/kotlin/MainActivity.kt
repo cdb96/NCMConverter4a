@@ -20,12 +20,10 @@ import com.cdb96.ncmconverter4a.service.BenchmarkService
 import com.cdb96.ncmconverter4a.service.createFileConversionService
 import com.cdb96.ncmconverter4a.ui.BenchmarkDialog
 import com.cdb96.ncmconverter4a.ui.rememberAndroidDirectoryScan
-import com.cdb96.ncmconverter4a.ui.screens.ConversionUiState
+import com.cdb96.ncmconverter4a.ui.screens.ConversionController
 import com.cdb96.ncmconverter4a.ui.screens.MainScreen
 import com.cdb96.ncmconverter4a.ui.screens.SettingsUiState
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private fun getDisplayName(uri: Uri): String? = runCatching {
@@ -49,45 +47,25 @@ class MainActivity : ComponentActivity() {
             val context = LocalContext.current
             val scope = rememberCoroutineScope()
 
-            var conversionState by remember { mutableStateOf(ConversionUiState()) }
+            val conversion = remember {
+                ConversionController(scope, Dispatchers.Main.immediate, { fileConversionService }) { error ->
+                    Toast.makeText(context, "转换失败: ${error.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+            val conversionState = conversion.state
             var settingsState by remember { mutableStateOf(SettingsUiState()) }
             var showBenchmark by remember { mutableStateOf(false) }
             val directoryScan = rememberAndroidDirectoryScan(conversionState.isProcessing)
 
             fun startConversion(selectedUris: List<Uri>) {
                 if (selectedUris.isEmpty()) return
-                if (conversionState.isProcessing) {
+                if (conversion.state.isProcessing) {
                     // A second batch (for example files shared while converting)
                     // would reset the progress state of the running one.
                     Toast.makeText(context, "正在转换中，请等待完成后再选择文件", Toast.LENGTH_SHORT).show()
                     return
                 }
-                val selectedSettings = settingsState
-                conversionState = conversionState.start(selectedUris.size)
-                scope.launch {
-                    try {
-                        val result = fileConversionService.processFiles(
-                            sources = selectedUris.map(Uri::toString),
-                            threadCount = selectedSettings.threadCount,
-                            rawWriteMode = selectedSettings.rawWriteMode,
-                            duplicateConflictMitigation = selectedSettings.duplicateConflictMitigation,
-                            kggDatabase = selectedSettings.kggDatabase,
-                            kggRootMode = selectedSettings.kggRootMode,
-                        ) { processed, total, fileName ->
-                            withContext(Dispatchers.Main.immediate) {
-                                conversionState = conversionState.copy(
-                                    processedCount = processed,
-                                    totalCount = total,
-                                    currentFile = fileName,
-                                )
-                            }
-                        }
-                        conversionState = conversionState.complete(result)
-                    } catch (e: Exception) {
-                        Toast.makeText(context, "转换失败: ${e.message}", Toast.LENGTH_SHORT).show()
-                        conversionState = conversionState.copy(isProcessing = false)
-                    }
-                }
+                conversion.start(selectedUris.map(Uri::toString), settingsState)
             }
 
             val dbPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->

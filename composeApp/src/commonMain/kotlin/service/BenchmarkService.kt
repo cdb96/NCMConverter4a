@@ -1,5 +1,6 @@
 package com.cdb96.ncmconverter4a.service
 
+import com.cdb96.ncmconverter4a.converter.kgg.QmcCipher
 import com.cdb96.ncmconverter4a.jni.KGMDecrypt
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt
 import com.cdb96.ncmconverter4a.platform.Logger
@@ -12,9 +13,9 @@ import kotlin.time.TimeSource
 class BenchmarkService {
 
     companion object {
-        private const val TAG = "BenchmarkService"
         private const val ITERATIONS = 6
-        private val log = Logger(TAG)
+        private val SIZES_KB = listOf(256, 1024)
+        private val log = Logger("BenchmarkService")
     }
 
     suspend fun runBenchmark(onProgress: suspend (TestStatus) -> Unit): BenchmarkResult =
@@ -24,10 +25,21 @@ class BenchmarkService {
             warmup()
 
             onProgress(TestStatus.TESTING_KGM)
-            val kgmResults = testKGMPerformance()
+            val kgmResults = testNativePerformance("KGM", ByteArray(17), KGMDecrypt::create, KGMDecrypt::destroy) { context, data ->
+                var offset = 0
+                while (offset < data.size) {
+                    offset = KGMDecrypt.decrypt(context, data, offset, minOf(256 * 1024, data.size - offset))
+                }
+            }
 
             onProgress(TestStatus.TESTING_NCM)
-            val ncmResults = testNCMPerformance()
+            val ncmResults = testNativePerformance("NCM", ByteArray(256), RC4Decrypt::create, RC4Decrypt::destroy) { context, data ->
+                RC4Decrypt.decrypt(context, data, data.size)
+            }
+
+            onProgress(TestStatus.TESTING_KGG)
+            val kggRc4Results = testKGGPerformance("RC4", kggBenchmarkKey(512))
+            val kggMapResults = testKGGPerformance("Map", kggBenchmarkKey(256))
 
             onProgress(TestStatus.COMPLETED)
 
@@ -35,113 +47,96 @@ class BenchmarkService {
             BenchmarkResult(
                 kgmResults = kgmResults,
                 ncmResults = ncmResults,
+                kggRc4Results = kggRc4Results,
+                kggMapResults = kggMapResults,
                 totalDuration = totalDuration
             )
         }
 
     private fun warmup() {
+        val data = Random.Default.nextBytes(ByteArray(100 * 1024))
+        withNativeContext(ByteArray(256), RC4Decrypt::create, RC4Decrypt::destroy) {
+            RC4Decrypt.decrypt(it, data, data.size)
+        }
+        withNativeContext(ByteArray(17), KGMDecrypt::create, KGMDecrypt::destroy) {
+            KGMDecrypt.decrypt(it, data, 0, data.size)
+        }
+        val buffer = Random.Default.nextBytes(ByteArray(QmcCipher.STREAM_BUFFER_SIZE))
+        for (keySize in listOf(512, 256)) {
+            val cipher = QmcCipher.createCipher(kggBenchmarkKey(keySize))
+            repeat(3) { chunk ->
+                cipher.decrypt(buffer, chunk.toLong() * buffer.size, buffer.size)
+            }
+            cipher.decrypt(buffer, 3L * buffer.size, 777)
+        }
+        log.d("预热完成")
+    }
+
+    private inline fun <T> withNativeContext(
+        key: ByteArray,
+        create: (ByteArray) -> Long,
+        destroy: (Long) -> Unit,
+        block: (Long) -> T,
+    ): T {
+        val context = create(key)
         try {
-            val kgm = KGMDecrypt.create(ByteArray(17))
-            try {
-                val rc4 = RC4Decrypt.create(ByteArray(256))
-                try {
-                    val data = ByteArray(100 * 1024)
-                    Random.Default.nextBytes(data)
-                    RC4Decrypt.decrypt(rc4, data, data.size)
-
-                    val data2 = ByteArray(100 * 1024)
-                    Random.Default.nextBytes(data2)
-                    KGMDecrypt.decrypt(kgm, data2, 0, data2.size)
-                } finally {
-                    RC4Decrypt.destroy(rc4)
-                }
-            } finally {
-                KGMDecrypt.destroy(kgm)
-            }
-
-            log.d("预热完成")
-        } catch (e: Exception) {
-            log.e("预热失败: ${e.message}", e)
+            return block(context)
+        } finally {
+            destroy(context)
         }
     }
 
-    private fun testKGMPerformance(): List<SizeThroughput> {
-        val sizes = listOf(256, 1024)
-        val key = ByteArray(17)
-        val clock = TimeSource.Monotonic
-
-        return sizes.map { sizeKB ->
-            val results = mutableListOf<Double>()
-            log.d("开始 KGM ${sizeKB}KB 测试")
-
-            repeat(ITERATIONS) {
-                val dataSize = sizeKB * 1024
-                val data = ByteArray(dataSize)
-                Random.Default.nextBytes(data)
-                val context = KGMDecrypt.create(key)
-                val mark = clock.markNow()
-                var pos = 0
-                val chunkSize = 256 * 1024
-                val elapsed: Long
-                try {
-                    while (pos < dataSize) {
-                        val bytesToProcess = minOf(chunkSize, dataSize - pos)
-                        pos = KGMDecrypt.decrypt(context, data, pos, bytesToProcess)
-                    }
-                    elapsed = mark.elapsedNow().inWholeNanoseconds
-                } finally {
-                    KGMDecrypt.destroy(context)
-                }
-
-                if (pos != dataSize) {
-                    log.e("未处理完所有数据！期望: $dataSize, 实际: $pos")
-                }
-
-                val durationSec = elapsed / 1_000_000_000.0
-                val throughput = sizeKB / durationSec
-                log.d("KGM ${sizeKB}KB 第${results.size + 1}次: ${fmt1(throughput)} KB/s")
-                results.add(throughput)
-            }
-
-            val maxThroughput = results.maxOrNull() ?: 0.0
-            val avgDurationMs = (results.size * sizeKB / maxThroughput * 1000).toLong()
-            SizeThroughput(sizeKB, maxThroughput, avgDurationMs)
+    private fun testNativePerformance(
+        mode: String,
+        key: ByteArray,
+        create: (ByteArray) -> Long,
+        destroy: (Long) -> Unit,
+        decrypt: (Long, ByteArray) -> Unit,
+    ): List<SizeThroughput> = testPerformance(mode) { dataSize ->
+        val data = Random.Default.nextBytes(ByteArray(dataSize))
+        withNativeContext(key, create, destroy) { context ->
+            val mark = TimeSource.Monotonic.markNow()
+            decrypt(context, data)
+            mark.elapsedNow().inWholeNanoseconds
         }
     }
 
-    private fun testNCMPerformance(): List<SizeThroughput> {
-        val sizes = listOf(256, 1024)
-        val clock = TimeSource.Monotonic
+    private fun testKGGPerformance(mode: String, key: ByteArray): List<SizeThroughput> =
+        testPerformance("KGG $mode") { dataSize ->
+            // Include initialization in the timing; prepare input beforehand.
+            val chunks = List((dataSize + QmcCipher.STREAM_BUFFER_SIZE - 1) / QmcCipher.STREAM_BUFFER_SIZE) { index ->
+                val size = minOf(QmcCipher.STREAM_BUFFER_SIZE, dataSize - index * QmcCipher.STREAM_BUFFER_SIZE)
+                Random.Default.nextBytes(ByteArray(size))
+            }
+            val mark = TimeSource.Monotonic.markNow()
+            val cipher = QmcCipher.createCipher(key)
+            var offset = 0L
+            for (chunk in chunks) {
+                cipher.decrypt(chunk, offset, chunk.size)
+                offset += chunk.size
+            }
+            mark.elapsedNow().inWholeNanoseconds
+        }
 
-        return sizes.map { sizeKB ->
-            val results = mutableListOf<Double>()
-            log.d("开始 NCM ${sizeKB}KB 测试")
-
-            repeat(ITERATIONS) {
-                val dataSize = sizeKB * 1024
-                val data = ByteArray(dataSize)
-                Random.Default.nextBytes(data)
-                val context = RC4Decrypt.create(ByteArray(256))
-                val mark = clock.markNow()
-                val elapsed: Long
-                try {
-                    RC4Decrypt.decrypt(context, data, dataSize)
-                    elapsed = mark.elapsedNow().inWholeNanoseconds
-                } finally {
-                    RC4Decrypt.destroy(context)
-                }
-
-                val durationSec = elapsed / 1_000_000_000.0
-                val throughput = sizeKB / durationSec
-                log.d("NCM ${sizeKB}KB 第${results.size + 1}次: ${fmt1(throughput)} KB/s")
-                results.add(throughput)
+    private fun testPerformance(mode: String, measure: (Int) -> Long): List<SizeThroughput> =
+        SIZES_KB.map { sizeKB ->
+            var maxThroughput = 0.0
+            var totalElapsedNs = 0L
+            log.d("开始 $mode ${sizeKB}KB 测试")
+            repeat(ITERATIONS) { iteration ->
+                val elapsedNs = measure(sizeKB * 1024).coerceAtLeast(1)
+                totalElapsedNs += elapsedNs
+                val throughput = sizeKB / (elapsedNs / 1_000_000_000.0)
+                maxThroughput = maxOf(maxThroughput, throughput)
+                log.d("$mode ${sizeKB}KB 第${iteration + 1}次: ${fmt1(throughput)} KB/s")
             }
 
-            val maxThroughput = results.maxOrNull() ?: 0.0
-            val avgDurationMs = (results.size * sizeKB / maxThroughput * 1000).toLong()
-            SizeThroughput(sizeKB, maxThroughput, avgDurationMs)
+            SizeThroughput(sizeKB, maxThroughput, totalElapsedNs / 1_000_000)
         }
-    }
+
+    /** Deterministic, nonzero key bytes exercise both QMC key-length branches. */
+    private fun kggBenchmarkKey(size: Int): ByteArray =
+        ByteArray(size) { ((it * 73 + 19) % 255 + 1).toByte() }
 
     /** 手动格式化保留 1 位小数（替代 String.format，commonMain 可用） */
     private fun fmt1(d: Double): String {

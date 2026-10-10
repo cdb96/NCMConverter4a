@@ -461,21 +461,12 @@ object SqliteKggReader {
                     bodyPos += 8
                 }
 
-                // ≥12 偶数: BLOB, 长度 = (N-12)/2
-                // KGG 库将文本(CREATE SQL / ekey)以 BLOB 序列类型存储, 内容实为 UTF-8 文本, 故按文本解码
-                st >= 12L && st % 2L == 0L -> {
+                // BLOB and TEXT both hold UTF-8 text in KGG; integer division
+                // gives their byte length for both even and odd serial types.
+                st >= 12L -> {
                     val len = ((st - 12) / 2).toInt()
                     if (bodyPos + len > bodyEnd) break
                     row.add(String(data, bodyPos, len, Charsets.UTF_8))
-                    bodyPos += len
-                }
-
-                // ≥13 奇数: TEXT, 长度 = (N-13)/2
-                st >= 13L && st % 2L == 1L -> {
-                    val len = ((st - 13) / 2).toInt()
-                    if (bodyPos + len > bodyEnd) break
-                    val text = String(data, bodyPos, len, Charsets.UTF_8)
-                    row.add(text)
                     bodyPos += len
                 }
 
@@ -489,8 +480,7 @@ object SqliteKggReader {
         st == 0L || st == 8L || st == 9L -> 0
         st in 1L..6L -> INT_SIZES[st.toInt()]
         st == 7L -> 8
-        st >= 12L && st % 2L == 0L -> ((st - 12) / 2).toInt()    // BLOB
-        st >= 13L -> ((st - 13) / 2).toInt()                     // TEXT
+        st >= 12L -> ((st - 12) / 2).toInt() // BLOB or TEXT
         else -> 0
     }
 
@@ -650,11 +640,7 @@ object SqliteKggReader {
         fun u16(offset: Int): Int = ((data[offset].toInt() and 0xFF) shl 8) or
             (data[offset + 1].toInt() and 0xFF)
 
-        fun u32(offset: Int): Int =
-            ((data[offset].toInt() and 0xFF) shl 24) or
-                ((data[offset + 1].toInt() and 0xFF) shl 16) or
-                ((data[offset + 2].toInt() and 0xFF) shl 8) or
-                (data[offset + 3].toInt() and 0xFF)
+        fun u32(offset: Int): Int = u32(data, offset)
 
         fun varint(start: Int): Varint = Varint.from(data, start)
     }

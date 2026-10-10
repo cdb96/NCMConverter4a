@@ -4,7 +4,6 @@ import com.cdb96.ncmconverter4a.io.BinaryOutput
 import com.cdb96.ncmconverter4a.io.write
 import com.cdb96.ncmconverter4a.util.LengthUtils.toSyncSafeIntegerBytes
 import com.cdb96.ncmconverter4a.util.LengthUtils.writeIntBE
-import com.cdb96.ncmconverter4a.util.LengthUtils.writeShortBE
 
 class ID3TagBuilder {
     private val chunks = mutableListOf<ByteArray>()
@@ -34,7 +33,6 @@ class ID3TagBuilder {
         val header = ByteArray(10)
         id.encodeToByteArray().copyInto(header)
         writeIntBE(header, 4, bodies.sumOf { it.size })
-        writeShortBE(header, 8, 0)
         chunks.add(header)
         chunks.addAll(bodies)
     }
@@ -43,18 +41,10 @@ class ID3TagBuilder {
     fun addCover(coverData: ByteArray) {
         if (coverData.isEmpty()) return
         val mimeTypeBytes = CoverImage.mimeType(coverData).encodeToByteArray()
-        val descriptionBytes = "".encodeToByteArray()
-        val textEncoding: Byte = 0x00  // ISO-8859-1
-        val pictureType: Byte = 0x03
-
-        var pos = 0
-        val body = ByteArray(1 + mimeTypeBytes.size + 1 + descriptionBytes.size + 1 + 1)
-        body[pos++] = textEncoding
-        mimeTypeBytes.copyInto(body, pos); pos += mimeTypeBytes.size
-        body[pos++] = 0  // MIME终止符
-        body[pos++] = pictureType
-        descriptionBytes.copyInto(body, pos); pos += descriptionBytes.size
-        body[pos++] = 0  // 描述终止符
+        // Zero-filled bytes supply ISO-8859-1 encoding and both terminators.
+        val body = ByteArray(mimeTypeBytes.size + 4)
+        mimeTypeBytes.copyInto(body, 1)
+        body[mimeTypeBytes.size + 2] = 0x03 // front cover
         addFrame("APIC", body, coverData)
     }
 

@@ -15,8 +15,11 @@ class QmcCipherReferenceTest {
         qmcKey(301, 1),
         qmcKey(512, 2),
         qmcKey(768, 3),
+        qmcKey(1024, 4),
         // Zero key bytes drive the segment skip through a division by zero.
         ByteArray(400) { if (it % 37 == 0) 0 else (it * 11 + 5).toByte() },
+        // Long.MAX_VALUE % 512 == 511, exercising the final cached stream byte.
+        ByteArray(512),
     )
 
     @Test
@@ -56,6 +59,26 @@ class QmcCipherReferenceTest {
             position += length
         }
         assertContentEquals(expected, actual)
+    }
+
+    @Test
+    fun rc4SupportsOutOfOrderReadsAndOffsetsNearLongMaxValue() {
+        val offsets = longArrayOf(
+            327_683, 128, 0, 5120, 127, Long.MAX_VALUE - 8193, 5119, 128,
+            Long.MAX_VALUE - 8193, 0,
+        )
+        for (key in rc4Keys) {
+            val cipher = QmcCipher.createCipher(key)
+            for (offset in offsets) {
+                val length = 8193
+                val plain = ByteArray(length) { (it * 7 + offset.toInt()).toByte() }
+                val expected = plain.copyOf().also { ReferenceQmcRc4(key).decrypt(it, offset) }
+                val actual = plain.copyOf(length + 17).also { it.fill(0x5A, length) }
+                cipher.decrypt(actual, offset, length)
+                assertContentEquals(expected, actual.copyOf(length), "key=${key.size} offset=$offset")
+                assertContentEquals(ByteArray(17) { 0x5A }, actual.copyOfRange(length, actual.size))
+            }
+        }
     }
 
     @Test

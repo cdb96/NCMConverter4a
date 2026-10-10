@@ -102,9 +102,8 @@ inline void decryptScalarByte(const NcmKgmContext& context, std::uint8_t* data,
 
 }  // namespace
 
-void kgmInit(NcmKgmContext& context, const std::uint8_t* key, int keyLength) {
-    if (key == nullptr || keyLength < 17) return;
-
+void kgmInit(NcmKgmContext& context, const std::uint8_t* key) {
+    // The sole caller, ncm_kgm_create, validates the 17-byte key.
     // Repeat the key, then fold the fixed mask into the per-file table.
     std::memcpy(context.fileKeyBytes.data(), key, 17);
     for (int i = 1; i < 16; ++i) {
@@ -191,7 +190,7 @@ int kgmDecrypt(NcmKgmContext& context, std::uint8_t* data, int offset, int bytes
 NcmKgmContext* ncm_kgm_create(const uint8_t* key, int key_len) {
     if (key == nullptr || key_len < 17) return nullptr;
     auto* context = ncm::createContext<NcmKgmContext>();
-    if (context != nullptr) ncm::kgmInit(*context, key, 17);
+    if (context != nullptr) ncm::kgmInit(*context, key);
     return context;
 }
 

@@ -23,9 +23,7 @@ object KGMConverter {
     fun detectFormat(firstByte: Byte, ownKeyBytes: ByteArray): String {
         var med8 = ownKeyBytes[0].toInt() xor firstByte.toInt()
         med8 = med8 xor ((med8 and 0xf) shl 4)
-        var msk8 = 0 xor 0xB8.toInt()
-        msk8 = msk8 xor ((msk8 and 0xf) shl 4)
-        return when ((med8 xor msk8).toByte()) {
+        return when ((med8 xor 0x38).toByte()) {
             0x66.toByte() -> "flac"
             0x49.toByte() -> "mp3"
             else -> ""
@@ -59,8 +57,7 @@ object KGMConverter {
 
         val context = KGMDecrypt.create(ownKeyBytes)
         try {
-            var fileOffset = 0
-            fileOffset = KGMDecrypt.decrypt(context, firstChunk, fileOffset, firstSize)
+            var fileOffset = KGMDecrypt.decrypt(context, firstChunk, 0, firstSize)
             write(firstChunk, firstSize)
 
             val buf = if (firstChunk.size == bufferSize) firstChunk else ByteArray(bufferSize)

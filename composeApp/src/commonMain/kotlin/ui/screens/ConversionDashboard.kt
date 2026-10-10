@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 internal fun ConversionDashboard(
     conversionState: ConversionUiState,
     settings: SettingsUiState,
+    desktopMode: Boolean,
     supportsRoot: Boolean,
     onPickFiles: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -35,6 +36,9 @@ internal fun ConversionDashboard(
 ) {
     val automaticDatabase = supportsRoot && settings.kggRootMode
     val databaseReady = automaticDatabase || settings.kggDatabase != null
+    val showOutputDirectory = desktopMode &&
+        (conversionState.isProcessing || conversionState.convertResult != "done")
+    val visibleOutputDirectory = settings.outputDirectory.takeIf { showOutputDirectory }
     BoxWithConstraints {
         if (maxWidth >= 720.dp) {
             Row(
@@ -49,9 +53,9 @@ internal fun ConversionDashboard(
                         conversionState, supportsRoot, onPickFiles,
                         modifier = Modifier.weight(1f),
                         stretch = true,
-                        outputDirectory = settings.outputDirectory,
+                        outputDirectory = visibleOutputDirectory,
                     )
-                    if (settings.outputDirectory == null) OutputHint()
+                    if (showOutputDirectory && settings.outputDirectory == null) OutputHint()
                 }
                 Column(
                     modifier = Modifier.weight(1f),
@@ -65,12 +69,12 @@ internal fun ConversionDashboard(
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                ImportPanel(conversionState, supportsRoot, onPickFiles, outputDirectory = settings.outputDirectory)
+                ImportPanel(conversionState, supportsRoot, onPickFiles, outputDirectory = visibleOutputDirectory)
                 ConfigurationPanel(settings, databaseReady, automaticDatabase, onOpenSettings)
                 onBenchmark?.let { benchmark ->
                     BenchmarkCard(benchmark, !conversionState.isProcessing)
                 }
-                if (settings.outputDirectory == null) OutputHint()
+                if (showOutputDirectory && settings.outputDirectory == null) OutputHint()
             }
         }
     }
