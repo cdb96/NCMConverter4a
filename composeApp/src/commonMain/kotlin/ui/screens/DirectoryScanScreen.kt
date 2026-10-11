@@ -5,7 +5,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Check
@@ -18,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.cdb96.ncmconverter4a.service.ScanFormat
 import com.cdb96.ncmconverter4a.service.ScannedAudioFile
@@ -36,72 +39,133 @@ internal fun DirectoryScanScreen(
     onConvert: () -> Unit,
 ) {
     val editable = enabled && !state.isScanning
+    val scanOptions: @Composable () -> Unit = {
+        ScanOptionsCard(
+            state, enabled, onConfigureDirectories, onScan, onCancel,
+            onFormatSelectionChange, onRecursiveChange,
+        )
+    }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // Match the other pages' 720 dp breakpoint after their horizontal padding.
+        if (maxWidth - 40.dp >= 720.dp) {
+            Row(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f).fillMaxHeight()
+                        .verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
+                ) {
+                    scanOptions()
+                }
+                ScanResultsPane(
+                    state, editable, onSelectFile, onSelectAll, onConvert,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    horizontalPadding = 0.dp,
+                )
+            }
+        } else {
+            ScanResultsPane(
+                state, editable, onSelectFile, onSelectAll, onConvert,
+                modifier = Modifier.fillMaxSize(),
+                scanOptions = scanOptions,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScanOptionsCard(
+    state: DirectoryScanUiState,
+    enabled: Boolean,
+    onConfigureDirectories: () -> Unit,
+    onScan: (Set<ScanFormat>) -> Unit,
+    onCancel: () -> Unit,
+    onFormatSelectionChange: (ScanFormat, Boolean) -> Unit,
+    onRecursiveChange: (Boolean) -> Unit,
+) {
+    val editable = enabled && !state.isScanning
     val selectedFormats = state.selectedFormats.filter { state.directories[it]?.configured == true }.toSet()
-    Column(Modifier.fillMaxSize()) {
+    OutlinedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("查找音乐文件", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f))
+                TextButton(onClick = onConfigureDirectories, enabled = editable,
+                    contentPadding = PaddingValues(horizontal = 8.dp)) { Text("配置扫描目录") }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                ScanFormat.entries.forEach { format ->
+                    val selected = format in selectedFormats
+                    FilterChip(
+                        selected = selected,
+                        onClick = { onFormatSelectionChange(format, !selected) },
+                        modifier = Modifier.weight(1f),
+                        enabled = editable && state.directories[format]?.configured == true,
+                        label = { Text(format.name, maxLines = 1) },
+                        leadingIcon = if (selected) {
+                            { Icon(Icons.Outlined.Check, null, Modifier.size(14.dp)) }
+                        } else null,
+                    )
+                }
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = state.recursive, onCheckedChange = onRecursiveChange, enabled = editable)
+                    Text("包含子目录", style = MaterialTheme.typography.bodyMedium)
+                }
+                Button(
+                    onClick = { if (state.isScanning) onCancel() else onScan(selectedFormats) },
+                    enabled = enabled && (state.isScanning || selectedFormats.isNotEmpty()),
+                ) {
+                    Icon(if (state.isScanning) Icons.Outlined.Close else Icons.Outlined.Search, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (state.isScanning) "取消扫描" else "开始扫描")
+                }
+            }
+            if (state.isScanning || state.message != null || state.warnings.isNotEmpty()) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (state.isScanning) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Text("已扫描 ${state.visitedDirectories} 个目录 · 找到 ${state.foundFiles} 个文件",
+                            style = MaterialTheme.typography.bodySmall)
+                    } else state.message?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                    state.warnings.forEach { warning ->
+                        Text(warning, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScanResultsPane(
+    state: DirectoryScanUiState,
+    editable: Boolean,
+    onSelectFile: (String, Boolean) -> Unit,
+    onSelectAll: (Boolean) -> Unit,
+    onConvert: () -> Unit,
+    modifier: Modifier = Modifier,
+    horizontalPadding: Dp = 20.dp,
+    scanOptions: (@Composable () -> Unit)? = null,
+) {
+    Column(modifier) {
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(0.dp),
+            contentPadding = PaddingValues(horizontal = horizontalPadding, vertical = 12.dp),
         ) {
-            item {
-                OutlinedCard(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                ) {
-                    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("查找音乐文件", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(1f))
-                            TextButton(onClick = onConfigureDirectories, enabled = editable,
-                                contentPadding = PaddingValues(horizontal = 8.dp)) { Text("配置扫描目录") }
-                        }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            ScanFormat.entries.forEach { format ->
-                                val selected = format in selectedFormats
-                                FilterChip(
-                                    selected = selected,
-                                    onClick = { onFormatSelectionChange(format, !selected) },
-                                    modifier = Modifier.weight(1f),
-                                    enabled = editable && state.directories[format]?.configured == true,
-                                    label = { Text(format.name, maxLines = 1) },
-                                    leadingIcon = if (selected) {
-                                        { Icon(Icons.Outlined.Check, null, Modifier.size(14.dp)) }
-                                    } else null,
-                                )
-                            }
-                        }
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(checked = state.recursive, onCheckedChange = onRecursiveChange, enabled = editable)
-                                Text("包含子目录", style = MaterialTheme.typography.bodyMedium)
-                            }
-                            Button(
-                                onClick = { if (state.isScanning) onCancel() else onScan(selectedFormats) },
-                                enabled = enabled && (state.isScanning || selectedFormats.isNotEmpty()),
-                            ) {
-                                Icon(if (state.isScanning) Icons.Outlined.Close else Icons.Outlined.Search, null, Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text(if (state.isScanning) "取消扫描" else "开始扫描")
-                            }
-                        }
-                        if (state.isScanning || state.message != null || state.warnings.isNotEmpty()) {
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                if (state.isScanning) {
-                                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                                    Text("已扫描 ${state.visitedDirectories} 个目录 · 找到 ${state.foundFiles} 个文件",
-                                        style = MaterialTheme.typography.bodySmall)
-                                } else state.message?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-                                state.warnings.forEach { warning ->
-                                    Text(warning, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-                    }
+            if (scanOptions != null) {
+                item {
+                    Box(Modifier.padding(bottom = 12.dp)) { scanOptions() }
                 }
             }
             item {
@@ -151,7 +215,7 @@ internal fun DirectoryScanScreen(
         FilledTonalButton(
             onClick = onConvert,
             enabled = editable && state.selectedIds.isNotEmpty(),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = 8.dp),
         ) {
             Icon(Icons.Outlined.PlayArrow, null, Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
@@ -159,6 +223,7 @@ internal fun DirectoryScanScreen(
         }
     }
 }
+
 @Composable
 private fun ScanFileRow(
     file: ScannedAudioFile,
