@@ -71,6 +71,7 @@ private class AndroidConversionFiles(private val context: Context) : ConversionF
             put(MediaStore.Audio.Media.DISPLAY_NAME, displayName)
             put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
             put(MediaStore.Audio.Media.RELATIVE_PATH, mediaRelativePath)
+            put(MediaStore.Audio.Media.IS_PENDING, 1)
         }
         val outputUri = context.contentResolver.insert(
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
@@ -81,6 +82,10 @@ private class AndroidConversionFiles(private val context: Context) : ConversionF
             val output = context.contentResolver.openOutputStream(outputUri, "w")
                 ?: throw IllegalStateException("无法打开输出文件: $displayName")
             output.use(write)
+            val published = context.contentResolver.update(outputUri, ContentValues().apply {
+                put(MediaStore.Audio.Media.IS_PENDING, 0)
+            }, null, null)
+            check(published == 1) { "无法发布输出文件: $displayName" }
         } catch (error: Throwable) {
             context.contentResolver.delete(outputUri, null, null)
             throw error

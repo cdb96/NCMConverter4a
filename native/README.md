@@ -17,7 +17,6 @@ Tests, MSI packaging code, and the external SIMD header are kept alongside it.
 | `third_party/NEON_2_SSE/` | Intel ARM_NEON_2_x86_SSE submodule (x86 compatibility layer) |
 | `cpp/JniBridge.cpp` | JNI glue for `com.cdb96.ncmconverter4a.jni.{RC4Decrypt,KGMDecrypt}` |
 | `tests/SelfTest.cpp` | Golden vector + byte-level reference comparison, no JVM needed |
-| `tests/NativeCoreCheck.java` | JVM-level checks (JNI symbol names, boundaries, concurrency) |
 | `tests/NativeLibraryLoadCheck.java` | Windows DLL load check without MinGW on `PATH` |
 | `packaging/MsiRestoreInstallDir.c` | MSI helper for reusing an existing install directory |
 
@@ -76,12 +75,6 @@ The checks compare the SIMD implementation against an independent byte-level
 reference for RC4 and KGM, covering the 16, 272, 4352 and 69632 byte period
 boundaries, 16-byte aligned KGM offsets and chunk sizes, and a final partial
 chunk.
-
-JVM-level check (needs a JDK as well):
-
-```bash
-native/tests/check.sh
-```
 
 Desktop unit tests, including the JNI golden vectors and chunk boundary checks:
 

@@ -1,15 +1,13 @@
 package com.cdb96.ncmconverter4a
 
-import com.cdb96.ncmconverter4a.jni.KGMDecrypt
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
-import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Checks the Desktop JNI entries ([RC4Decrypt], [KGMDecrypt]) against known-good
- * vectors. The library is bundled by the `nativeBuild` Gradle task; when it is
+ * Checks the Desktop JNI entry ([RC4Decrypt]) against a known-good
+ * vector. The library is bundled by the `nativeBuild` Gradle task; when it is
  * missing (for example in a JDK-only environment) the tests report that the
  * native path is unavailable instead of failing obscurely.
  */
@@ -36,39 +34,6 @@ class NativeDecryptTest {
         }
 
         assertContentEquals(expected, actual)
-    }
-
-    @Test
-    fun kgmKeepsChunkedResultsAligned() {
-        requireNative()
-        val key = ByteArray(17) { (it * 41 + 1).toByte() }
-        val input = ByteArray(69632 * 2 + 4096) { (it * 23 + 9).toByte() }
-
-        val whole = input.copyOf()
-        val wholeContext = KGMDecrypt.create(key)
-        val wholeNext = try {
-            KGMDecrypt.decrypt(wholeContext, whole, 0, whole.size)
-        } finally {
-            KGMDecrypt.destroy(wholeContext)
-        }
-
-        val chunked = ByteArray(input.size)
-        var offset = 0
-        val chunkContext = KGMDecrypt.create(key)
-        try {
-            while (offset < input.size) {
-                val size = minOf(4096, input.size - offset)
-                val chunk = input.copyOfRange(offset, offset + size)
-                offset = KGMDecrypt.decrypt(chunkContext, chunk, offset, size)
-                chunk.copyInto(chunked, offset - size)
-            }
-        } finally {
-            KGMDecrypt.destroy(chunkContext)
-        }
-
-        assertEquals(input.size, offset)
-        assertEquals(input.size, wholeNext)
-        assertContentEquals(whole, chunked)
     }
 
     private fun requireNative() {

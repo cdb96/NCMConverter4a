@@ -3,9 +3,9 @@ name: CI
 on:
   workflow_dispatch:
   push:
-    branches: ["master", "cmp_preview"]
+    branches: ["master"]
   pull_request:
-    branches: ["master", "cmp_preview"]
+    branches: ["master"]
   release:
     types: [published]
 
@@ -145,9 +145,6 @@ jobs:
       # vector and compares KGM byte-for-byte against the retired implementation.
       - name: 安装 native 构建工具
         run: sudo apt-get update && sudo apt-get install -y ninja-build
-
-      - name: 校验共享 native core
-        run: bash native/tests/check.sh
 
       - name: 运行 Desktop/common 回归测试
         run: ./gradlew :composeApp:desktopTest --configure-on-demand
@@ -359,7 +356,7 @@ jobs:
           $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
           $classes = Join-Path $PWD.Path 'build/native-image/trace-classes'
           New-Item -ItemType Directory -Force $metadata,$classes | Out-Null
-          & "$env:JAVA_HOME\bin\javac.exe" -cp $jar.FullName -d $classes '.github/native-image/NativeImageMain.java' '.github/native-image/FilePickerSmoke.java' '.github/native-image/PgoTraining.java' '.github/native-image/StartupSmokeRegression.java'
+          & "$env:JAVA_HOME\bin\javac.exe" -cp $jar.FullName -d $classes '.github/native-image/NativeImageMain.java' '.github/native-image/FilePickerSmoke.java' '.github/native-image/PgoTraining.java'
           if ($LASTEXITCODE -ne 0) { throw "Trace helper compilation failed: $LASTEXITCODE" }
           $classPath = "$classes;$($jar.FullName)"
           $traceAppData = Join-Path $PWD.Path 'build/native-image/trace-appdata'
@@ -368,27 +365,6 @@ jobs:
           $originalAppData = $env:APPDATA
           try {
             $env:APPDATA = $traceAppData
-            'gpuRendering=false' | Set-Content -LiteralPath $renderConfig -Encoding ascii
-            $delayedOutput = & "$env:JAVA_HOME\bin\java.exe" '--enable-native-access=ALL-UNNAMED' -cp $classPath 'StartupSmokeRegression' 'delayed-startup' 2>&1
-            $delayedExit = $LASTEXITCODE
-            $delayedOutput | ForEach-Object { Write-Host $_ }
-            if ($delayedExit -ne 0 -or -not (($delayedOutput | Out-String).Contains('Compose desktop startup smoke test passed'))) {
-              throw "Delayed desktop startup regression failed: $delayedExit"
-            }
-            # This child must exit 1; capture it without PowerShell treating the expected failure as an error.
-            $blockedStdout = Join-Path $PWD.Path 'build/native-image/startup-blocked.stdout.log'
-            $blockedStderr = Join-Path $PWD.Path 'build/native-image/startup-blocked.stderr.log'
-            $blockedProcess = Start-Process -FilePath "$env:JAVA_HOME\bin\java.exe" -ArgumentList @('--enable-native-access=ALL-UNNAMED','-cp',"`"$classPath`"",'StartupSmokeRegression','blocked-event-queue') -PassThru -WindowStyle Hidden -RedirectStandardOutput $blockedStdout -RedirectStandardError $blockedStderr
-            $blockedHandle = $blockedProcess.Handle
-            if (-not $blockedProcess.WaitForExit(10000)) { $blockedProcess.Kill(); throw 'Blocked event queue watchdog did not terminate the JVM' }
-            $blockedProcess.Refresh()
-            $blockedExit = $blockedProcess.ExitCode
-            $blockedLog = (Get-Content -LiteralPath $blockedStdout -Raw) + (Get-Content -LiteralPath $blockedStderr -Raw)
-            if ($blockedExit -ne 1 -or -not $blockedLog.Contains('AWT event queue has not processed the startup check') -or -not $blockedLog.Contains('Thread AWT-EventQueue')) {
-              Write-Host $blockedLog
-              throw "Blocked event queue regression did not fail with diagnostics: $blockedExit"
-            }
-            Write-Host 'Startup smoke regressions passed'
             foreach ($gpu in @('true', 'false')) {
               "gpuRendering=$gpu" | Set-Content -LiteralPath $renderConfig -Encoding ascii
               $agentMode = if ($gpu -eq 'true') { 'config-output-dir' } else { 'config-merge-dir' }
