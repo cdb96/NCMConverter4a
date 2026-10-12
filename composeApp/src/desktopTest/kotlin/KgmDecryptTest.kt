@@ -9,6 +9,7 @@ import java.io.ByteArrayOutputStream
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertSame
 
 /**
@@ -48,6 +49,23 @@ class KgmDecryptTest {
             KGMDecrypt.destroy(context)
         }
         return output to offset
+    }
+
+    @Test
+    fun rejectsUnalignedOffsetsWithoutChangingData() {
+        val expected = payload.copyOf(16)
+        val actual = expected.copyOf()
+        val context = KGMDecrypt.create(key)
+        try {
+            for (offset in listOf(1, 15, 271)) {
+                assertFailsWith<IllegalArgumentException> {
+                    KGMDecrypt.decrypt(context, actual, offset, actual.size)
+                }
+                assertContentEquals(expected, actual)
+            }
+        } finally {
+            KGMDecrypt.destroy(context)
+        }
     }
 
     @Test

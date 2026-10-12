@@ -4,8 +4,7 @@
 #   * Desktop: standalone, `cmake -S native -B native/build` (see README.md).
 #   * Android: androidApp builds this file directly with NCM_BUILD_SELFTEST=OFF.
 #
-# The algorithms live in cpp/ behind the C ABI in cpp/NativeApi.h;
-# cpp/JniBridge.cpp is the only runtime source that knows about JNI.
+# The two algorithm sources implement the JNI entry points directly.
 cmake_minimum_required(VERSION 3.22)
 project(ncmc4a CXX)
 
@@ -17,30 +16,30 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
-option(NCM_BUILD_JNI "Build the JNI bridge (needs a JDK)" ON)
+option(NCM_BUILD_JNI "Build the JNI library (needs a JDK)" ON)
 option(NCM_BUILD_SELFTEST "Build the standalone core self-test" ON)
+
+if(NOT ANDROID AND (NCM_BUILD_JNI OR NCM_BUILD_SELFTEST))
+    if(NOT NCM_JNI_INCLUDE_DIR OR NOT EXISTS "${NCM_JNI_INCLUDE_DIR}/jni.h")
+        message(FATAL_ERROR
+            "NCM_JNI_INCLUDE_DIR must point at a JDK 'include' directory "
+            "(pass -DNCM_JNI_INCLUDE_DIR=<jdk>/include)")
+    endif()
+    set(NCM_JNI_INCLUDE_DIRS
+        "${NCM_JNI_INCLUDE_DIR}"
+        "${NCM_JNI_INCLUDE_DIR}/win32"
+        "${NCM_JNI_INCLUDE_DIR}/darwin"
+        "${NCM_JNI_INCLUDE_DIR}/linux")
+endif()
 
 set(NCM_CORE_SOURCES
     "${CMAKE_CURRENT_LIST_DIR}/cpp/RC4Core.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/cpp/KGMCore.cpp")
 
 if(NCM_BUILD_JNI)
-    add_library(ncmc4a SHARED
-        ${NCM_CORE_SOURCES}
-        "${CMAKE_CURRENT_LIST_DIR}/cpp/JniBridge.cpp")
-
-    target_include_directories(ncmc4a PUBLIC "${CMAKE_CURRENT_LIST_DIR}/cpp")
-    if(NCM_JNI_INCLUDE_DIR AND EXISTS "${NCM_JNI_INCLUDE_DIR}/jni.h")
-        target_include_directories(ncmc4a PRIVATE
-            "${NCM_JNI_INCLUDE_DIR}"
-            "${NCM_JNI_INCLUDE_DIR}/win32"
-            "${NCM_JNI_INCLUDE_DIR}/darwin"
-            "${NCM_JNI_INCLUDE_DIR}/linux")
-    elseif(NOT ANDROID)
-        message(FATAL_ERROR
-            "NCM_JNI_INCLUDE_DIR must point at a JDK 'include' directory "
-            "(pass -DNCM_JNI_INCLUDE_DIR=<jdk>/include)")
-    endif()
+    add_library(ncmc4a SHARED ${NCM_CORE_SOURCES})
+    target_include_directories(ncmc4a PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/cpp" ${NCM_JNI_INCLUDE_DIRS})
 
     target_compile_features(ncmc4a PRIVATE cxx_std_17)
     set_target_properties(ncmc4a PROPERTIES
@@ -85,6 +84,7 @@ if(NCM_BUILD_SELFTEST)
     add_executable(ncm_core_selftest
         "${CMAKE_CURRENT_LIST_DIR}/tests/SelfTest.cpp"
         ${NCM_CORE_SOURCES})
-    target_include_directories(ncm_core_selftest PRIVATE "${CMAKE_CURRENT_LIST_DIR}/cpp")
+    target_include_directories(ncm_core_selftest PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/cpp" ${NCM_JNI_INCLUDE_DIRS})
     target_compile_features(ncm_core_selftest PRIVATE cxx_std_17)
 endif()

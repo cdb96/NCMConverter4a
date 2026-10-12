@@ -1,49 +1,100 @@
-// Standalone self-test for the shared native core.
-//
-// It needs no JVM, so it can run anywhere a C++ compiler exists:
-//   cmake -S native -B native/build -DNCM_BUILD_JNI=OFF
-//   cmake --build native/build
-//   ./native/build/ncm_core_selftest
-//
-// The KGM reference below is a straight copy of the pre-existing NEON/scalar
-// implementation, so a pass means the rewritten core stayed byte-identical.
+// Self-test of the production JNI entry points using in-memory byte arrays.
+// Requires JDK headers and a C++ compiler, but does not start or link a JVM.
+#include <jni.h>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
 
-#include "NativeApi.h"
 #include "KgmTables.h"
+
+extern "C" {
+JNIEXPORT jlong JNICALL Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_create(JNIEnv*, jclass, jbyteArray);
+JNIEXPORT void JNICALL Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_decrypt(JNIEnv*, jclass, jlong, jbyteArray, jint);
+JNIEXPORT void JNICALL Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_destroy(JNIEnv*, jclass, jlong);
+JNIEXPORT jlong JNICALL Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_create(JNIEnv*, jclass, jbyteArray);
+JNIEXPORT jint JNICALL Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv*, jclass, jlong, jbyteArray, jint, jint);
+JNIEXPORT void JNICALL Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_destroy(JNIEnv*, jclass, jlong);
+}
 
 namespace {
 
 int failures = 0;
 
+struct TestByteArray : _jbyteArray {
+    const std::uint8_t* bytes;
+    jsize length;
+    TestByteArray(const std::uint8_t* data, jsize size) : bytes(data), length(size) {}
+};
+
+jsize JNICALL getArrayLength(JNIEnv*, jarray array) {
+    return static_cast<TestByteArray*>(array)->length;
+}
+
+void* JNICALL getPrimitiveArrayCritical(JNIEnv*, jarray array, jboolean*) {
+    return const_cast<std::uint8_t*>(static_cast<TestByteArray*>(array)->bytes);
+}
+
+void JNICALL releasePrimitiveArrayCritical(JNIEnv*, jarray, void*, jint) {}
+
+void JNICALL getByteArrayRegion(JNIEnv*, jbyteArray array, jsize start, jsize length, jbyte* output) {
+    std::memcpy(output, static_cast<TestByteArray*>(array)->bytes + start, length);
+}
+
+jclass JNICALL findClass(JNIEnv*, const char*) {
+    static _jclass exceptionClass;
+    return &exceptionClass;
+}
+
+jint JNICALL throwNew(JNIEnv*, jclass, const char* message) {
+    std::fprintf(stderr, "JNI error: %s\n", message);
+    std::abort();
+}
+
+const JNINativeInterface_ testFunctions = [] {
+    JNINativeInterface_ functions{};
+    functions.GetArrayLength = getArrayLength;
+    functions.GetPrimitiveArrayCritical = getPrimitiveArrayCritical;
+    functions.ReleasePrimitiveArrayCritical = releasePrimitiveArrayCritical;
+    functions.GetByteArrayRegion = getByteArrayRegion;
+    functions.FindClass = findClass;
+    functions.ThrowNew = throwNew;
+    return functions;
+}();
+JNIEnv testEnv{&testFunctions};
+
 class Rc4Session {
 public:
-    ~Rc4Session() { ncm_rc4_destroy(context_); }
+    ~Rc4Session() { Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_destroy(nullptr, nullptr, context_); }
     void init(const std::uint8_t* key, int length) {
-        ncm_rc4_destroy(context_);
-        context_ = ncm_rc4_create(key, length);
+        Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_destroy(nullptr, nullptr, context_);
+        TestByteArray array(key, length);
+        context_ = Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_create(&testEnv, nullptr, &array);
     }
-    void decrypt(std::uint8_t* data, int length) { ncm_rc4_decrypt(context_, data, length); }
+    void decrypt(std::uint8_t* data, int length) {
+        TestByteArray array(data, length);
+        Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_decrypt(&testEnv, nullptr, context_, &array, length);
+    }
 private:
-    NcmRc4Context* context_ = nullptr;
+    jlong context_ = 0;
 };
 
 class KgmSession {
 public:
-    ~KgmSession() { ncm_kgm_destroy(context_); }
+    ~KgmSession() { Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_destroy(nullptr, nullptr, context_); }
     void init(const std::uint8_t* key, int length) {
-        ncm_kgm_destroy(context_);
-        context_ = ncm_kgm_create(key, length);
+        Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_destroy(nullptr, nullptr, context_);
+        TestByteArray array(key, length);
+        context_ = Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_create(&testEnv, nullptr, &array);
     }
     int decrypt(std::uint8_t* data, int offset, int length) {
-        return ncm_kgm_decrypt(context_, data, offset, length);
+        TestByteArray array(data, length);
+        return Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(&testEnv, nullptr, context_, &array, offset, length);
     }
 private:
-    NcmKgmContext* context_ = nullptr;
+    jlong context_ = 0;
 };
 
 void report(const std::string& label, bool ok, const std::string& detail = "") {
@@ -339,7 +390,7 @@ void checkKgmChunking() {
 
 /**
  * The decryption loop requires a 16-byte aligned stream position (see
- * NativeApi.h), so these cases walk across the 16-byte, 272-byte, 4352-byte and
+ * the converters), so these cases walk across the 16-byte, 272-byte, 4352-byte and
  * 69632-byte period boundaries using aligned offsets that deliberately leave a
  * partial final block. offset=69616 length=17 makes the 69632-byte genMask
  * refresh, the 272-byte cursor wrap and the mask-block advance all fall due on

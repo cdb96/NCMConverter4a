@@ -1,24 +1,23 @@
 # Shared native core
 
 One C++ implementation of the RC4 and KGM decryption used by **both** the Android
-app and the Desktop app. `androidApp` and `composeApp` compile the same three
+app and the Desktop app. `androidApp` and `composeApp` compile the same two
 runtime sources; only the way the library is loaded differs.
 
 `cpp/` contains the runtime C++ code.
-Tests, MSI packaging code, and the external SIMD header are kept alongside it.
+Tests, Windows title-bar code, and the external SIMD header are kept alongside it.
 
 | File | Role |
 | --- | --- |
-| `cpp/NativeApi.h` | C ABI, free of JNI types, so the core is testable without a JVM |
 | `cpp/SimdCompat.h` | Picks the SIMD backend: `<arm_neon.h>` on ARM, `NEON_2_SSE` on x86 |
-| `cpp/RC4Core.cpp` | RC4 key schedule + keystream XOR |
-| `cpp/KGMCore.cpp` | KGM mask expansion and stream transform |
+| `cpp/ContextMemory.h` | Per-conversion context allocation and release |
+| `cpp/RC4Core.cpp` | RC4 key schedule, keystream XOR and JNI entry points |
+| `cpp/KGMCore.cpp` | KGM mask expansion, stream transform and JNI entry points |
 | `cpp/KgmTables.h` | Generated lookup tables (formerly `KGMData.h`) |
 | `third_party/NEON_2_SSE/` | Intel ARM_NEON_2_x86_SSE submodule (x86 compatibility layer) |
-| `cpp/JniBridge.cpp` | JNI glue for `com.cdb96.ncmconverter4a.jni.{RC4Decrypt,KGMDecrypt}` |
-| `tests/SelfTest.cpp` | Golden vector + byte-level reference comparison, no JVM needed |
+| `tests/SelfTest.cpp` | JNI entry-point checks against golden vectors and byte-level references, no JVM needed |
 | `tests/NativeLibraryLoadCheck.java` | Windows DLL load check without MinGW on `PATH` |
-| `packaging/MsiRestoreInstallDir.c` | MSI helper for reusing an existing install directory |
+| `windows/NativeCaption.cpp` | Windows native title-bar support |
 
 ## SIMD
 
@@ -39,8 +38,8 @@ arm_neon.h   NEON_2_SSE.h
 There is no scalar build variant to keep in sync: the intrinsics *are* the
 implementation on both backends, with a scalar tail only for the final partial
 block (RC4 restarts its 256-byte cycle per call, so callers pass 256-byte aligned
-chunks; KGM requires a 16-byte aligned `offset` — see `NativeApi.h`, whose
-contracts the converters satisfy by filling 256 KiB buffers). There is also no
+chunks; KGM requires a 16-byte aligned `offset`. The converters satisfy these
+contracts by filling 256 KiB buffers). There is also no
 hand-written SSE/AVX2 implementation and no runtime CPUID dispatch, so a build for
 an architecture that has neither backend fails at compile time instead of silently
 producing a second code path.
@@ -60,10 +59,11 @@ Visual C++ runtime statically and uses link-time optimization.
 
 ## Verify
 
-The self-test needs only a C++ compiler:
+The self-test calls the production JNI entry points with in-memory byte arrays.
+It needs a C++ compiler and JDK headers, but does not start or link a JVM:
 
 ```bash
-cmake -S native -B native/build -DNCM_BUILD_JNI=OFF
+cmake -S native -B native/build -DNCM_BUILD_JNI=OFF -DNCM_JNI_INCLUDE_DIR="$JAVA_HOME/include"
 cmake --build native/build
 ./native/build/ncm_core_selftest
 ```
