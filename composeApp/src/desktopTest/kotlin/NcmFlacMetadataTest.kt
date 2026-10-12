@@ -86,19 +86,22 @@ class NcmFlacMetadataTest {
             .order(ByteOrder.LITTLE_ENDIAN)
             .putInt(vendor.size).put(vendor).putInt(1).putInt(oldComments.size).put(oldComments).array()
         val application = ByteArray(777) { (it * 7).toByte() }
+        val trailingApplication = ByteArray(513) { (it * 11).toByte() }
         val padding = ByteArray(4097)
         val audio = ByteArray(1029) { (it * 17 + 3).toByte() }
         val payload = "fLaC".encodeToByteArray() +
             flacBlock(0, false, ByteArray(34)) +
             flacBlock(2, false, application) +
             flacBlock(4, false, oldVorbis) +
+            flacBlock(2, false, trailingApplication) +
             flacBlock(1, true, padding) + audio
 
         val (blocks, actualAudio) = parseFlac(convertFlac(payload))
 
-        assertEquals(listOf(0, 2, 4, 6, 0x81), blocks.map { it.first })
+        assertEquals(listOf(0, 2, 4, 2, 1, 0x86), blocks.map { it.first })
         assertContentEquals(application, blocks[1].second)
-        assertContentEquals(padding, blocks.last().second)
+        assertContentEquals(trailingApplication, blocks[3].second)
+        assertContentEquals(padding, blocks[4].second)
         assertContentEquals(audio, actualAudio)
         val vorbis = ByteBuffer.wrap(blocks[2].second).order(ByteOrder.LITTLE_ENDIAN)
         assertEquals(vendor.size, vorbis.int)
@@ -109,7 +112,7 @@ class NcmFlacMetadataTest {
         }
         assertEquals(listOf("ARTIST=Artist", "TITLE=Title", "ALBUM=Album"), comments)
         assertEquals(0, vorbis.remaining())
-        val picture = ByteBuffer.wrap(blocks[3].second)
+        val picture = ByteBuffer.wrap(blocks[5].second)
         assertEquals(3, picture.int)
         val mime = ByteArray(picture.int).also { picture.get(it) }.decodeToString()
         assertEquals("image/jpeg", mime)
@@ -138,28 +141,40 @@ class NcmFlacMetadataTest {
 
         val (blocks, audio) = parseFlac(convertFlac(payload))
 
-        assertEquals(listOf(0, 4, 6, 0x84), blocks.map { it.first })
-        assertContentEquals(secondVorbis, blocks.last().second)
+        assertEquals(listOf(0, 4, 4, 0x86), blocks.map { it.first })
+        assertContentEquals(secondVorbis, blocks[2].second)
         assertContentEquals(byteArrayOf(1, 2, 3), audio)
+
+        val (noCoverBlocks, noCoverAudio) = parseFlac(convertFlac(payload, cover = byteArrayOf()))
+        assertEquals(listOf(0, 4, 4, 0x86), noCoverBlocks.map { it.first })
+        assertContentEquals(secondVorbis, noCoverBlocks[2].second)
+        assertContentEquals(byteArrayOf(1, 2, 3), noCoverAudio)
     }
 
     @Test
-    fun omitsPictureBlockWithoutCoverAndKeepsTheLastFlagOnTheRewrittenVorbis() {
+    fun writesEmptyPictureBlock() {
         val vorbisLast = "fLaC".encodeToByteArray() +
             flacBlock(0, false, ByteArray(34)) +
             flacBlock(4, true, ByteArray(8)) + byteArrayOf(1, 2, 3)
         val (lastBlocks, lastAudio) = parseFlac(convertFlac(vorbisLast, cover = byteArrayOf()))
-        assertEquals(listOf(0, 0x84), lastBlocks.map { it.first })
+        assertEquals(listOf(0, 4, 0x86), lastBlocks.map { it.first })
+        val picture = ByteBuffer.wrap(lastBlocks.last().second)
+        assertEquals(3, picture.int)
+        assertEquals("image/jpeg", ByteArray(picture.int).also { picture.get(it) }.decodeToString())
+        repeat(5) { assertEquals(0, picture.int) } // description length and dimensions
+        assertEquals(0, picture.int) // no image data
+        assertEquals(0, picture.remaining())
         assertContentEquals(byteArrayOf(1, 2, 3), lastAudio)
 
-        val padding = ByteArray(16) { it.toByte() }
+        val padding = ByteArray(16)
         val vorbisMiddle = "fLaC".encodeToByteArray() +
             flacBlock(0, false, ByteArray(34)) +
             flacBlock(4, false, ByteArray(8)) +
             flacBlock(1, true, padding) + byteArrayOf(4, 5, 6)
         val (middleBlocks, middleAudio) = parseFlac(convertFlac(vorbisMiddle, cover = byteArrayOf()))
-        assertEquals(listOf(0, 4, 0x81), middleBlocks.map { it.first })
-        assertContentEquals(padding, middleBlocks.last().second)
+        assertEquals(listOf(0, 4, 1, 0x86), middleBlocks.map { it.first })
+        assertContentEquals(padding, middleBlocks[2].second)
+        assertContentEquals(lastBlocks.last().second, middleBlocks.last().second)
         assertContentEquals(byteArrayOf(4, 5, 6), middleAudio)
     }
 
@@ -191,6 +206,7 @@ class NcmFlacMetadataTest {
             byteArrayOf(0x84.toByte(), 0, 0, 8, -1, -1, -1, -1, 0, 0, 0, 0),
             byteArrayOf(0x84.toByte(), 0, 0, 8, 4, 0, 0, 0, 1, 2), // truncated vendor
             byteArrayOf(0x84.toByte(), 0, 0, 8, 0, 0, 0, 0, 0, 0, 0), // truncated comments
+            flacBlock(4, false, ByteArray(8)) + byteArrayOf(0x81.toByte(), 0, 0, 2, 1), // truncated trailing padding
             byteArrayOf(0x81.toByte(), -1, -1, -1) // total metadata exceeds the limit
         )
         for (block in invalidBlocks) {

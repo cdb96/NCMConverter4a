@@ -97,7 +97,7 @@ object NCMConverter {
             val reader = DecryptedPayloadReader(input, bufferSize, context)
 
             val prefix = ByteArray(3)
-            val prefixSize = reader.read(prefix, 0, prefix.size)
+            val prefixSize = reader.readAtMost(prefix)
             if (prefixSize == 0) throw IllegalArgumentException("NCM payload is empty")
             if (rawWriteMode) {
                 output.write(prefix, 0, prefixSize)
@@ -131,7 +131,7 @@ object NCMConverter {
                     // The size field excludes the ten-byte footer an ID3v2.4 tag may
                     // append (flag bit 4), so it is skipped separately.
                     val hasFooter = id3Header[3].toInt() == 4 && (id3Header[5].toInt() and 0x10) != 0
-                    reader.skipFully(id3Length.toLong() + if (hasFooter) 10L else 0L)
+                    reader.skipFully(id3Length + if (hasFooter) 10 else 0)
 
                     ID3TagBuilder().apply {
                         initDefaultTagHeader()
@@ -244,59 +244,56 @@ object NCMConverter {
     ) {
         output.write("fLaC".encodeToByteArray())
         val blockHeader = ByteArray(4)
-        var totalLength = 4L // fLaC signature already consumed
-        var vorbisRewritten = false
-        // Without cover art no picture block is inserted, so the rewritten
-        // Vorbis block itself may have to carry the last-block flag.
-        val hasCover = info.coverData.isNotEmpty()
-
-        while (true) {
+        var metadataLength = 4L
+        fun readBlockSize(): Int {
             reader.readFully(blockHeader)
-            val typeByte = blockHeader[0].toInt() and 0xFF
-            val type = typeByte and 0x7F
-            val isLast = (typeByte and 0x80) != 0
-            val bodyLength = ((blockHeader[1].toInt() and 0xFF) shl 16) or
-                ((blockHeader[2].toInt() and 0xFF) shl 8) or
-                (blockHeader[3].toInt() and 0xFF)
-            totalLength += 4L + bodyLength
-            require(totalLength <= MAX_FLAC_METADATA_LENGTH) {
-                "FLAC metadata is too large: $totalLength"
+            val blockSize = LengthUtils.readIntBE(blockHeader, 0) and 0xFFFFFF
+            metadataLength += 4L + blockSize
+            require(metadataLength <= MAX_FLAC_METADATA_LENGTH) {
+                "FLAC metadata is too large"
             }
-
-            if (type == 4 && !vorbisRewritten) {
-                require(bodyLength >= 4) { "truncated FLAC Vorbis comment block" }
-                val vendorLengthBytes = ByteArray(4)
-                reader.readFully(vendorLengthBytes)
-                val vendorLength = LengthUtils.readIntLEInline(vendorLengthBytes, 0)
-                require(vendorLength >= 0 && vendorLength <= bodyLength - 4) {
-                    "invalid FLAC Vorbis vendor length: $vendorLength"
-                }
-
-                FLACMetadataGenerator.writeVorbisCommentBlock(
-                    output, info.musicName, info.musicArtists, info.musicAlbum, vendorLength,
-                    isLast = isLast && !hasCover
-                ) { vendorOutput -> reader.copyTo(vendorOutput, vendorLength.toLong()) }
-                reader.skipFully((bodyLength - 4 - vendorLength).toLong())
-                vorbisRewritten = true
-                if (isLast && hasCover) {
-                    FLACMetadataGenerator.writePictureBlock(output, info.coverData, isLast = true)
-                }
-            } else {
-                if (isLast && vorbisRewritten && hasCover) {
-                    FLACMetadataGenerator.writePictureBlock(output, info.coverData, isLast = false)
-                }
-                output.write(blockHeader)
-                reader.copyTo(output, bodyLength.toLong())
-            }
-            if (isLast) return
+            return blockSize
         }
+
+        // Stream the original blocks before the first Vorbis comment.
+        var blockSize = readBlockSize()
+        while ((blockHeader[0].toInt() and 0x7F) != 4) {
+            output.write(blockHeader)
+            reader.copyTo(output, blockSize)
+            if ((blockHeader[0].toInt() and 0x80) != 0) return
+            blockSize = readBlockSize()
+        }
+
+        var isLast = (blockHeader[0].toInt() and 0x80) != 0
+        require(blockSize >= 4) { "truncated FLAC Vorbis comment block" }
+        val vendorLengthBytes = ByteArray(4)
+        reader.readFully(vendorLengthBytes)
+        val vendorLength = LengthUtils.readIntLEInline(vendorLengthBytes, 0)
+        require(vendorLength >= 0 && vendorLength <= blockSize - 4) {
+            "invalid FLAC Vorbis vendor length: $vendorLength"
+        }
+        FLACMetadataGenerator.writeVorbisCommentBlock(
+            output, info.musicName, info.musicArtists, info.musicAlbum, vendorLength,
+            isLast = false
+        ) { reader.copyTo(it, vendorLength) }
+        reader.skipFully(blockSize - 4 - vendorLength)
+
+        // Stream the remaining blocks, then append the picture as the last block.
+        while (!isLast) {
+            blockSize = readBlockSize()
+            isLast = (blockHeader[0].toInt() and 0x80) != 0
+            blockHeader[0] = (blockHeader[0].toInt() and 0x7F).toByte()
+            output.write(blockHeader)
+            reader.copyTo(output, blockSize)
+        }
+        FLACMetadataGenerator.writePictureBlock(output, info.coverData, isLast = true)
     }
 
     private class DecryptedPayloadReader(
         private val input: BinaryInput,
         bufferSize: Int,
         private val context: Long
-    ) {
+    ) : BinaryInput {
         private val encryptedBuffer = ByteArray(bufferSize)
         private var position = 0
         private var limit = 0
@@ -316,52 +313,41 @@ object NCMConverter {
             return true
         }
 
-        fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
             require(offset >= 0 && length >= 0 && offset <= buffer.size - length) {
                 "invalid payload read range"
             }
             if (length == 0) return 0
+            if (!ensureAvailable()) return -1
 
-            var total = 0
-            while (total < length) {
-                if (!ensureAvailable()) break
-
-                val copied = minOf(length - total, limit - position)
-                encryptedBuffer.copyInto(buffer, offset + total, position, position + copied)
-                position += copied
-                total += copied
-            }
-            return total
+            // BinaryIo fills short reads across decrypt buffers when needed.
+            val copied = minOf(length, limit - position)
+            encryptedBuffer.copyInto(buffer, offset, position, position + copied)
+            position += copied
+            return copied
         }
 
-        fun readFully(buffer: ByteArray, offset: Int = 0, length: Int = buffer.size - offset) {
-            // read validates the range and loops across decrypt buffers until length or EOF.
-            if (read(buffer, offset, length) != length) {
-                throw IllegalArgumentException("unexpected end of decrypted NCM payload")
-            }
-        }
-
-        fun skipFully(bytes: Long) {
+        fun skipFully(bytes: Int) {
             require(bytes >= 0) { "cannot skip a negative payload length" }
             var remaining = bytes
             while (remaining > 0) {
                 if (!ensureAvailable()) {
                     throw IllegalArgumentException("unexpected end of decrypted NCM payload")
                 }
-                val skipped = minOf(remaining, (limit - position).toLong()).toInt()
+                val skipped = minOf(remaining, limit - position)
                 position += skipped
                 remaining -= skipped
             }
         }
 
-        fun copyTo(output: BinaryOutput, bytes: Long) {
+        fun copyTo(output: BinaryOutput, bytes: Int) {
             require(bytes >= 0) { "cannot copy a negative payload length" }
             var remaining = bytes
             while (remaining > 0) {
                 if (!ensureAvailable()) {
                     throw IllegalArgumentException("unexpected end of decrypted NCM payload")
                 }
-                val copied = minOf(remaining, (limit - position).toLong()).toInt()
+                val copied = minOf(remaining, limit - position)
                 output.write(encryptedBuffer, position, copied)
                 position += copied
                 remaining -= copied

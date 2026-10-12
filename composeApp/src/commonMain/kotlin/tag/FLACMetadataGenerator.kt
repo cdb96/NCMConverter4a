@@ -9,12 +9,8 @@ import com.cdb96.ncmconverter4a.util.LengthUtils.writeIntLE
 object FLACMetadataGenerator {
     private const val MAX_BLOCK_SIZE = 0xFFFFFF
 
-    /**
-     * Emits the small picture header followed by the original cover array.
-     * Callers skip this block entirely when there is no cover.
-     */
+    /** Emits a complete picture block even when cover data is empty. */
     fun writePictureBlock(output: BinaryOutput, coverData: ByteArray, isLast: Boolean) {
-        require(coverData.isNotEmpty()) { "FLAC picture block needs cover data" }
         val mimeTypeBytes = CoverImage.mimeType(coverData).encodeToByteArray()
         val headerSize = 4 + 4 + 4 + mimeTypeBytes.size + 4 + 4 * 4 + 4
         val bodyHeaderSize = headerSize - 4
@@ -37,8 +33,7 @@ object FLACMetadataGenerator {
 
     /**
      * [writeVendor] copies exactly [vendorLength] bytes from the original block.
-     * [isLast] marks this as the final metadata block, which is only correct
-     * when no picture block follows it.
+     * [isLast] marks the final metadata block when no picture block follows it.
      */
     fun writeVorbisCommentBlock(
         output: BinaryOutput,
