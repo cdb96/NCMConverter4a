@@ -74,9 +74,9 @@ class BenchmarkService {
 
     private inline fun <T> withNativeContext(
         key: ByteArray,
-        create: (ByteArray) -> Long,
-        destroy: (Long) -> Unit,
-        block: (Long) -> T,
+        create: (ByteArray) -> Int,
+        destroy: (Int) -> Unit,
+        block: (Int) -> T,
     ): T {
         val context = create(key)
         try {
@@ -89,9 +89,9 @@ class BenchmarkService {
     private fun testNativePerformance(
         mode: String,
         key: ByteArray,
-        create: (ByteArray) -> Long,
-        destroy: (Long) -> Unit,
-        decrypt: (Long, ByteArray) -> Unit,
+        create: (ByteArray) -> Int,
+        destroy: (Int) -> Unit,
+        decrypt: (Int, ByteArray) -> Unit,
     ): List<SizeThroughput> = testPerformance(mode) { dataSize ->
         val data = Random.Default.nextBytes(ByteArray(dataSize))
         withNativeContext(key, create, destroy) { context ->

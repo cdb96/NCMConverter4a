@@ -12,11 +12,11 @@ actual object KGMDecrypt {
     }
 
     @JvmStatic
-    actual external fun create(ownKeyBytes: ByteArray): Long
+    actual external fun create(ownKeyBytes: ByteArray): Int
 
     @JvmStatic
-    actual external fun decrypt(context: Long, cipherData: ByteArray, offset: Int, bytesRead: Int): Int
+    actual external fun decrypt(context: Int, cipherData: ByteArray, offset: Int, bytesRead: Int): Int
 
     @JvmStatic
-    actual external fun destroy(context: Long)
+    actual external fun destroy(context: Int)
 }

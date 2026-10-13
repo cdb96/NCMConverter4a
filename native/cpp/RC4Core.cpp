@@ -5,14 +5,18 @@
 #include <utility>
 
 #include "SimdCompat.h"
-#include "ContextMemory.h"
+#include "ContextHandles.h"
 
 struct NcmRc4Context {
     uint8_t keyStreamBytes[256]{};
     uint8x16_t keys[16]{};
 };
 
-extern "C" JNIEXPORT jlong JNICALL
+namespace {
+ncm::ContextHandles<NcmRc4Context> contexts;
+}
+
+extern "C" JNIEXPORT jint JNICALL
 Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_create(JNIEnv* env, jclass, jbyteArray key) {
     jsize keyLength = key == nullptr ? 0 : env->GetArrayLength(key);
     if (keyLength == 0) {
@@ -48,19 +52,19 @@ Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_create(JNIEnv* env, jclass, jbyteAr
         uint8x16_t keyChunk = vld1q_u8(keyStreamBytes + i * 16);
         keys[i] = keyChunk;
     }
-    return reinterpret_cast<jlong>(context);
+    return contexts.add(env, context);
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_decrypt(JNIEnv* env, jclass, jlong handle,
+Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_decrypt(JNIEnv* env, jclass, jint handle,
                                                   jbyteArray cipherData, jint bytesRead) {
-    if (handle == 0 || cipherData == nullptr || bytesRead < 0 || bytesRead > env->GetArrayLength(cipherData)) {
+    const auto context = contexts.get(handle);
+    if (context == nullptr || cipherData == nullptr || bytesRead < 0 || bytesRead > env->GetArrayLength(cipherData)) {
         jclass exceptionClass = env->FindClass("java/lang/IllegalArgumentException");
         if (exceptionClass != nullptr) env->ThrowNew(exceptionClass, "invalid RC4 context or byte array range");
         return;
     }
     if (bytesRead == 0) return;
-    auto* context = reinterpret_cast<NcmRc4Context*>(handle);
     auto* data = reinterpret_cast<uint8_t*>(env->GetPrimitiveArrayCritical(cipherData, nullptr));
     if (data == nullptr) return;
     const auto& keyStreamBytes = context->keyStreamBytes;
@@ -89,6 +93,6 @@ Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_decrypt(JNIEnv* env, jclass, jlong 
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_destroy(JNIEnv*, jclass, jlong handle) {
-    ncm::destroyContext(reinterpret_cast<NcmRc4Context*>(handle));
+Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_destroy(JNIEnv*, jclass, jint handle) {
+    contexts.remove(handle);
 }

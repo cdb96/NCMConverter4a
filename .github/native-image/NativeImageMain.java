@@ -207,7 +207,7 @@ public final class NativeImageMain {
             (byte) 0x87, 0x42, (byte) 0x9F, (byte) 0x82
         };
 
-        long context = RC4Decrypt.create(key);
+        int context = RC4Decrypt.create(key);
         try {
             RC4Decrypt.decrypt(context, actual, actual.length);
         } finally {

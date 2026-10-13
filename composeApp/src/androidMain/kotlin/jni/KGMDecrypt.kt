@@ -5,7 +5,7 @@ actual object KGMDecrypt {
         System.loadLibrary("ncmc4a")
     }
 
-    @JvmStatic actual external fun create(ownKeyBytes: ByteArray): Long
-    @JvmStatic actual external fun decrypt(context: Long, cipherData: ByteArray, offset: Int, bytesRead: Int): Int
-    @JvmStatic actual external fun destroy(context: Long)
+    @JvmStatic actual external fun create(ownKeyBytes: ByteArray): Int
+    @JvmStatic actual external fun decrypt(context: Int, cipherData: ByteArray, offset: Int, bytesRead: Int): Int
+    @JvmStatic actual external fun destroy(context: Int)
 }

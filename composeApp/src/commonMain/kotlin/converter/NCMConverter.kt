@@ -292,7 +292,7 @@ object NCMConverter {
     private class DecryptedPayloadReader(
         private val input: BinaryInput,
         bufferSize: Int,
-        private val context: Long
+        private val context: Int
     ) : BinaryInput {
         private val encryptedBuffer = ByteArray(bufferSize)
         private var position = 0

@@ -11,6 +11,7 @@ Tests, Windows title-bar code, and the external SIMD header are kept alongside i
 | --- | --- |
 | `cpp/SimdCompat.h` | Picks the SIMD backend: `<arm_neon.h>` on ARM, `NEON_2_SSE` on x86 |
 | `cpp/ContextMemory.h` | Per-conversion context allocation and release |
+| `cpp/ContextHandles.h` | Thread-safe integer handles and native context lifetime |
 | `cpp/RC4Core.cpp` | RC4 key schedule, keystream XOR and JNI entry points |
 | `cpp/KGMCore.cpp` | KGM mask expansion, stream transform and JNI entry points |
 | `cpp/KgmTables.h` | Generated lookup tables (formerly `KGMData.h`) |
@@ -54,7 +55,10 @@ Consumers:
 
 Each conversion creates its own RC4 or KGM context, passes that handle on each
 decrypt call, and destroys it in `finally`. Native key state does not depend on
-which Java worker thread runs a call. The Windows MSVC Release DLL links the
+which Java worker thread runs a call. Both APIs use Kotlin `Int` / JNI `jint`
+IDs backed by a native registry, so pointer width stays internal to C++. The
+registry keeps contexts alive during active calls and rejects stale handles.
+The Windows MSVC Release DLL links the
 Visual C++ runtime statically and uses link-time optimization.
 
 ## Verify

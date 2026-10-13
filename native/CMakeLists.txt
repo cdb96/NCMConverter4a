@@ -7,6 +7,7 @@
 # The two algorithm sources implement the JNI entry points directly.
 cmake_minimum_required(VERSION 3.22)
 project(ncmc4a CXX)
+find_package(Threads REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -38,6 +39,7 @@ set(NCM_CORE_SOURCES
 
 if(NCM_BUILD_JNI)
     add_library(ncmc4a SHARED ${NCM_CORE_SOURCES})
+    target_link_libraries(ncmc4a PRIVATE Threads::Threads)
     target_include_directories(ncmc4a PRIVATE
         "${CMAKE_CURRENT_LIST_DIR}/cpp" ${NCM_JNI_INCLUDE_DIRS})
 
@@ -84,6 +86,7 @@ if(NCM_BUILD_SELFTEST)
     add_executable(ncm_core_selftest
         "${CMAKE_CURRENT_LIST_DIR}/tests/SelfTest.cpp"
         ${NCM_CORE_SOURCES})
+    target_link_libraries(ncm_core_selftest PRIVATE Threads::Threads)
     target_include_directories(ncm_core_selftest PRIVATE
         "${CMAKE_CURRENT_LIST_DIR}/cpp" ${NCM_JNI_INCLUDE_DIRS})
     target_compile_features(ncm_core_selftest PRIVATE cxx_std_17)

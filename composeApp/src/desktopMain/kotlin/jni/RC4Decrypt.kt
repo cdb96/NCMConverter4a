@@ -12,11 +12,11 @@ actual object RC4Decrypt {
     }
 
     @JvmStatic
-    actual external fun create(key: ByteArray): Long
+    actual external fun create(key: ByteArray): Int
 
     @JvmStatic
-    actual external fun decrypt(context: Long, cipherData: ByteArray, bytesRead: Int)
+    actual external fun decrypt(context: Int, cipherData: ByteArray, bytesRead: Int)
 
     @JvmStatic
-    actual external fun destroy(context: Long)
+    actual external fun destroy(context: Int)
 }

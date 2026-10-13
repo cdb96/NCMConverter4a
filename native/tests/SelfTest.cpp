@@ -11,12 +11,12 @@
 #include "KgmTables.h"
 
 extern "C" {
-JNIEXPORT jlong JNICALL Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_create(JNIEnv*, jclass, jbyteArray);
-JNIEXPORT void JNICALL Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_decrypt(JNIEnv*, jclass, jlong, jbyteArray, jint);
-JNIEXPORT void JNICALL Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_destroy(JNIEnv*, jclass, jlong);
-JNIEXPORT jlong JNICALL Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_create(JNIEnv*, jclass, jbyteArray);
-JNIEXPORT jint JNICALL Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv*, jclass, jlong, jbyteArray, jint, jint);
-JNIEXPORT void JNICALL Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_destroy(JNIEnv*, jclass, jlong);
+JNIEXPORT jint JNICALL Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_create(JNIEnv*, jclass, jbyteArray);
+JNIEXPORT void JNICALL Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_decrypt(JNIEnv*, jclass, jint, jbyteArray, jint);
+JNIEXPORT void JNICALL Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_destroy(JNIEnv*, jclass, jint);
+JNIEXPORT jint JNICALL Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_create(JNIEnv*, jclass, jbyteArray);
+JNIEXPORT jint JNICALL Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv*, jclass, jint, jbyteArray, jint, jint);
+JNIEXPORT void JNICALL Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_destroy(JNIEnv*, jclass, jint);
 }
 
 namespace {
@@ -78,7 +78,7 @@ public:
         Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_decrypt(&testEnv, nullptr, context_, &array, length);
     }
 private:
-    jlong context_ = 0;
+    jint context_ = 0;
 };
 
 class KgmSession {
@@ -94,7 +94,7 @@ public:
         return Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(&testEnv, nullptr, context_, &array, offset, length);
     }
 private:
-    jlong context_ = 0;
+    jint context_ = 0;
 };
 
 void report(const std::string& label, bool ok, const std::string& detail = "") {

@@ -4,7 +4,7 @@
 #include <cstring>
 
 #include "SimdCompat.h"
-#include "ContextMemory.h"
+#include "ContextHandles.h"
 #include "KgmTables.h"
 
 using ncm::MASK_V2_PRE_DEF;
@@ -17,6 +17,8 @@ struct NcmKgmContext {
 };
 
 namespace {
+
+ncm::ContextHandles<NcmKgmContext> contexts;
 
 void genMask(NcmKgmContext& context, int startPos) {
     auto& maskBytes = context.maskBytes;
@@ -47,16 +49,16 @@ void genMask(NcmKgmContext& context, int startPos) {
 
 // offset must be a multiple of 16; only the final chunk may end unaligned.
 extern "C" JNIEXPORT jint JNICALL
-Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv* env, jclass, jlong handle,
+Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv* env, jclass, jint handle,
                                                   jbyteArray cipher_data_bytes, jint offset, jint bytes_read) {
-    if (handle == 0 || cipher_data_bytes == nullptr || offset < 0 || (offset & 15) != 0 ||
+    const auto context = contexts.get(handle);
+    if (context == nullptr || cipher_data_bytes == nullptr || offset < 0 || (offset & 15) != 0 ||
         bytes_read < 0 || bytes_read > env->GetArrayLength(cipher_data_bytes)) {
         jclass exceptionClass = env->FindClass("java/lang/IllegalArgumentException");
         if (exceptionClass != nullptr) env->ThrowNew(exceptionClass, "invalid KGM context or byte array range");
         return offset;
     }
     if (bytes_read == 0) return offset;
-    auto* context = reinterpret_cast<NcmKgmContext*>(handle);
     auto* cipherDataBytes = reinterpret_cast<uint8_t*>(env->GetPrimitiveArrayCritical(cipher_data_bytes, nullptr));
     if (cipherDataBytes == nullptr) return offset;
     auto& maskBytes = context->maskBytes;
@@ -125,7 +127,7 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv* env, jclass, jlong 
     return i;
 }
 
-extern "C" JNIEXPORT jlong JNICALL
+extern "C" JNIEXPORT jint JNICALL
 Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_create(JNIEnv* env, jclass, jbyteArray file_key_bytes) {
     if (file_key_bytes == nullptr || env->GetArrayLength(file_key_bytes) < 17) {
         jclass exceptionClass = env->FindClass("java/lang/IllegalArgumentException");
@@ -145,10 +147,10 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_create(JNIEnv* env, jclass, jbyteAr
     for (int i = 0; i < 16 * 17; i++) {
         fileKeyBytes[i] ^= MASK_V2_PRE_DEF[i];
     }
-    return reinterpret_cast<jlong>(context);
+    return contexts.add(env, context);
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_destroy(JNIEnv*, jclass, jlong handle) {
-    ncm::destroyContext(reinterpret_cast<NcmKgmContext*>(handle));
+Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_destroy(JNIEnv*, jclass, jint handle) {
+    contexts.remove(handle);
 }
