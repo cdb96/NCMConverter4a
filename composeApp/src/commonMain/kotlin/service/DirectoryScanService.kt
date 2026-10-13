@@ -18,6 +18,8 @@ enum class ScanFormat(private vararg val extensions: String) {
 
 data class ScanDirectory(val path: String = "", val treeUri: String? = null, val suggested: Boolean = false) {
     val configured: Boolean get() = treeUri != null || (!suggested && path.isNotBlank())
+    // Suggested Android directories can be selected before their tree is authorized.
+    val selectable: Boolean get() = configured || (suggested && path.isNotBlank())
 }
 
 const val ANDROID_NCM_SCAN_DIRECTORY = "/sdcard/Download/netease/cloudmusic/Music"

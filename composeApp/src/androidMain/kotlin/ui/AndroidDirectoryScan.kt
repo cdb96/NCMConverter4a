@@ -31,28 +31,12 @@ fun rememberAndroidDirectoryScan(conversionBusy: Boolean): AndroidDirectoryScanA
         DirectoryScanController(DirectoryScanService(AndroidDirectoryBrowser(context.applicationContext)),
             scope, Dispatchers.IO, Dispatchers.Main.immediate, preference.load(), preference::save)
     }
-    var pickingFormat by remember { mutableStateOf<ScanFormat?>(null) }
-    var pendingScan by remember { mutableStateOf<Set<ScanFormat>?>(null) }
+    val busy by rememberUpdatedState(conversionBusy)
+    var onDirectoryPicked by remember { mutableStateOf<((Uri) -> Unit)?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        val format = pickingFormat
-        pickingFormat = null
-        if (uri == null || format == null) {
-            pendingScan = null
-        } else {
-            try {
-                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                val id = DocumentsContract.getTreeDocumentId(uri)
-                val path = if (uri.authority == "com.android.externalstorage.documents" && id.startsWith("primary:")) {
-                    "/sdcard/${id.removePrefix("primary:")}".trimEnd('/')
-                } else DocumentFile.fromTreeUri(context, uri)?.name ?: id
-                val directory = ScanDirectory(path, uri.toString())
-                controller.setDirectory(format, directory)
-                if (controller.state.directories[format] != directory) pendingScan = null
-            } catch (error: Exception) {
-                pendingScan = null
-                controller.showMessage("无法授权此目录，请重新选择: ${error.message}")
-            }
-        }
+        val callback = onDirectoryPicked
+        onDirectoryPicked = null
+        if (uri != null) callback?.invoke(uri)
     }
 
     fun initialUri(format: ScanFormat): Uri? {
@@ -63,33 +47,46 @@ fun rememberAndroidDirectoryScan(conversionBusy: Boolean): AndroidDirectoryScanA
         }
     }
 
-    // Authorize missing/revoked trees one by one, then scan the requested formats.
-    LaunchedEffect(pendingScan, pickingFormat, controller.state.directories, conversionBusy) {
-        val formats = pendingScan ?: return@LaunchedEffect
-        if (pickingFormat != null) return@LaunchedEffect
-        if (conversionBusy) { pendingScan = null; return@LaunchedEffect }
+    fun selectDirectory(format: ScanFormat, onAuthorized: () -> Unit = {}) {
+        if (busy || controller.state.isScanning || onDirectoryPicked != null) return
+        onDirectoryPicked = { uri ->
+            try {
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                val id = DocumentsContract.getTreeDocumentId(uri)
+                val path = if (uri.authority == "com.android.externalstorage.documents" && id.startsWith("primary:")) {
+                    "/sdcard/${id.removePrefix("primary:")}".trimEnd('/')
+                } else DocumentFile.fromTreeUri(context, uri)?.name ?: id
+                val directory = ScanDirectory(path, uri.toString())
+                controller.setDirectory(format, directory)
+                if (controller.state.directories[format] == directory) onAuthorized()
+            } catch (error: Exception) {
+                controller.showMessage("无法授权此目录，请重新选择: ${error.message}")
+            }
+        }
+        try {
+            picker.launch(initialUri(format))
+        } catch (error: Exception) {
+            onDirectoryPicked = null
+            controller.showMessage("无法打开目录选择器: ${error.message}")
+        }
+    }
+
+    fun scan(formats: Set<ScanFormat>) {
+        if (busy || controller.state.isScanning || onDirectoryPicked != null) return
         val granted = context.contentResolver.persistedUriPermissions.filter { it.isReadPermission }.map { it.uri.toString() }.toSet()
         val missing = formats.firstOrNull { format ->
             val directory = controller.state.directories[format]
-            directory?.configured == true && directory.treeUri !in granted
+            directory?.selectable == true && directory.treeUri !in granted
         }
         if (missing == null) {
-            pendingScan = null
             controller.start(formats)
         } else {
-            pickingFormat = missing
-            picker.launch(initialUri(missing))
+            selectDirectory(missing) { scan(formats) }
         }
     }
 
     return AndroidDirectoryScanActions(controller,
-        selectDirectory = { format ->
-            if (!conversionBusy && !controller.state.isScanning) {
-                pendingScan = null
-                pickingFormat = format
-                picker.launch(initialUri(format))
-            }
-        },
-        scan = { formats -> if (!conversionBusy && !controller.state.isScanning) pendingScan = formats },
+        selectDirectory = { selectDirectory(it) },
+        scan = { scan(it.toSet()) },
     )
 }

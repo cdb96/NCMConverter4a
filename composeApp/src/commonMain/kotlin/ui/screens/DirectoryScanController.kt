@@ -16,7 +16,7 @@ import kotlinx.coroutines.withContext
 
 data class DirectoryScanUiState(
     val directories: Map<ScanFormat, ScanDirectory> = emptyMap(),
-    val selectedFormats: Set<ScanFormat> = directories.filterValues { it.configured }.keys,
+    val selectedFormats: Set<ScanFormat> = directories.filterValues { it.selectable }.keys,
     val recursive: Boolean = true,
     val isScanning: Boolean = false,
     val visitedDirectories: Int = 0,
@@ -44,7 +44,7 @@ class DirectoryScanController(
         try {
             saveDirectory(format, directory)
             val selectedFormats = when {
-                !directory.configured -> state.selectedFormats - format
+                !directory.selectable -> state.selectedFormats - format
                 state.directories[format]?.configured != true -> state.selectedFormats + format
                 else -> state.selectedFormats
             }
@@ -59,7 +59,7 @@ class DirectoryScanController(
 
     fun setRecursive(value: Boolean) { if (!state.isScanning) state = state.copy(recursive = value) }
     fun selectFormat(format: ScanFormat, selected: Boolean) {
-        if (!state.isScanning && state.directories[format]?.configured == true) {
+        if (!state.isScanning && state.directories[format]?.selectable == true) {
             state = state.copy(selectedFormats = if (selected) state.selectedFormats + format else state.selectedFormats - format)
         }
     }

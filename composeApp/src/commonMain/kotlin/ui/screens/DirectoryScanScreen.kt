@@ -85,7 +85,7 @@ private fun ScanOptionsCard(
     onRecursiveChange: (Boolean) -> Unit,
 ) {
     val editable = enabled && !state.isScanning
-    val selectedFormats = state.selectedFormats.filter { state.directories[it]?.configured == true }.toSet()
+    val selectedFormats = state.selectedFormats.filter { state.directories[it]?.selectable == true }.toSet()
     OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -107,7 +107,7 @@ private fun ScanOptionsCard(
                         selected = selected,
                         onClick = { onFormatSelectionChange(format, !selected) },
                         modifier = Modifier.weight(1f),
-                        enabled = editable && state.directories[format]?.configured == true,
+                        enabled = editable && state.directories[format]?.selectable == true,
                         label = { Text(format.name, maxLines = 1) },
                         leadingIcon = if (selected) {
                             { Icon(Icons.Outlined.Check, null, Modifier.size(14.dp)) }
