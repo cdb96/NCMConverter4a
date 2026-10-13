@@ -70,17 +70,21 @@ class NativeContextHandleTest {
         val executor = Executors.newFixedThreadPool(8)
         try {
             for (decoder in decoders) {
-                val expected = payload.copyOf()
-                val reference = decoder.create(key)
-                try {
-                    decoder.decrypt(reference, expected)
-                } finally {
-                    decoder.destroy(reference)
+                val vectors = (0 until 8).map { worker ->
+                    val workerKey = ByteArray(17) { ((worker + 1) * 13 + it * 7).toByte() }
+                    val expected = payload.copyOf()
+                    val reference = decoder.create(workerKey)
+                    try {
+                        decoder.decrypt(reference, expected)
+                    } finally {
+                        decoder.destroy(reference)
+                    }
+                    workerKey to expected
                 }
-                val futures = (0 until 8).map {
+                val futures = vectors.map { (workerKey, expected) ->
                     executor.submit(Callable {
                         repeat(100) {
-                            val handle = decoder.create(key)
+                            val handle = decoder.create(workerKey)
                             try {
                                 val actual = payload.copyOf()
                                 decoder.decrypt(handle, actual)
@@ -92,6 +96,40 @@ class NativeContextHandleTest {
                     })
                 }
                 futures.forEach { it.get() }
+            }
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun anotherWorkerCannotUseOrReleaseTheOwningWorkersContext() {
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            for (decoder in decoders) {
+                val handle = decoder.create(key)
+                try {
+                    executor.submit(Callable {
+                        val ownHandle = decoder.create(key)
+                        try {
+                            assertNotEquals(handle, ownHandle)
+                            val data = payload.copyOf()
+                            assertFailsWith<IllegalArgumentException> { decoder.decrypt(handle, data) }
+                            assertContentEquals(payload, data)
+                            decoder.destroy(handle)
+                            decoder.decrypt(ownHandle, data)
+                            data
+                        } finally {
+                            decoder.destroy(ownHandle)
+                        }
+                    }).get().let { expected ->
+                        val actual = payload.copyOf()
+                        decoder.decrypt(handle, actual)
+                        assertContentEquals(expected, actual)
+                    }
+                } finally {
+                    decoder.destroy(handle)
+                }
             }
         } finally {
             executor.shutdownNow()

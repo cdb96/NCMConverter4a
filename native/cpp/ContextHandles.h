@@ -1,10 +1,10 @@
 #pragma once
 
 #include <jni.h>
+#include <atomic>
 #include <cstdint>
 #include <limits>
 #include <memory>
-#include <mutex>
 #include <unordered_map>
 #include <utility>
 
@@ -12,46 +12,41 @@
 
 namespace ncm {
 
-// JNI exposes integer IDs, while native pointers keep their full width.
-// A borrowed reference keeps a context alive when destroy races a decrypt call.
+// Each synchronous conversion owns a context on its worker thread. The local
+// table preserves Int handles without sharing context ownership across workers.
 template <typename Context>
 class ContextHandles {
 public:
     jint add(JNIEnv* env, Context* context) {
-        std::shared_ptr<Context> owned(context, destroyContext<Context>);
-        std::lock_guard<std::mutex> lock(mutex_);
-        // Never reuse an ID, so stale handles cannot address a later context.
-        if (nextHandle_ > static_cast<std::uint32_t>(std::numeric_limits<jint>::max())) {
-            jclass exceptionClass = env->FindClass("java/lang/IllegalStateException");
-            if (exceptionClass != nullptr) env->ThrowNew(exceptionClass, "native decrypt context handles exhausted");
-            return 0;
+        OwnedContext owned(context, destroyContext<Context>);
+        auto next = nextHandle_.load(std::memory_order_relaxed);
+        // Unique IDs make stale handles and calls from another worker invalid.
+        while (next <= static_cast<std::uint32_t>(std::numeric_limits<jint>::max())) {
+            if (nextHandle_.compare_exchange_weak(next, next + 1, std::memory_order_relaxed)) {
+                const auto handle = static_cast<jint>(next);
+                contexts_.emplace(handle, std::move(owned));
+                return handle;
+            }
         }
-        const auto handle = static_cast<jint>(nextHandle_++);
-        contexts_.emplace(handle, std::move(owned));
-        return handle;
+        jclass exceptionClass = env->FindClass("java/lang/IllegalStateException");
+        if (exceptionClass != nullptr) env->ThrowNew(exceptionClass, "native decrypt context handles exhausted");
+        return 0;
     }
 
-    std::shared_ptr<Context> get(jint handle) {
-        std::lock_guard<std::mutex> lock(mutex_);
+    Context* get(jint handle) const {
         const auto found = contexts_.find(handle);
-        return found == contexts_.end() ? nullptr : found->second;
+        return found == contexts_.end() ? nullptr : found->second.get();
     }
 
     void remove(jint handle) {
-        std::shared_ptr<Context> removed;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            const auto found = contexts_.find(handle);
-            if (found == contexts_.end()) return;
-            removed = std::move(found->second);
-            contexts_.erase(found);
-        }
+        contexts_.erase(handle);
     }
 
 private:
-    std::mutex mutex_;
-    std::unordered_map<jint, std::shared_ptr<Context>> contexts_;
-    std::uint32_t nextHandle_ = 1;
+    using OwnedContext = std::unique_ptr<Context, decltype(&destroyContext<Context>)>;
+    std::unordered_map<jint, OwnedContext> contexts_;
+    static_assert(std::atomic<std::uint32_t>::is_always_lock_free);
+    inline static std::atomic<std::uint32_t> nextHandle_{1};
 };
 
 }  // namespace ncm

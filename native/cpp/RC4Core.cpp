@@ -13,7 +13,7 @@ struct NcmRc4Context {
 };
 
 namespace {
-ncm::ContextHandles<NcmRc4Context> contexts;
+thread_local ncm::ContextHandles<NcmRc4Context> contexts;
 }
 
 extern "C" JNIEXPORT jint JNICALL

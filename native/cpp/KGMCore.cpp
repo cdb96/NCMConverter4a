@@ -18,7 +18,7 @@ struct NcmKgmContext {
 
 namespace {
 
-ncm::ContextHandles<NcmKgmContext> contexts;
+thread_local ncm::ContextHandles<NcmKgmContext> contexts;
 
 void genMask(NcmKgmContext& context, int startPos) {
     auto& maskBytes = context.maskBytes;
