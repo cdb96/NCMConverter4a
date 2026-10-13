@@ -2,45 +2,35 @@ package com.cdb96.ncmconverter4a
 
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt
 import java.util.concurrent.Callable
+import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 
 /**
- * Concurrency coverage for per-conversion native RC4 contexts.
+ * Concurrency coverage for native RC4 thread-local state.
  */
 class Rc4DecryptConcurrencyTest {
 
     @Test
-    fun twoContextsRemainIndependentOnTheSameThread() {
+    fun reinitializationUsesTheCurrentKey() {
         val firstKey = byteArrayOf(1, 2, 3)
         val secondKey = byteArrayOf(7, 8, 9)
         val input = ByteArray(513) { it.toByte() }
         val firstExpected = input.copyOf().also { referenceDecrypt(firstKey, it) }
         val secondExpected = input.copyOf().also { referenceDecrypt(secondKey, it) }
-        val first = RC4Decrypt.create(firstKey)
-        try {
-            val second = RC4Decrypt.create(secondKey)
-            try {
-                repeat(10) {
-                    assertContentEquals(firstExpected, input.copyOf().also {
-                        RC4Decrypt.decrypt(first, it, it.size)
-                    })
-                    assertContentEquals(secondExpected, input.copyOf().also {
-                        RC4Decrypt.decrypt(second, it, it.size)
-                    })
-                }
-            } finally {
-                RC4Decrypt.destroy(second)
-            }
-        } finally {
-            RC4Decrypt.destroy(first)
+        repeat(10) {
+            RC4Decrypt.init(firstKey)
+            assertContentEquals(firstExpected, input.copyOf().also { RC4Decrypt.decrypt(it, it.size) })
+            RC4Decrypt.init(secondKey)
+            assertContentEquals(secondExpected, input.copyOf().also { RC4Decrypt.decrypt(it, it.size) })
         }
     }
 
     @Test
     fun concurrentKeysDoNotOverwriteEachOther() {
         val executor = Executors.newFixedThreadPool(8)
+        val barrier = CyclicBarrier(8)
         try {
             val futures = (0 until 8).map { worker ->
                 executor.submit(Callable {
@@ -49,15 +39,12 @@ class Rc4DecryptConcurrencyTest {
                     val expected = input.copyOf()
                     referenceDecrypt(key, expected)
 
-                    val context = RC4Decrypt.create(key)
-                    try {
-                        repeat(100) {
-                            val actual = input.copyOf()
-                            RC4Decrypt.decrypt(context, actual, actual.size)
-                            assertContentEquals(expected, actual)
-                        }
-                    } finally {
-                        RC4Decrypt.destroy(context)
+                    RC4Decrypt.init(key)
+                    barrier.await()
+                    repeat(100) {
+                        val actual = input.copyOf()
+                        RC4Decrypt.decrypt(actual, actual.size)
+                        assertContentEquals(expected, actual)
                     }
                 })
             }

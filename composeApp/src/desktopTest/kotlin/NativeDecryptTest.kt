@@ -26,12 +26,8 @@ class NativeDecryptTest {
             0x8F.toByte(), 0x87.toByte(), 0x42, 0x9F.toByte(), 0x82.toByte()
         )
 
-        val rc4 = RC4Decrypt.create(key)
-        try {
-            RC4Decrypt.decrypt(rc4, actual, actual.size)
-        } finally {
-            RC4Decrypt.destroy(rc4)
-        }
+        RC4Decrypt.init(key)
+        RC4Decrypt.decrypt(actual, actual.size)
 
         assertContentEquals(expected, actual)
     }
@@ -40,8 +36,7 @@ class NativeDecryptTest {
         // Touching the object triggers NativeLibrary.load(); a missing library
         // surfaces as ExceptionInInitializerError, so catch Throwable.
         val available = try {
-            val context = RC4Decrypt.create(byteArrayOf(1))
-            RC4Decrypt.destroy(context)
+            RC4Decrypt.init(byteArrayOf(1))
             true
         } catch (error: Throwable) {
             println("[info] native core 不可用: ${error.message}")

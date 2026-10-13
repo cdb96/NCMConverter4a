@@ -6,6 +6,9 @@ import com.cdb96.ncmconverter4a.io.readChunk
 import com.cdb96.ncmconverter4a.jni.KGMDecrypt
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.Callable
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -25,28 +28,20 @@ class KgmDecryptTest {
 
     private fun decryptWhole(): ByteArray {
         val data = payload.copyOf()
-        val context = KGMDecrypt.create(key)
-        try {
-            KGMDecrypt.decrypt(context, data, 0, data.size)
-        } finally {
-            KGMDecrypt.destroy(context)
-        }
+        KGMDecrypt.init(key)
+        KGMDecrypt.decrypt(data, 0, data.size)
         return data
     }
 
     private fun decryptChunked(chunkSize: Int): Pair<ByteArray, Int> {
-        val context = KGMDecrypt.create(key)
+        KGMDecrypt.init(key)
         val output = ByteArray(payload.size)
         var offset = 0
-        try {
-            while (offset < payload.size) {
-                val size = minOf(chunkSize, payload.size - offset)
-                val chunk = payload.copyOfRange(offset, offset + size)
-                offset = KGMDecrypt.decrypt(context, chunk, offset, size)
-                chunk.copyInto(output, offset - size)
-            }
-        } finally {
-            KGMDecrypt.destroy(context)
+        while (offset < payload.size) {
+            val size = minOf(chunkSize, payload.size - offset)
+            val chunk = payload.copyOfRange(offset, offset + size)
+            offset = KGMDecrypt.decrypt(chunk, offset, size)
+            chunk.copyInto(output, offset - size)
         }
         return output to offset
     }
@@ -55,16 +50,12 @@ class KgmDecryptTest {
     fun rejectsUnalignedOffsetsWithoutChangingData() {
         val expected = payload.copyOf(16)
         val actual = expected.copyOf()
-        val context = KGMDecrypt.create(key)
-        try {
-            for (offset in listOf(1, 15, 271)) {
-                assertFailsWith<IllegalArgumentException> {
-                    KGMDecrypt.decrypt(context, actual, offset, actual.size)
-                }
-                assertContentEquals(expected, actual)
+        KGMDecrypt.init(key)
+        for (offset in listOf(1, 15, 271)) {
+            assertFailsWith<IllegalArgumentException> {
+                KGMDecrypt.decrypt(actual, offset, actual.size)
             }
-        } finally {
-            KGMDecrypt.destroy(context)
+            assertContentEquals(expected, actual)
         }
     }
 
@@ -88,12 +79,8 @@ class KgmDecryptTest {
     fun converterReusesMatchingFirstBufferAndPreservesTheShortFinalChunk() {
         val source = payload.copyOf(payload.size + 7)
         val expected = source.copyOf()
-        val context = KGMDecrypt.create(key)
-        try {
-            KGMDecrypt.decrypt(context, expected, 0, expected.size)
-        } finally {
-            KGMDecrypt.destroy(context)
-        }
+        KGMDecrypt.init(key)
+        KGMDecrypt.decrypt(expected, 0, expected.size)
 
         for (firstBufferSize in listOf(256, 4096)) {
             val input = ByteArrayInputStream(source)
@@ -113,6 +100,32 @@ class KgmDecryptTest {
                 write = { buffer, length -> output.write(buffer, 0, length) }
             )
             assertContentEquals(expected, output.toByteArray())
+        }
+    }
+
+    @Test
+    fun concurrentKeysRemainIndependent() {
+        val vectors = (0 until 8).map { worker ->
+            val workerKey = ByteArray(17) { ((worker + 1) * 13 + it * 7).toByte() }
+            val expected = payload.copyOf()
+            KGMDecrypt.init(workerKey)
+            KGMDecrypt.decrypt(expected, 0, expected.size)
+            workerKey to expected
+        }
+        val executor = Executors.newFixedThreadPool(8)
+        val barrier = CyclicBarrier(8)
+        try {
+            vectors.map { (workerKey, expected) ->
+                executor.submit(Callable {
+                    KGMDecrypt.init(workerKey)
+                    barrier.await()
+                    val actual = payload.copyOf()
+                    KGMDecrypt.decrypt(actual, 0, actual.size)
+                    assertContentEquals(expected, actual)
+                })
+            }.forEach { it.get() }
+        } finally {
+            executor.shutdownNow()
         }
     }
 }

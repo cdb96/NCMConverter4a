@@ -1,38 +1,24 @@
-// v3.4 RC4 algorithm with per-conversion key state.
+// v3.4 RC4 algorithm with thread-local key state.
 #include <jni.h>
 #include <cstdint>
 #include <numeric>
 #include <utility>
 
 #include "SimdCompat.h"
-#include "ContextHandles.h"
 
-struct NcmRc4Context {
-    uint8_t keyStreamBytes[256]{};
-    uint8x16_t keys[16]{};
-};
+thread_local uint8_t keyStreamBytes[256]{};
+thread_local uint8x16_t keys[16]{};
 
-namespace {
-thread_local ncm::ContextHandles<NcmRc4Context> contexts;
-}
-
-extern "C" JNIEXPORT jint JNICALL
-Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_create(JNIEnv* env, jclass, jbyteArray key) {
+extern "C" JNIEXPORT void JNICALL
+Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_init(JNIEnv* env, jclass, jbyteArray key) {
     jsize keyLength = key == nullptr ? 0 : env->GetArrayLength(key);
     if (keyLength == 0) {
         jclass exceptionClass = env->FindClass("java/lang/IllegalArgumentException");
         if (exceptionClass != nullptr) env->ThrowNew(exceptionClass, "RC4 key must not be null or empty");
-        return 0;
+        return;
     }
-    auto* context = ncm::createContext<NcmRc4Context>(env);
-    if (context == nullptr) return 0;
     auto* keyBytes = reinterpret_cast<uint8_t*>(env->GetPrimitiveArrayCritical(key, nullptr));
-    if (keyBytes == nullptr) {
-        ncm::destroyContext(context);
-        return 0;
-    }
-    auto& keyStreamBytes = context->keyStreamBytes;
-    auto& keys = context->keys;
+    if (keyBytes == nullptr) return;
 
     uint8_t sBox[256];
     std::iota(sBox, sBox + 256, 0);
@@ -52,23 +38,19 @@ Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_create(JNIEnv* env, jclass, jbyteAr
         uint8x16_t keyChunk = vld1q_u8(keyStreamBytes + i * 16);
         keys[i] = keyChunk;
     }
-    return contexts.add(env, context);
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_decrypt(JNIEnv* env, jclass, jint handle,
+Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_decrypt(JNIEnv* env, jclass,
                                                   jbyteArray cipherData, jint bytesRead) {
-    const auto context = contexts.get(handle);
-    if (context == nullptr || cipherData == nullptr || bytesRead < 0 || bytesRead > env->GetArrayLength(cipherData)) {
+    if (cipherData == nullptr || bytesRead < 0 || bytesRead > env->GetArrayLength(cipherData)) {
         jclass exceptionClass = env->FindClass("java/lang/IllegalArgumentException");
-        if (exceptionClass != nullptr) env->ThrowNew(exceptionClass, "invalid RC4 context or byte array range");
+        if (exceptionClass != nullptr) env->ThrowNew(exceptionClass, "invalid RC4 byte array range");
         return;
     }
     if (bytesRead == 0) return;
     auto* data = reinterpret_cast<uint8_t*>(env->GetPrimitiveArrayCritical(cipherData, nullptr));
     if (data == nullptr) return;
-    const auto& keyStreamBytes = context->keyStreamBytes;
-    const auto& keys = context->keys;
 
     int i = 0;
     uint8x16_t chunk[16];
@@ -90,9 +72,4 @@ Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_decrypt(JNIEnv* env, jclass, jint h
         data[i] ^= keyStreamBytes[j];
     }
     env->ReleasePrimitiveArrayCritical(cipherData, data, 0);
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_destroy(JNIEnv*, jclass, jint handle) {
-    contexts.remove(handle);
 }

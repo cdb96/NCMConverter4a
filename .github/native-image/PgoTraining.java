@@ -13,12 +13,8 @@ public final class PgoTraining {
         for (String format : new String[] {"mp3", "flac", "m4a"}) {
             byte[] plain = makePayload(format);
             byte[] encrypted = plain.clone();
-            int context = RC4Decrypt.create(key);
-            try {
-                RC4Decrypt.decrypt(context, encrypted, encrypted.length);
-            } finally {
-                RC4Decrypt.destroy(context);
-            }
+            RC4Decrypt.init(key);
+            RC4Decrypt.decrypt(encrypted, encrypted.length);
 
             for (int iteration = 0; iteration < 3; iteration++) {
                 int[] position = {0};
@@ -42,13 +38,9 @@ public final class PgoTraining {
         }
 
         byte[] kgmPayload = new byte[1024 * 1024];
-        int context = KGMDecrypt.create(new byte[17]);
-        try {
-            int next = KGMDecrypt.decrypt(context, kgmPayload, 0, kgmPayload.length);
-            if (next != kgmPayload.length) throw new IllegalStateException("PGO KGM training failed");
-        } finally {
-            KGMDecrypt.destroy(context);
-        }
+        KGMDecrypt.init(new byte[17]);
+        int next = KGMDecrypt.decrypt(kgmPayload, 0, kgmPayload.length);
+        if (next != kgmPayload.length) throw new IllegalStateException("PGO KGM training failed");
         System.out.println("PGO conversion training passed");
     }
 

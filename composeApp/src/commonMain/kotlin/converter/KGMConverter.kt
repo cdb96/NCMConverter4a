@@ -55,22 +55,18 @@ object KGMConverter {
             "invalid first KGM chunk size: $firstSize"
         }
 
-        val context = KGMDecrypt.create(ownKeyBytes)
-        try {
-            var fileOffset = KGMDecrypt.decrypt(context, firstChunk, 0, firstSize)
-            write(firstChunk, firstSize)
+        KGMDecrypt.init(ownKeyBytes)
+        var fileOffset = KGMDecrypt.decrypt(firstChunk, 0, firstSize)
+        write(firstChunk, firstSize)
 
-            val buf = if (firstChunk.size == bufferSize) firstChunk else ByteArray(bufferSize)
-            while (true) {
-                val bytesRead = read(buf)
-                if (bytesRead < 0) break
-                require(bytesRead <= buf.size) { "KGM reader returned too many bytes: $bytesRead" }
-                if (bytesRead == 0) continue
-                fileOffset = KGMDecrypt.decrypt(context, buf, fileOffset, bytesRead)
-                write(buf, bytesRead)
-            }
-        } finally {
-            KGMDecrypt.destroy(context)
+        val buf = if (firstChunk.size == bufferSize) firstChunk else ByteArray(bufferSize)
+        while (true) {
+            val bytesRead = read(buf)
+            if (bytesRead < 0) break
+            require(bytesRead <= buf.size) { "KGM reader returned too many bytes: $bytesRead" }
+            if (bytesRead == 0) continue
+            fileOffset = KGMDecrypt.decrypt(buf, fileOffset, bytesRead)
+            write(buf, bytesRead)
         }
     }
 }

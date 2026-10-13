@@ -25,16 +25,16 @@ class BenchmarkService {
             warmup()
 
             onProgress(TestStatus.TESTING_KGM)
-            val kgmResults = testNativePerformance("KGM", ByteArray(17), KGMDecrypt::create, KGMDecrypt::destroy) { context, data ->
+            val kgmResults = testNativePerformance("KGM", ByteArray(17), KGMDecrypt::init) { data ->
                 var offset = 0
                 while (offset < data.size) {
-                    offset = KGMDecrypt.decrypt(context, data, offset, minOf(256 * 1024, data.size - offset))
+                    offset = KGMDecrypt.decrypt(data, offset, minOf(256 * 1024, data.size - offset))
                 }
             }
 
             onProgress(TestStatus.TESTING_NCM)
-            val ncmResults = testNativePerformance("NCM", ByteArray(256), RC4Decrypt::create, RC4Decrypt::destroy) { context, data ->
-                RC4Decrypt.decrypt(context, data, data.size)
+            val ncmResults = testNativePerformance("NCM", ByteArray(256), RC4Decrypt::init) { data ->
+                RC4Decrypt.decrypt(data, data.size)
             }
 
             onProgress(TestStatus.TESTING_KGG)
@@ -55,12 +55,10 @@ class BenchmarkService {
 
     private fun warmup() {
         val data = Random.Default.nextBytes(ByteArray(100 * 1024))
-        withNativeContext(ByteArray(256), RC4Decrypt::create, RC4Decrypt::destroy) {
-            RC4Decrypt.decrypt(it, data, data.size)
-        }
-        withNativeContext(ByteArray(17), KGMDecrypt::create, KGMDecrypt::destroy) {
-            KGMDecrypt.decrypt(it, data, 0, data.size)
-        }
+        RC4Decrypt.init(ByteArray(256))
+        RC4Decrypt.decrypt(data, data.size)
+        KGMDecrypt.init(ByteArray(17))
+        KGMDecrypt.decrypt(data, 0, data.size)
         val buffer = Random.Default.nextBytes(ByteArray(QmcCipher.STREAM_BUFFER_SIZE))
         for (keySize in listOf(512, 256)) {
             val cipher = QmcCipher.createCipher(kggBenchmarkKey(keySize))
@@ -72,33 +70,17 @@ class BenchmarkService {
         log.d("预热完成")
     }
 
-    private inline fun <T> withNativeContext(
-        key: ByteArray,
-        create: (ByteArray) -> Int,
-        destroy: (Int) -> Unit,
-        block: (Int) -> T,
-    ): T {
-        val context = create(key)
-        try {
-            return block(context)
-        } finally {
-            destroy(context)
-        }
-    }
-
     private fun testNativePerformance(
         mode: String,
         key: ByteArray,
-        create: (ByteArray) -> Int,
-        destroy: (Int) -> Unit,
-        decrypt: (Int, ByteArray) -> Unit,
+        init: (ByteArray) -> Unit,
+        decrypt: (ByteArray) -> Unit,
     ): List<SizeThroughput> = testPerformance(mode) { dataSize ->
         val data = Random.Default.nextBytes(ByteArray(dataSize))
-        withNativeContext(key, create, destroy) { context ->
-            val mark = TimeSource.Monotonic.markNow()
-            decrypt(context, data)
-            mark.elapsedNow().inWholeNanoseconds
-        }
+        init(key)
+        val mark = TimeSource.Monotonic.markNow()
+        decrypt(data)
+        mark.elapsedNow().inWholeNanoseconds
     }
 
     private fun testKGGPerformance(mode: String, key: ByteArray): List<SizeThroughput> =

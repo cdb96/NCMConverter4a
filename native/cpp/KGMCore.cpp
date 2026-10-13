@@ -1,27 +1,21 @@
-// v3.4 KGM algorithm with per-conversion mask and file key.
+// v3.4 KGM algorithm with thread-local mask and file key.
 #include <jni.h>
 #include <cstdint>
 #include <cstring>
 
 #include "SimdCompat.h"
-#include "ContextHandles.h"
 #include "KgmTables.h"
 
 using ncm::MASK_V2_PRE_DEF;
 using ncm::PRE_COMPUTED_TABLE;
 using ncm::PRE_COMPUTED_TABLE_SIZE;
 
-struct NcmKgmContext {
-    uint8_t maskBytes[PRE_COMPUTED_TABLE_SIZE]{};
-    uint8_t fileKeyBytes[16 * 17]{};
-};
+thread_local uint8_t maskBytes[PRE_COMPUTED_TABLE_SIZE]{};
+thread_local uint8_t fileKeyBytes[16 * 17]{};
 
 namespace {
 
-thread_local ncm::ContextHandles<NcmKgmContext> contexts;
-
-void genMask(NcmKgmContext& context, int startPos) {
-    auto& maskBytes = context.maskBytes;
+void genMask(int startPos) {
     uint8x16_t chunk[16];
     for (int pos = 0; pos < PRE_COMPUTED_TABLE_SIZE * 16; pos += 16 * 16 * 16) {
         int i = startPos + pos;
@@ -49,20 +43,17 @@ void genMask(NcmKgmContext& context, int startPos) {
 
 // offset must be a multiple of 16; only the final chunk may end unaligned.
 extern "C" JNIEXPORT jint JNICALL
-Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv* env, jclass, jint handle,
+Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv* env, jclass,
                                                   jbyteArray cipher_data_bytes, jint offset, jint bytes_read) {
-    const auto context = contexts.get(handle);
-    if (context == nullptr || cipher_data_bytes == nullptr || offset < 0 || (offset & 15) != 0 ||
+    if (cipher_data_bytes == nullptr || offset < 0 || (offset & 15) != 0 ||
         bytes_read < 0 || bytes_read > env->GetArrayLength(cipher_data_bytes)) {
         jclass exceptionClass = env->FindClass("java/lang/IllegalArgumentException");
-        if (exceptionClass != nullptr) env->ThrowNew(exceptionClass, "invalid KGM context or byte array range");
+        if (exceptionClass != nullptr) env->ThrowNew(exceptionClass, "invalid KGM byte array range");
         return offset;
     }
     if (bytes_read == 0) return offset;
     auto* cipherDataBytes = reinterpret_cast<uint8_t*>(env->GetPrimitiveArrayCritical(cipher_data_bytes, nullptr));
     if (cipherDataBytes == nullptr) return offset;
-    auto& maskBytes = context->maskBytes;
-    const auto& fileKeyBytes = context->fileKeyBytes;
 
     int i = offset;
     int j = 0;
@@ -71,12 +62,12 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv* env, jclass, jint h
     int maskBytesIndexCounter = (offset >> 4) % 4352;
     // Refresh the mask when a new buffer starts on a 69632-byte boundary.
     if (genMaskCounter == 0) {
-        genMask(*context, i);
+        genMask(i);
     }
     for (; j + 16 <= bytes_read; i += 16, j += 16) {
         // Avoid repeated modulo operations.
         if (genMaskCounter == 69632) {
-            genMask(*context, i);
+            genMask(i);
             genMaskCounter = 0;
         }
         if (fileKeyCounter == 272) {
@@ -103,7 +94,7 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv* env, jclass, jint h
     // The tail also needs to handle period boundaries and the mask index.
     for (; j < bytes_read; ++i, ++j) {
         if (genMaskCounter == 69632) {
-            genMask(*context, i);
+            genMask(i);
             genMaskCounter = 0;
         }
         if (fileKeyCounter == 272) {
@@ -127,17 +118,13 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv* env, jclass, jint h
     return i;
 }
 
-extern "C" JNIEXPORT jint JNICALL
-Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_create(JNIEnv* env, jclass, jbyteArray file_key_bytes) {
+extern "C" JNIEXPORT void JNICALL
+Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_init(JNIEnv* env, jclass, jbyteArray file_key_bytes) {
     if (file_key_bytes == nullptr || env->GetArrayLength(file_key_bytes) < 17) {
         jclass exceptionClass = env->FindClass("java/lang/IllegalArgumentException");
         if (exceptionClass != nullptr) env->ThrowNew(exceptionClass, "KGM key must contain at least 17 bytes");
-        return 0;
+        return;
     }
-    auto* context = ncm::createContext<NcmKgmContext>(env);
-    if (context == nullptr) return 0;
-    auto& maskBytes = context->maskBytes;
-    auto& fileKeyBytes = context->fileKeyBytes;
 
     env->GetByteArrayRegion(file_key_bytes, 0, 17, reinterpret_cast<jbyte*>(fileKeyBytes));
     for (int i = 1; i < 16; i++) {
@@ -147,10 +134,4 @@ Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_create(JNIEnv* env, jclass, jbyteAr
     for (int i = 0; i < 16 * 17; i++) {
         fileKeyBytes[i] ^= MASK_V2_PRE_DEF[i];
     }
-    return contexts.add(env, context);
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_destroy(JNIEnv*, jclass, jint handle) {
-    contexts.remove(handle);
 }

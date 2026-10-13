@@ -111,12 +111,8 @@ class NcmId3MetadataTest {
     }
 
     private fun encrypt(key: ByteArray, data: ByteArray) {
-        val context = RC4Decrypt.create(key)
-        try {
-            RC4Decrypt.decrypt(context, data, data.size)
-        } finally {
-            RC4Decrypt.destroy(context)
-        }
+        RC4Decrypt.init(key)
+        RC4Decrypt.decrypt(data, data.size)
     }
 
     private fun convert(encrypted: ByteArray, key: ByteArray, cover: ByteArray): ByteArray {

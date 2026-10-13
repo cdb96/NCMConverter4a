@@ -105,8 +105,7 @@ class FileConversionService internal constructor(private val files: ConversionFi
         )
     }
 
-    // Keep the native context lifecycle within this synchronous worker call.
-    // Coroutine progress updates can suspend only after conversion has finished.
+    // Keep thread-local initialization and decryption in one synchronous worker call.
     private fun convertFile(
         source: String,
         fileName: String,

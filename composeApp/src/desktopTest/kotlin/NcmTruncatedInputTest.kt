@@ -24,12 +24,8 @@ class NcmTruncatedInputTest {
             byteArrayOf(0, 0, 0, 0) + byteArrayOf(0, 0, 4, 9) +
             "mdat".toByteArray() + ByteArray(1025) { it.toByte() }
         val encrypted = payload.copyOf()
-        val context = RC4Decrypt.create(key)
-        try {
-            RC4Decrypt.decrypt(context, encrypted, encrypted.size)
-        } finally {
-            RC4Decrypt.destroy(context)
-        }
+        RC4Decrypt.init(key)
+        RC4Decrypt.decrypt(encrypted, encrypted.size)
         val metadata = """{"musicName":"Song","album":"Album","artist":[["Artist",0]],"format":"M4A"}"""
         val ncm = validHeader(metadata) + ByteArray(5 + 4 + 4) + encrypted
 

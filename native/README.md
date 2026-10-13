@@ -10,8 +10,6 @@ Tests, Windows title-bar code, and the external SIMD header are kept alongside i
 | File | Role |
 | --- | --- |
 | `cpp/SimdCompat.h` | Picks the SIMD backend: `<arm_neon.h>` on ARM, `NEON_2_SSE` on x86 |
-| `cpp/ContextMemory.h` | Per-conversion context allocation and release |
-| `cpp/ContextHandles.h` | Thread-local integer handles and per-conversion context lifetime |
 | `cpp/RC4Core.cpp` | RC4 key schedule, keystream XOR and JNI entry points |
 | `cpp/KGMCore.cpp` | KGM mask expansion, stream transform and JNI entry points |
 | `cpp/KgmTables.h` | Generated lookup tables (formerly `KGMData.h`) |
@@ -53,16 +51,11 @@ Consumers:
   the `ncmc4a/<os>-<arch>/ncmc4a.<ext>` resource; `jni/NativeLibrary.kt` extracts
   it at runtime, so the Jar, the installed distribution and `desktopTest` all work.
 
-Each conversion creates its own RC4 or KGM context, passes that handle on each
-decrypt call, and destroys it in `finally` on the same worker thread. A complete
-file conversion is synchronous; coroutine progress updates happen after the
-context has been released. Both APIs use Kotlin `Int` / JNI `jint` IDs backed by
-thread-local tables, so pointer width stays internal to C++. Contexts are owned
-individually, including when several live contexts use the same worker. A
-lock-free counter assigns IDs once at creation; table access and decryption use
-no shared registry, mutex, or shared ownership. Cross-thread and stale handles
-are rejected. The Windows MSVC Release DLL links the
-Visual C++ runtime statically and uses link-time optimization.
+RC4 and KGM keep key state in `thread_local` arrays, as in v3.4. Each file calls
+`init` before decrypting on the same worker, with no coroutine suspension or
+interleaved initialization until that file finishes. No context handles,
+allocation, registry, or locks are needed. The Windows MSVC Release DLL links
+the Visual C++ runtime statically and uses link-time optimization.
 
 ## Verify
 

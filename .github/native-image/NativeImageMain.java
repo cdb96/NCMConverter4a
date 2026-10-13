@@ -207,12 +207,8 @@ public final class NativeImageMain {
             (byte) 0x87, 0x42, (byte) 0x9F, (byte) 0x82
         };
 
-        int context = RC4Decrypt.create(key);
-        try {
-            RC4Decrypt.decrypt(context, actual, actual.length);
-        } finally {
-            RC4Decrypt.destroy(context);
-        }
+        RC4Decrypt.init(key);
+        RC4Decrypt.decrypt(actual, actual.length);
         if (!Arrays.equals(expected, actual)) {
             throw new IllegalStateException("ncmc4a RC4 JNI smoke test returned an unexpected vector");
         }
