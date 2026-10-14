@@ -6,7 +6,7 @@ import com.cdb96.ncmconverter4a.jni.KGMDecrypt;
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt;
 import java.util.Arrays;
 
-/** Runs small deterministic conversion workloads before the GUI startup profile. */
+/** Runs deterministic conversion workloads without starting AWT or Compose. */
 public final class PgoTraining {
     public static void run() {
         byte[] key = {1, 3, 5, 7, 9};

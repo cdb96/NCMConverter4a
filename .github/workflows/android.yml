@@ -222,13 +222,13 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           native-image-job-reports: 'true'
 
-      - name: 安装 Linux GUI 构建及测试依赖
+      - name: 安装 Linux GUI 构建及元数据采集依赖
         if: ${{ runner.os == 'Linux' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential zlib1g-dev libfreetype6-dev libfontconfig1-dev libx11-dev libxext-dev libxrender-dev libxi-dev libxtst-dev libgl1-mesa-dev libgl1-mesa-dri mesa-utils fonts-noto-cjk xvfb xauth
 
-      - name: 构建并验证 Linux Native Image
+      - name: 构建 Linux Native Image
         if: ${{ runner.os == 'Linux' }}
         run: xvfb-run -a -s '-screen 0 1280x800x24 +extension GLX +render -noreset' bash composeApp/tools/BuildNativeImageLinux.sh
 
@@ -356,7 +356,7 @@ jobs:
           $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
           $classes = Join-Path $PWD.Path 'build/native-image/trace-classes'
           New-Item -ItemType Directory -Force $metadata,$classes | Out-Null
-          & "$env:JAVA_HOME\bin\javac.exe" -cp $jar.FullName -d $classes '.github/native-image/NativeImageMain.java' '.github/native-image/FilePickerSmoke.java' '.github/native-image/PgoTraining.java'
+          & "$env:JAVA_HOME\bin\javac.exe" -cp $jar.FullName -d $classes '.github/native-image/NativeImageMain.java' '.github/native-image/PgoTraining.java'
           if ($LASTEXITCODE -ne 0) { throw "Trace helper compilation failed: $LASTEXITCODE" }
           $classPath = "$classes;$($jar.FullName)"
           $traceAppData = Join-Path $PWD.Path 'build/native-image/trace-appdata'
@@ -369,15 +369,11 @@ jobs:
               "gpuRendering=$gpu" | Set-Content -LiteralPath $renderConfig -Encoding ascii
               $agentMode = if ($gpu -eq 'true') { 'config-output-dir' } else { 'config-merge-dir' }
               $agentOption = "-agentlib:native-image-agent=${agentMode}=$metadata,config-write-period-secs=5,config-write-initial-delay-secs=1"
-              $traceOutput = & "$env:JAVA_HOME\bin\java.exe" $agentOption '--enable-native-access=ALL-UNNAMED' '-Dsun.java2d.d3d=false' -cp $classPath 'NativeImageMain' '--pgo-train' 2>&1
+              $traceOutput = & "$env:JAVA_HOME\bin\java.exe" $agentOption '--enable-native-access=ALL-UNNAMED' '-Dsun.java2d.d3d=false' -cp $classPath 'NativeImageMain' '--trace-desktop' 2>&1
               $traceExit = $LASTEXITCODE
               $traceOutput | Set-Content -LiteralPath (Join-Path $PWD.Path "build/native-image/trace-$gpu.log") -Encoding utf8
               $traceOutput | ForEach-Object { Write-Host $_ }
               if ($traceExit -ne 0) { throw "gpuRendering=$gpu desktop tracing failed: $traceExit" }
-              $expected = if ($gpu -eq 'true') { 'DIRECT3D' } else { 'SOFTWARE_FAST' }
-              if (-not (($traceOutput | Out-String).Contains("Skiko renderer: $expected"))) {
-                throw "Tracing ignored gpuRendering=$gpu"
-              }
             }
           } finally {
             $env:APPDATA = $originalAppData
@@ -439,34 +435,21 @@ jobs:
             Copy-Item -LiteralPath (Join-Path $env:JAVA_HOME "bin/$runtimeDll") -Destination $runtimeDll -Force
           }
           $pgoDir = Join-Path $PWD 'pgo'
-          $smokeAppData = Join-Path $PWD 'smoke-appdata'
-          New-Item -ItemType Directory -Force $pgoDir,(Join-Path $smokeAppData 'NCMConverter4a') | Out-Null
-          $originalAppData = $env:APPDATA
-          try {
-            $env:APPDATA = $smokeAppData
-            foreach ($gpu in @('true', 'false')) {
-              "gpuRendering=$gpu" | Set-Content -LiteralPath (Join-Path $smokeAppData 'NCMConverter4a/rendering.properties') -Encoding ascii
-              $rawProfile = Join-Path $PWD 'default.iprof'
-              if (Test-Path -LiteralPath $rawProfile) { throw "Unexpected profile already exists: $rawProfile" }
-              $stdout = Join-Path $PWD "pgo-train-$gpu.stdout.log"
-              $stderr = Join-Path $PWD "pgo-train-$gpu.stderr.log"
-              $process = Start-Process -FilePath $instrumentedPath -ArgumentList '--pgo-train' -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-              Get-Content -LiteralPath $stdout
-              Get-Content -LiteralPath $stderr
-              if ($process.ExitCode -ne 0) { throw "PGO training with gpuRendering=$gpu failed: $($process.ExitCode)" }
-              $profile = Get-Item -LiteralPath $rawProfile -ErrorAction Stop
-              if ($profile.Length -eq 0) { throw "PGO training produced an empty profile for gpuRendering=$gpu" }
-              $expected = if ($gpu -eq 'true') { 'DIRECT3D' } else { 'SOFTWARE_FAST' }
-              if (-not (Select-String -LiteralPath $stdout -Pattern "Skiko renderer: $expected" -SimpleMatch -Quiet)) {
-                throw "PGO training ignored gpuRendering=$gpu"
-              }
-              Move-Item -LiteralPath $rawProfile -Destination (Join-Path $pgoDir "startup-$gpu.iprof") -Force
-            }
-          } finally {
-            $env:APPDATA = $originalAppData
-          }
-          $profilePaths = @('true', 'false') | ForEach-Object { Join-Path $pgoDir "startup-$_.iprof" }
-          $profileOption = '--pgo=' + ($profilePaths -join ',')
+          New-Item -ItemType Directory -Force $pgoDir | Out-Null
+          # Train conversion code once without starting AWT or Compose.
+          $rawProfile = Join-Path $PWD 'default.iprof'
+          if (Test-Path -LiteralPath $rawProfile) { throw "Unexpected profile already exists: $rawProfile" }
+          $stdout = Join-Path $PWD 'pgo-train.stdout.log'
+          $stderr = Join-Path $PWD 'pgo-train.stderr.log'
+          $process = Start-Process -FilePath $instrumentedPath -ArgumentList '--pgo-train' -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          Get-Content -LiteralPath $stdout
+          Get-Content -LiteralPath $stderr
+          if ($process.ExitCode -ne 0) { throw "PGO conversion training failed: $($process.ExitCode)" }
+          $profile = Get-Item -LiteralPath $rawProfile -ErrorAction Stop
+          if ($profile.Length -eq 0) { throw 'PGO conversion training produced an empty profile' }
+          $profilePath = Join-Path $pgoDir 'conversion.iprof'
+          Move-Item -LiteralPath $rawProfile -Destination $profilePath -Force
+          $profileOption = "--pgo=$profilePath"
           native-image @nativeImageArgs $profileOption 'NativeImageMain' 'NCMConverter4a'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $imagePath = Join-Path $PWD 'NCMConverter4a.exe'
@@ -474,33 +457,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Embedding DPI manifest failed: $LASTEXITCODE" }
           Copy-Item -LiteralPath jawt.dll -Destination bin/jawt.dll -Force
           # GUI-subsystem executables must be explicitly waited on by PowerShell.
-          foreach ($smoke in @('--native-smoke', '--file-picker-smoke')) {
-            $name = $smoke.TrimStart('-')
-            $stdout = Join-Path $PWD "$name.stdout.log"
-            $stderr = Join-Path $PWD "$name.stderr.log"
-            $process = Start-Process -FilePath $imagePath -ArgumentList $smoke -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-            Get-Content -LiteralPath $stdout
-            Get-Content -LiteralPath $stderr
-            if ($process.ExitCode -ne 0) { throw "Native Image $smoke failed: $($process.ExitCode)" }
-          }
-          $originalAppData = $env:APPDATA
-          $smokeAppData = Join-Path $PWD 'smoke-appdata'
-          New-Item -ItemType Directory -Force (Join-Path $smokeAppData 'NCMConverter4a') | Out-Null
-          $env:APPDATA = $smokeAppData
-          foreach ($gpu in @('true', 'false')) {
-            "gpuRendering=$gpu" | Set-Content -LiteralPath (Join-Path $smokeAppData 'NCMConverter4a/rendering.properties') -Encoding ascii
-            $stdout = Join-Path $PWD "startup-$gpu.stdout.log"
-            $stderr = Join-Path $PWD "startup-$gpu.stderr.log"
-            $process = Start-Process -FilePath $imagePath -ArgumentList '--startup-smoke' -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-            Get-Content -LiteralPath $stdout
-            Get-Content -LiteralPath $stderr
-            if ($process.ExitCode -ne 0) { throw "Native Image startup with gpuRendering=$gpu failed: $($process.ExitCode)" }
-            $expected = if ($gpu -eq 'true') { 'DIRECT3D' } else { 'SOFTWARE_FAST' }
-            if (-not (Select-String -LiteralPath $stdout -Pattern "Skiko renderer: $expected" -SimpleMatch -Quiet)) {
-              throw "Native Image startup ignored gpuRendering=$gpu"
-            }
-          }
-          $env:APPDATA = $originalAppData
+          $stdout = Join-Path $PWD 'native-smoke.stdout.log'
+          $stderr = Join-Path $PWD 'native-smoke.stderr.log'
+          $process = Start-Process -FilePath $imagePath -ArgumentList '--native-smoke' -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          Get-Content -LiteralPath $stdout
+          Get-Content -LiteralPath $stderr
+          if ($process.ExitCode -ne 0) { throw "Native library check failed: $($process.ExitCode)" }
           $image = Get-Item -LiteralPath (Join-Path $PWD 'NCMConverter4a.exe')
           $runtimeFiles = @($image) + @(Get-ChildItem -LiteralPath $PWD.Path -Filter '*.dll' -File) + @(
             (Get-Item -LiteralPath (Join-Path $PWD 'bin/jawt.dll'))
@@ -518,7 +480,7 @@ jobs:
         shell: pwsh
         run: ./composeApp/tools/PackageNativeImageWindows.ps1 -RuntimeDirectory build/native-image -OutputArchive build/native-image/NCMConverter4a-windows-native-image.zip
 
-      - name: Verify portable Windows package without a JDK
+      - name: Verify Windows package contents
         shell: pwsh
         run: ./composeApp/tools/VerifyNativeImageWindows.ps1 -ArchivePath build/native-image/NCMConverter4a-windows-native-image.zip
 

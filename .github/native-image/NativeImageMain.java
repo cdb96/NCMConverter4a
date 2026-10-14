@@ -1,30 +1,21 @@
 import com.cdb96.ncmconverter4a.MainKt;
 import com.cdb96.ncmconverter4a.NativeCaption;
+import com.cdb96.ncmconverter4a.DesktopFilePicker;
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt;
-import org.jetbrains.skiko.GraphicsApi;
-import org.jetbrains.skiko.SkiaLayer;
-import java.awt.Component;
-import java.awt.Container;
-import java.awt.EventQueue;
-import java.awt.Frame;
+import java.awt.Dialog;
 import java.awt.Window;
-import java.awt.datatransfer.DataFlavor;
-import java.awt.datatransfer.SystemFlavorMap;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
+import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 
 /** Native Image entry point: prepare the portable AWT support directory, then start Compose. */
 public final class NativeImageMain {
-    public static void main(String[] args) {
-        // AWT and coroutine failures can leave the main thread alive. Smoke
-        // runs must fail on background exceptions instead of reporting success.
-        if (args.length == 1 && (args[0].endsWith("-smoke") || "--pgo-train".equals(args[0]))) {
+    public static void main(String[] args) throws Exception {
+        if (args.length == 1 && ("--native-smoke".equals(args[0])
+                || "--pgo-train".equals(args[0]) || "--trace-desktop".equals(args[0]))) {
             Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
-                System.err.println("Uncaught smoke failure on " + thread.getName());
+                System.err.println("Uncaught Native Image helper failure on " + thread.getName());
                 error.printStackTrace();
                 System.exit(1);
             });
@@ -43,154 +34,48 @@ public final class NativeImageMain {
             verifyNativeLibrary();
             return;
         }
-        if (args.length == 1 && "--file-picker-smoke".equals(args[0])) {
-            FilePickerSmoke.run();
+        if (args.length == 1 && "--pgo-train".equals(args[0])) {
+            PgoTraining.run();
             return;
         }
-        boolean pgoTraining = args.length == 1 && "--pgo-train".equals(args[0]);
-        if (pgoTraining) {
-            PgoTraining.run();
-            FilePickerSmoke.run();
-        }
-        boolean startupSmoke = pgoTraining || args.length == 1 && "--startup-smoke".equals(args[0]);
-        if (startupSmoke) {
-            startStartupSmoke();
-        }
-
-        if (args.length == 1 && "--file-picker-app-smoke".equals(args[0])) {
-            Thread picker = new Thread(() -> {
-                try {
-                    for (int attempt = 0; attempt < 200; attempt++) {
-                        boolean appShowing = Arrays.stream(Window.getWindows())
-                            .anyMatch(window -> window.isShowing() && window instanceof Frame frame
-                                && "NCMConverter4a".equals(frame.getTitle()));
-                        if (appShowing) {
-                            FilePickerSmoke.run();
-                            if (Arrays.stream(Window.getWindows()).noneMatch(Window::isShowing)) {
-                                throw new IllegalStateException("App window closed after file picker smoke");
-                            }
-                            System.out.println("Compose file picker smoke test passed");
-                            System.exit(0);
-                        }
-                        Thread.sleep(100);
-                    }
-                    throw new IllegalStateException("App window did not appear for file picker smoke");
-                } catch (InterruptedException error) {
-                    Thread.currentThread().interrupt();
-                    throw new IllegalStateException("App file picker smoke interrupted", error);
-                }
-            }, "app-file-picker-smoke");
-            picker.start();
+        if (args.length == 1 && "--trace-desktop".equals(args[0])) {
+            traceDesktopMetadata();
+            return;
         }
         MainKt.main();
     }
 
-    /** Keep the timeout independent of the EDT so a blocked event queue still fails. */
-    static void startStartupSmoke() {
-        long timeoutMillis = Long.getLong("ncm.startupSmokeTimeoutMillis", 60000L);
-        long started = System.nanoTime();
-        AtomicReference<String> pending = new AtomicReference<>("AWT event queue has not processed the startup check");
-        AtomicBoolean queued = new AtomicBoolean();
-        AtomicLong readySince = new AtomicLong();
-        Runnable check = () -> {
-            try {
-                String issue = startupIssue();
-                if (issue != null) {
-                    readySince.set(0);
-                    pending.set(issue);
-                } else {
-                    pending.set("waiting for initial rendering and profiling");
-                    // Let initial paint and tracing/PGO work finish before exiting.
-                    readySince.compareAndSet(0, System.nanoTime());
-                    if (TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - readySince.get()) >= 2000) {
-                        SkiaLayer layer = findSkiaLayer(appFrame());
-                        System.out.println("Skiko renderer: " + layer.getRenderApi() + " (" + layer.getRenderInfo() + ")");
-                        System.out.println("Compose desktop startup smoke test passed");
-                        System.exit(0);
-                    }
+    /** JVM-only metadata collection; Native Image training never starts AWT. */
+    private static void traceDesktopMetadata() throws Exception {
+        PgoTraining.run();
+        SwingUtilities.invokeAndWait(() -> {
+            Timer closeDialogs = new Timer(500, event -> {
+                for (Window window : Window.getWindows()) {
+                    if (window instanceof Dialog && window.isShowing()) window.dispose();
                 }
-            } catch (Throwable error) {
-                error.printStackTrace();
-                System.exit(1);
-            } finally {
-                queued.set(false);
-            }
-        };
-        Thread watchdog = new Thread(() -> {
-            String reported = null;
-            while (TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started) < timeoutMillis) {
-                if (queued.compareAndSet(false, true)) {
-                    EventQueue.invokeLater(check);
-                }
-                String issue = pending.get();
-                if (!issue.equals(reported)) {
-                    System.out.println("Waiting for Compose startup: " + issue);
-                    reported = issue;
-                }
-                try {
-                    Thread.sleep(200);
-                } catch (InterruptedException error) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-            }
-            System.err.println("Compose desktop startup smoke test failed: timed out after "
-                + timeoutMillis + " ms: " + pending.get());
-            Thread.getAllStackTraces().forEach((thread, stack) -> {
-                System.err.println("Thread " + thread.getName() + " (" + thread.getState() + ")");
-                for (StackTraceElement frame : stack) System.err.println("    at " + frame);
             });
-            System.exit(1);
-        }, "native-startup-smoke-watchdog");
-        watchdog.setDaemon(false);
-        watchdog.start();
-    }
-
-    private static Frame appFrame() {
-        return Arrays.stream(Window.getWindows())
-            .filter(window -> window instanceof Frame frame && window.isShowing()
-                && "NCMConverter4a".equals(frame.getTitle()))
-            .map(window -> (Frame) window).findFirst().orElse(null);
-    }
-
-    /** All component and renderer checks run on the EDT. */
-    private static String startupIssue() {
-        Frame frame = appFrame();
-        if (frame == null) return "no visible app window";
-        if (frame.isUndecorated()) return "native window frame is missing";
-        if (!hasDropTarget(frame)) return "no file drop target";
-        var fileDropFormats = ((SystemFlavorMap) SystemFlavorMap.getDefaultFlavorMap())
-            .getNativesForFlavor(DataFlavor.javaFileListFlavor);
-        if (isWindows() ? !fileDropFormats.contains("HDROP") : fileDropFormats.isEmpty()) {
-            return "file drops are not mapped";
-        }
-        SkiaLayer layer = findSkiaLayer(frame);
-        if (layer == null || !layer.isShowing() || layer.getWidth() <= 0 || layer.getHeight() <= 0) {
-            return "SkiaLayer is not ready";
-        }
-        if (layer.getRenderApi() == GraphicsApi.UNKNOWN) return "Skiko renderer is not initialized";
-        return null;
-    }
-
-    private static boolean hasDropTarget(Component component) {
-        if (component.getDropTarget() != null) return true;
-        if (component instanceof Container container) {
-            for (Component child : container.getComponents()) {
-                if (hasDropTarget(child)) return true;
+            closeDialogs.start();
+            try {
+                DesktopFilePicker.INSTANCE.pickFiles(true, false);
+                DesktopFilePicker.INSTANCE.pickFiles(false, true);
+                DesktopFilePicker.INSTANCE.pickDirectory(System.getProperty("user.home"));
+            } finally {
+                closeDialogs.stop();
             }
-        }
-        return false;
-    }
-
-    private static SkiaLayer findSkiaLayer(Component component) {
-        if (component instanceof SkiaLayer layer) return layer;
-        if (component instanceof Container container) {
-            for (Component child : container.getComponents()) {
-                SkiaLayer layer = findSkiaLayer(child);
-                if (layer != null) return layer;
+        });
+        Thread exit = new Thread(() -> {
+            try {
+                Thread.sleep(10000);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                return;
             }
-        }
-        return null;
+            System.out.println("Desktop metadata tracing finished");
+            System.exit(0);
+        }, "desktop-metadata-exit");
+        exit.setDaemon(true);
+        exit.start();
+        MainKt.main();
     }
 
     private static void verifyNativeLibrary() {

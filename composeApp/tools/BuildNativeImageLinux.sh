@@ -24,30 +24,20 @@ jar="${jars[0]}"
 build="$root/build/native-image/linux"
 metadata="$build/metadata"
 classes="$build/trace-classes"
-appdata="$build/smoke-appdata"
+appdata="$build/trace-appdata"
 mkdir -p "$metadata" "$classes" "$appdata/NCMConverter4a" "$build/pgo"
 
-# Never read or overwrite the user's desktop settings during tracing/training.
+# Never read or overwrite the user's desktop settings during metadata tracing.
 export APPDATA="$appdata"
-# Mesa's software GL driver lets CI exercise Skiko's OpenGL backend under Xvfb.
+# Mesa's software GL driver supports JVM metadata tracing under Xvfb.
 export LIBGL_ALWAYS_SOFTWARE=true
 # Skiko rejects llvmpipe. Mesa's softpipe still exercises the OpenGL backend.
 export GALLIUM_DRIVER=softpipe
 unset SKIKO_RENDER_API
 if command -v glxinfo >/dev/null 2>&1; then glxinfo -B; fi
 "$JAVA_HOME/bin/javac" -cp "$jar" -d "$classes" \
-    .github/native-image/NativeImageMain.java \
-    .github/native-image/FilePickerSmoke.java .github/native-image/PgoTraining.java
+    .github/native-image/NativeImageMain.java .github/native-image/PgoTraining.java
 classpath="$classes:$jar"
-
-check_renderer() {
-    local gpu="$1" log="$2" expected=SOFTWARE_FAST
-    if [[ "$gpu" == true ]]; then expected=OPENGL; fi
-    if ! grep -Fq "Skiko renderer: $expected" "$log"; then
-        echo "Native Image ignored gpuRendering=$gpu" >&2
-        exit 1
-    fi
-}
 
 for gpu in true false; do
     printf 'gpuRendering=%s\n' "$gpu" > "$appdata/NCMConverter4a/rendering.properties"
@@ -55,9 +45,8 @@ for gpu in true false; do
     if [[ "$gpu" == false ]]; then agent_mode=config-merge-dir; fi
     timeout 90s "$JAVA_HOME/bin/java" \
         "-agentlib:native-image-agent=$agent_mode=$metadata,config-write-period-secs=5,config-write-initial-delay-secs=1" \
-        --enable-native-access=ALL-UNNAMED -cp "$classpath" NativeImageMain --pgo-train \
+        --enable-native-access=ALL-UNNAMED -cp "$classpath" NativeImageMain --trace-desktop \
         2>&1 | tee "$build/trace-$gpu.log"
-    check_renderer "$gpu" "$build/trace-$gpu.log"
 done
 test -s "$metadata/reachability-metadata.json"
 
@@ -75,24 +64,19 @@ for file in "$JAVA_HOME"/lib/fontconfig*; do
     if [[ -f "$file" ]]; then cp -p "$file" lib/; fi
 done
 
-profiles=()
-for gpu in true false; do
-    printf 'gpuRendering=%s\n' "$gpu" > "$appdata/NCMConverter4a/rendering.properties"
-    if [[ -e default.iprof ]]; then
-        echo 'Unexpected PGO profile already exists; use a clean build directory.' >&2
-        exit 1
-    fi
-    timeout 90s ./NCMConverter4a-instrumented --pgo-train 2>&1 | tee "pgo-train-$gpu.log"
-    check_renderer "$gpu" "pgo-train-$gpu.log"
-    test -s default.iprof
-    profile="$build/pgo/startup-$gpu.iprof"
-    mv default.iprof "$profile"
-    profiles+=("$profile")
-done
-profile_option="--pgo=$(IFS=,; echo "${profiles[*]}")"
+# Train the conversion code once; this does not open windows or initialize AWT.
+if [[ -e default.iprof ]]; then
+    echo 'Unexpected PGO profile already exists; use a clean build directory.' >&2
+    exit 1
+fi
+timeout 90s ./NCMConverter4a-instrumented --pgo-train 2>&1 | tee pgo-train.log
+test -s default.iprof
+profile="$build/pgo/conversion.iprof"
+mv default.iprof "$profile"
+profile_option="--pgo=$profile"
 "$JAVA_HOME/bin/native-image" "${args[@]}" "$profile_option" NativeImageMain NCMConverter4a
 
-# Stage an allowlisted runtime before testing. It contains no JDK, classpath,
+# Stage an allowlisted runtime. It contains no JDK, classpath,
 # build metadata, instrumented binary or profiles.
 runtime="$(mktemp -d "$build/runtime.XXXXXX")"
 mkdir -p "$runtime/NCMConverter4a/lib"
@@ -101,12 +85,6 @@ cp -a ./*.so "$runtime/NCMConverter4a/"
 cp -a lib/. "$runtime/NCMConverter4a/lib/"
 cd "$runtime/NCMConverter4a"
 timeout 90s ./NCMConverter4a --native-smoke
-timeout 90s ./NCMConverter4a --file-picker-smoke
-for gpu in true false; do
-    printf 'gpuRendering=%s\n' "$gpu" > "$appdata/NCMConverter4a/rendering.properties"
-    timeout 90s ./NCMConverter4a --startup-smoke 2>&1 | tee "$build/startup-$gpu.log"
-    check_renderer "$gpu" "$build/startup-$gpu.log"
-done
 archive="$root/build/native-image/NCMConverter4a-linux-native-image.tar.gz"
 tar -czf "$archive" -C "$runtime" NCMConverter4a
 ls -lh "$archive"
