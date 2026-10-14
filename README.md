@@ -15,7 +15,7 @@ PC 端默认启动界面：
 单列截图来自 PC 端窄窗口，两张截图中的输出路径均为示例配置。
 
 ### 使用方法：
-1.从右下角按钮选择文件 
+1.从"选择音乐文件"按钮选择文件 
 
 2.从外部文件管理器选择文件分享至该软件
 
@@ -28,10 +28,11 @@ PC 端默认启动界面：
 
 3.PC 端输出文件夹：在“设置”中选择输出文件夹，NCM、KGM、KGG 转换后的音频统一保存到所选目录。默认使用用户目录下的 `Music/NCMConverter4A`，选择会在重启后保留。
 
-### 免责声明：
-本项目仅用于学习用途，请确保您已充分了解相关版权协议，否则请勿使用。
 ### 代码参考
 taurusxin/ncmdump; charlotte-xiao/NCM2MP3; anonymous5l/ncmdump; unlock-music/unlock-music
 
 #### DeepWiki链接
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/cdb96/NCMConverter4a)
+
+#### 免责声明：
+本项目仅用于学习用途，请确保您已充分了解相关版权协议，否则请勿使用，因此产生的任何问题均与开发者无关。
