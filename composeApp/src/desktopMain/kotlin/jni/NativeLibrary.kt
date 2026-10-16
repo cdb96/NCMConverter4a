@@ -2,7 +2,10 @@ package com.cdb96.ncmconverter4a.jni
 
 import java.io.File
 import java.io.InputStream
-import java.util.UUID
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 
 /**
  * Loads the shared native core (`ncmc4a`) on Desktop.
@@ -62,24 +65,30 @@ internal object NativeLibrary {
     }
 
     private fun extract(stream: InputStream, resource: String): File {
+        val bytes = stream.use { it.readBytes() }
         val directory = File(System.getProperty("java.io.tmpdir"), "$BASE_NAME-native")
-        directory.mkdirs()
-        val file = File(directory, UUID.nameUUIDFromBytes(resource.toByteArray()).toString() + "." +
+        Files.createDirectories(directory.toPath())
+        // Different builds must not reuse an older DLL locked by another process.
+        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+            .take(16) // Keep the filename short for Windows native loader path limits.
+            .joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
+        val file = File(directory, digest + "." +
             resource.substringAfterLast('.'))
-        stream.use { input ->
-            val bytes = input.readBytes()
-            // Always refresh the copy: a cached file would otherwise keep an old
-            // build alive after the bundled library changed. Overwriting fails
-            // while another JVM has the file loaded on Windows, in which case the
-            // existing copy is still the right one to use.
+        if (!file.isFile || !file.readBytes().contentEquals(bytes)) {
+            val temporary = Files.createTempFile(directory.toPath(), BASE_NAME, ".tmp")
             try {
-                if (file.length() != bytes.size.toLong() ||
-                    !file.readBytes().contentEquals(bytes)
-                ) {
-                    file.outputStream().use { output -> output.write(bytes) }
+                Files.write(temporary, bytes)
+                try {
+                    Files.move(temporary, file.toPath(), StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING)
+                } catch (_: AtomicMoveNotSupportedException) {
+                    Files.move(temporary, file.toPath(), StandardCopyOption.REPLACE_EXISTING)
                 }
             } catch (error: java.io.IOException) {
-                if (!file.isFile) throw error
+                // A concurrent process may have extracted and loaded this SAME build.
+                if (!file.isFile || !file.readBytes().contentEquals(bytes)) throw error
+            } finally {
+                Files.deleteIfExists(temporary)
             }
         }
         file.deleteOnExit()
