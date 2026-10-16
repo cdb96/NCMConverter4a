@@ -1,4 +1,13 @@
 {
+  "reflection": [
+    {
+      "type": "java.lang.Thread",
+      "jniAccessible": true,
+      "methods": [
+        { "name": "yield", "parameterTypes": [] }
+      ]
+    }
+  ],
   "resources": [
     { "glob": "ncmc4a/linux-x86_64/ncmc4a.so" },
     { "glob": "libskiko-linux-x64.so" },
