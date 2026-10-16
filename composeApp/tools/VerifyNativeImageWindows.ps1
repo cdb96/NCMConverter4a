@@ -47,9 +47,9 @@ if ($CheckRuntime) {
         $env:JAVA_HOME = $null
         $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
         foreach ($name in @('SKIKO_RENDER_API', 'JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'JDK_JAVA_OPTIONS')) {
-            [Environment]::SetEnvironmentVariable($name, $null)
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
         }
-        foreach ($test in @('runtime', 'startup-default', 'startup-software', 'file-picker', 'conversion')) {
+        foreach ($test in @('runtime', 'startup-default', 'startup-software', 'startup-software-empty', 'file-picker', 'conversion')) {
             $profileRoot = Join-Path $validationRoot $test
             $profileHome = Join-Path $profileRoot 'home'
             $profileTemp = Join-Path $profileRoot 'temp'
@@ -61,7 +61,13 @@ if ($CheckRuntime) {
             $env:TEMP = $profileTemp
             $env:TMP = $profileTemp
             New-Item -ItemType Directory -Force $profileHome,$profileTemp,$profileCache,$env:APPDATA,$env:LOCALAPPDATA | Out-Null
-            if ($test -eq 'startup-software') {
+            if ($test -eq 'startup-software-empty') {
+                # Reproduce the empty value preserved by PowerShell 7/.NET 9+,
+                # then verify that the child receives a genuinely unset override.
+                [Environment]::SetEnvironmentVariable('SKIKO_RENDER_API', '')
+            }
+            Remove-Item -LiteralPath 'Env:SKIKO_RENDER_API' -ErrorAction SilentlyContinue
+            if ($test -like 'startup-software*') {
                 $settings = Join-Path $env:APPDATA 'NCMConverter4a'
                 New-Item -ItemType Directory -Path $settings | Out-Null
                 'gpuRendering=false' | Set-Content -LiteralPath (Join-Path $settings 'rendering.properties') -Encoding ascii
@@ -100,10 +106,10 @@ if ($CheckRuntime) {
             if (Select-String -LiteralPath $stderr -Pattern 'Exception|Error|FATAL' -Quiet) {
                 throw "Packaged $test reported a runtime error; see $stderr"
             }
-            if ($test -eq 'startup-software' -and -not (Select-String -LiteralPath $stdout -Pattern 'Skiko renderer: SOFTWARE' -SimpleMatch -Quiet)) {
+            if ($test -like 'startup-software*' -and -not (Select-String -LiteralPath $stdout -Pattern 'Skiko renderer: SOFTWARE' -SimpleMatch -Quiet)) {
                 throw 'Packaged startup ignored the software rendering preference'
             }
-            if ($test -in @('runtime', 'startup-default', 'startup-software')) {
+            if ($test -eq 'runtime' -or $test -like 'startup-*') {
                 $icu = @(Get-ChildItem -LiteralPath $profileCache -Recurse -File -Filter 'icudtl.dat')
                 if ($icu.Count -ne 1 -or $icu[0].Length -eq 0) {
                     throw "Packaged $test did not extract ICU data to its empty cache"
@@ -113,7 +119,11 @@ if ($CheckRuntime) {
         }
     } finally {
         foreach ($name in $savedEnvironment.Keys) {
-            [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name])
+            if ($null -eq $savedEnvironment[$name]) {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            } else {
+                [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name])
+            }
         }
     }
 }
