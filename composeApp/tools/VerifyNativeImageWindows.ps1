@@ -80,6 +80,7 @@ if ($CheckRuntime) {
             }
             $stdout = Join-Path $profileRoot 'stdout.log'
             $stderr = Join-Path $profileRoot 'stderr.log'
+            Write-Host "Checking $test with APPDATA=$env:APPDATA"
             $arguments = @("`"-Duser.home=$profileHome`"", "`"-Djava.io.tmpdir=$profileTemp`"",
                 "`"-Dskiko.data.path=$profileCache`"", $flag)
             # Run outside the checkout so local native/build files cannot mask omissions.

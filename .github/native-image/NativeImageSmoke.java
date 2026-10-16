@@ -1,4 +1,5 @@
 import com.cdb96.ncmconverter4a.DesktopFilePicker;
+import com.cdb96.ncmconverter4a.DesktopRenderingPreference;
 import org.jetbrains.skiko.SkiaLayer;
 import java.awt.Component;
 import java.awt.Container;
@@ -68,6 +69,11 @@ public final class NativeImageSmoke {
     }
 
     public static void watchDesktopStartup() {
+        System.out.println("Rendering APPDATA: " + System.getenv("APPDATA"));
+        System.out.println("Rendering user.home: " + System.getProperty("user.home"));
+        System.out.println("GPU rendering preference: " + DesktopRenderingPreference.INSTANCE.loadGpuEnabled());
+        System.out.println("Initial Skiko render API: " + System.getProperty("skiko.renderApi")
+            + ", environment: " + System.getenv("SKIKO_RENDER_API"));
         // The watchdog is independent of the EDT, so a blocked event queue fails too.
         watchdog("Compose desktop startup", 30000);
         SwingUtilities.invokeLater(() -> new Timer(250, event -> {
