@@ -1,18 +1,13 @@
 import com.cdb96.ncmconverter4a.MainKt;
 import com.cdb96.ncmconverter4a.NativeCaption;
-import com.cdb96.ncmconverter4a.DesktopFilePicker;
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt;
-import java.awt.Dialog;
-import java.awt.Window;
 import java.nio.file.Path;
 import java.util.Arrays;
-import javax.swing.SwingUtilities;
-import javax.swing.Timer;
 
 /** Native Image entry point: prepare the portable AWT support directory, then start Compose. */
 public final class NativeImageMain {
     public static void main(String[] args) throws Exception {
-        if (args.length == 1 && ("--native-smoke".equals(args[0])
+        if (args.length == 1 && (args[0].endsWith("-smoke")
                 || "--pgo-train".equals(args[0]) || "--trace-desktop".equals(args[0]))) {
             Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
                 System.err.println("Uncaught Native Image helper failure on " + thread.getName());
@@ -38,6 +33,22 @@ public final class NativeImageMain {
             PgoTraining.run();
             return;
         }
+        if (args.length == 1 && "--runtime-smoke".equals(args[0])) {
+            NativeImageSmoke.verifyResources();
+            verifyNativeLibrary();
+            org.jetbrains.skiko.Library.INSTANCE.load();
+            System.out.println("Native Image runtime smoke test passed");
+            return;
+        }
+        if (args.length == 1 && "--file-picker-smoke".equals(args[0])) {
+            NativeImageSmoke.verifyResources();
+            NativeImageSmoke.verifyFilePickers();
+            System.exit(0);
+        }
+        if (args.length == 1 && "--startup-smoke".equals(args[0])) {
+            NativeImageSmoke.verifyResources();
+            NativeImageSmoke.watchDesktopStartup();
+        }
         if (args.length == 1 && "--trace-desktop".equals(args[0])) {
             traceDesktopMetadata();
             return;
@@ -47,34 +58,11 @@ public final class NativeImageMain {
 
     /** JVM-only metadata collection; Native Image training never starts AWT. */
     private static void traceDesktopMetadata() throws Exception {
+        // Check resources even when Skiko's DLL/data are already cached.
+        NativeImageSmoke.verifyResources();
         PgoTraining.run();
-        SwingUtilities.invokeAndWait(() -> {
-            Timer closeDialogs = new Timer(500, event -> {
-                for (Window window : Window.getWindows()) {
-                    if (window instanceof Dialog && window.isShowing()) window.dispose();
-                }
-            });
-            closeDialogs.start();
-            try {
-                DesktopFilePicker.INSTANCE.pickFiles(true, false);
-                DesktopFilePicker.INSTANCE.pickFiles(false, true);
-                DesktopFilePicker.INSTANCE.pickDirectory(System.getProperty("user.home"));
-            } finally {
-                closeDialogs.stop();
-            }
-        });
-        Thread exit = new Thread(() -> {
-            try {
-                Thread.sleep(10000);
-            } catch (InterruptedException error) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-            System.out.println("Desktop metadata tracing finished");
-            System.exit(0);
-        }, "desktop-metadata-exit");
-        exit.setDaemon(true);
-        exit.start();
+        NativeImageSmoke.verifyFilePickers();
+        NativeImageSmoke.watchDesktopStartup();
         MainKt.main();
     }
 

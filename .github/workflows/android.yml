@@ -349,6 +349,7 @@ jobs:
           native-image-job-reports: 'true'
 
       - name: Trace conversion and desktop metadata
+        timeout-minutes: 5
         shell: pwsh
         run: |
           $jar = Get-ChildItem composeApp/build/compose/jars/*-release.jar | Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -356,20 +357,25 @@ jobs:
           $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
           $classes = Join-Path $PWD.Path 'build/native-image/trace-classes'
           New-Item -ItemType Directory -Force $metadata,$classes | Out-Null
-          & "$env:JAVA_HOME\bin\javac.exe" -cp $jar.FullName -d $classes '.github/native-image/NativeImageMain.java' '.github/native-image/PgoTraining.java'
+          & "$env:JAVA_HOME\bin\javac.exe" -cp $jar.FullName -d $classes '.github/native-image/NativeImageMain.java' '.github/native-image/NativeImageSmoke.java' '.github/native-image/PgoTraining.java'
           if ($LASTEXITCODE -ne 0) { throw "Trace helper compilation failed: $LASTEXITCODE" }
           $classPath = "$classes;$($jar.FullName)"
-          $traceAppData = Join-Path $PWD.Path 'build/native-image/trace-appdata'
-          $renderConfig = Join-Path $traceAppData 'NCMConverter4a/rendering.properties'
-          New-Item -ItemType Directory -Force (Split-Path $renderConfig) | Out-Null
+          $traceRoot = Join-Path $PWD.Path ('build/native-image/trace-' + [guid]::NewGuid())
           $originalAppData = $env:APPDATA
           try {
-            $env:APPDATA = $traceAppData
             foreach ($gpu in @('true', 'false')) {
+              # Each renderer starts without user settings, extracted DLLs or ICU data.
+              $profileRoot = Join-Path $traceRoot $gpu
+              $traceHome = Join-Path $profileRoot 'home'
+              $traceTemp = Join-Path $profileRoot 'temp'
+              $traceCache = Join-Path $profileRoot 'skiko'
+              $env:APPDATA = Join-Path $profileRoot 'appdata'
+              $renderConfig = Join-Path $env:APPDATA 'NCMConverter4a/rendering.properties'
+              New-Item -ItemType Directory -Force $traceHome,$traceTemp,$traceCache,(Split-Path $renderConfig) | Out-Null
               "gpuRendering=$gpu" | Set-Content -LiteralPath $renderConfig -Encoding ascii
               $agentMode = if ($gpu -eq 'true') { 'config-output-dir' } else { 'config-merge-dir' }
               $agentOption = "-agentlib:native-image-agent=${agentMode}=$metadata,config-write-period-secs=5,config-write-initial-delay-secs=1"
-              $traceOutput = & "$env:JAVA_HOME\bin\java.exe" $agentOption '--enable-native-access=ALL-UNNAMED' '-Dsun.java2d.d3d=false' -cp $classPath 'NativeImageMain' '--trace-desktop' 2>&1
+              $traceOutput = & "$env:JAVA_HOME\bin\java.exe" $agentOption '--enable-native-access=ALL-UNNAMED' "-Duser.home=$traceHome" "-Djava.io.tmpdir=$traceTemp" "-Dskiko.data.path=$traceCache" -cp $classPath 'NativeImageMain' '--trace-desktop' 2>&1
               $traceExit = $LASTEXITCODE
               $traceOutput | Set-Content -LiteralPath (Join-Path $PWD.Path "build/native-image/trace-$gpu.log") -Encoding utf8
               $traceOutput | ForEach-Object { Write-Host $_ }
@@ -480,9 +486,10 @@ jobs:
         shell: pwsh
         run: ./composeApp/tools/PackageNativeImageWindows.ps1 -RuntimeDirectory build/native-image -OutputArchive build/native-image/NCMConverter4a-windows-native-image.zip
 
-      - name: Verify Windows package contents
+      - name: Verify Windows package and cold startup
+        timeout-minutes: 5
         shell: pwsh
-        run: ./composeApp/tools/VerifyNativeImageWindows.ps1 -ArchivePath build/native-image/NCMConverter4a-windows-native-image.zip
+        run: ./composeApp/tools/VerifyNativeImageWindows.ps1 -ArchivePath build/native-image/NCMConverter4a-windows-native-image.zip -CheckRuntime
 
       - uses: actions/upload-artifact@v7
         with:

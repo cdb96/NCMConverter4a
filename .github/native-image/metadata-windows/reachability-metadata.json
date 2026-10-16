@@ -49,6 +49,8 @@
   ],
   "resources": [
     { "glob": "ncmc4a/windows-x86_64/ncmc4a.dll" },
-    { "glob": "skiko-windows-x64.dll" }
+    { "glob": "skiko-windows-x64.dll" },
+    { "glob": "skiko-windows-x64.dll.sha256" },
+    { "glob": "icudtl.dat" }
   ]
 }
