@@ -1,0 +1,79 @@
+name: Native Image first-start isolation
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Successful CI run containing the Windows Native Image (empty selects latest)
+        required: false
+        type: string
+  workflow_run:
+    workflows: [CI]
+    branches: [master]
+    types: [completed]
+  push:
+    branches: [master]
+    paths:
+      - .github/workflows/native-portability.yml
+      - composeApp/tools/VerifyNativeImageIsolation.ps1
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  windows-first-start:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Select existing successful CI artifact
+        id: source
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REQUESTED_RUN: ${{ inputs.source_run_id }}
+          COMPLETED_RUN: ${{ github.event.workflow_run.id }}
+        run: |
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' }
+          $api = "https://api.github.com/repos/$env:REPOSITORY"
+          $runId = if ($env:COMPLETED_RUN) { $env:COMPLETED_RUN } else { $env:REQUESTED_RUN }
+          if (-not $runId) {
+            $runs = Invoke-RestMethod -Uri "$api/actions/workflows/android.yml/runs?branch=master&status=success&per_page=1" -Headers $headers
+            if ($runs.workflow_runs.Count -ne 1) { throw 'No successful CI run available' }
+            $runId = [string]$runs.workflow_runs[0].id
+          }
+          if ($runId -notmatch '^\d+$') { throw 'Invalid source run ID' }
+          $run = Invoke-RestMethod -Uri "$api/actions/runs/$runId" -Headers $headers
+          if ($run.conclusion -ne 'success' -or $run.path -ne '.github/workflows/android.yml' -or $run.head_repository.full_name -ne $env:REPOSITORY -or $run.head_branch -ne 'master') {
+            throw 'Source must be a successful CI run from this repository master branch'
+          }
+          "run_id=$runId" >> $env:GITHUB_OUTPUT
+          "source_sha=$($run.head_sha)" >> $env:GITHUB_OUTPUT
+          "Testing existing Native Image from $($run.html_url), commit $($run.head_sha)." >> $env:GITHUB_STEP_SUMMARY
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: NCMConverter4a-native-image-Windows
+          path: build/isolation/input
+          run-id: ${{ steps.source.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify ordinary first startup and packaged runtime in a fresh VM
+        shell: pwsh
+        run: |
+          foreach ($path in @("$env:APPDATA/NCMConverter4a", "$env:LOCALAPPDATA/NCMConverter4a", "$env:USERPROFILE/.skiko")) {
+            if (Test-Path -LiteralPath $path) { throw "Unexpected preexisting application state: $path" }
+          }
+          ./composeApp/tools/VerifyNativeImageIsolation.ps1 -ArchivePath build/isolation/input/NCMConverter4a-windows-native-image.zip -ReportDirectory build/isolation/report
+          'Passed ordinary first startup, default cache extraction, package/OS-only DLL loading, graceful exit, and all six packaged runtime checks.' >> $env:GITHUB_STEP_SUMMARY
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: Windows-first-start-isolation-${{ steps.source.outputs.source_sha }}
+          path: build/isolation/report
+          if-no-files-found: warn

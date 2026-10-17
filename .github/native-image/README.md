@@ -43,3 +43,21 @@ override takes precedence over the system property even when empty.
 
 Keep PGO training headless. Desktop tracing and archive checks are separate from
 the instrumented conversion workload and must not be removed to speed up PGO.
+
+`native-portability.yml` downloads an already-built Windows Native Image into a
+separate [GitHub-hosted VM](https://docs.github.com/en/actions/concepts/runners/github-hosted-runners).
+It does not build the application or restore build
+caches. `VerifyNativeImageIsolation.ps1` first launches the ordinary entry point
+with new settings, home and temporary directories, no Java in PATH, and Skiko's
+default cache selection. It checks a responsive main window and graceful exit,
+records loaded DLL paths and hashes, requires the bundled AWT/CRT libraries,
+and rejects DLLs outside the archive, new profile or Windows directories. The
+embedded ICU data must appear in the initially empty profile. It then runs the
+six packaged runtime checks, including real Compose frames and file pickers.
+
+This tests first launch without application state or developer runtime files.
+The VM still has the runner image's preinstalled software and Windows drivers;
+the DLL audit checks that this startup does not load development runtimes from
+them. AppContainer is a separate security compatibility test: its restrictions
+can deny Java's volume information query before a temporary file is created,
+so an AppContainer failure alone does not establish a missing portable resource.
