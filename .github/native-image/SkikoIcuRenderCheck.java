@@ -18,7 +18,33 @@ public final class SkikoIcuRenderCheck {
     private static String sha(byte[] b) throws Exception {
         return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(b));
     }
+    private static void compare(String original, String candidate) throws Exception {
+        var a = Files.readAllLines(java.nio.file.Path.of(original));
+        var b = Files.readAllLines(java.nio.file.Path.of(candidate));
+        if (a.size() != b.size()) throw new IllegalStateException("Probe case counts differ");
+        int differences = 0;
+        for (int row = 0; row < a.size(); row++) {
+            String[] left = a.get(row).split("\\|", -1);
+            String[] right = b.get(row).split("\\|", -1);
+            if (left.length != right.length) {
+                System.out.println("Different field counts: " + left[0] + " " + left.length + " / " + right.length);
+                differences++;
+            }
+            for (int field = 0; field < Math.min(left.length, right.length); field++) {
+                if (!left[field].equals(right[field])) {
+                    if (differences < 20) System.out.println("Different " + left[0] + " field " + field + ": " + left[field] + " / " + right[field]);
+                    differences++;
+                }
+            }
+        }
+        if (differences != 0) throw new IllegalStateException("Text probe has " + differences + " differing fields");
+        System.out.println("Text probe results match: " + a.size() + " cases");
+    }
     public static void main(String[] args) throws Exception {
+        if (args.length == 3 && args[0].equals("--compare")) {
+            compare(args[1], args[2]);
+            return;
+        }
         java.nio.file.Path out = java.nio.file.Path.of(args[0]);
         Files.createDirectories(out);
         String[][] cases = {

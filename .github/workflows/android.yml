@@ -357,17 +357,28 @@ jobs:
           & "$env:JAVA_HOME\bin\java.exe" '.github/native-image/TrimSkikoIcu.java' $jar.FullName $trimmedJar
           if ($LASTEXITCODE -ne 0) { throw "ICU trimming failed: $LASTEXITCODE" }
           $unicodeRoot = Join-Path $PWD.Path ('build/icu-check-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
-          foreach ($variant in @('original', 'trimmed')) {
-            $probeJar = if ($variant -eq 'original') { $jar.FullName } else { $trimmedJar }
+          foreach ($variant in @('original', 'original-repeat', 'trimmed')) {
+            $probeJar = if ($variant -eq 'trimmed') { $trimmedJar } else { $jar.FullName }
             $probeOutput = Join-Path $unicodeRoot $variant
             $probeCache = Join-Path $probeOutput 'cache'
             & "$env:JAVA_HOME\bin\java.exe" '--enable-native-access=ALL-UNNAMED' '-Djava.awt.headless=true' "-Dskiko.data.path=$probeCache" -cp $probeJar '.github/native-image/SkikoIcuRenderCheck.java' $probeOutput
             if ($LASTEXITCODE -ne 0) { throw "ICU rendering probe failed ($variant): $LASTEXITCODE" }
           }
-          $originalHash = (Get-FileHash -LiteralPath (Join-Path $unicodeRoot 'original/results.txt') -Algorithm SHA256).Hash
-          $trimmedHash = (Get-FileHash -LiteralPath (Join-Path $unicodeRoot 'trimmed/results.txt') -Algorithm SHA256).Hash
-          if ($originalHash -ne $trimmedHash) { throw 'ICU trimming changed text rendering or layout' }
+          foreach ($variant in @('original-repeat', 'trimmed')) {
+            & "$env:JAVA_HOME\bin\java.exe" -cp $jar.FullName '.github/native-image/SkikoIcuRenderCheck.java' '--compare' (Join-Path $unicodeRoot 'original/results.txt') (Join-Path $unicodeRoot "$variant/results.txt")
+            if ($LASTEXITCODE -ne 0) { throw "ICU text comparison failed ($variant): $LASTEXITCODE" }
+          }
           "NCM_NATIVE_IMAGE_JAR=$trimmedJar" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Upload ICU rendering diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ICU-rendering-diagnostics-${{ github.sha }}
+          path: |
+            build/icu-check-*/**/results.txt
+            build/icu-check-*/**/*.png
+          if-no-files-found: ignore
 
       - name: Trace conversion and desktop metadata
         timeout-minutes: 5
