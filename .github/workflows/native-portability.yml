@@ -11,11 +11,6 @@ on:
     workflows: [CI]
     branches: [master]
     types: [completed]
-  push:
-    branches: [master]
-    paths:
-      - .github/workflows/native-portability.yml
-      - composeApp/tools/VerifyNativeImageIsolation.ps1
 
 permissions:
   contents: read
@@ -27,8 +22,6 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
-
       - name: Select existing successful CI artifact
         id: source
         shell: pwsh
@@ -54,6 +47,10 @@ jobs:
           "run_id=$runId" >> $env:GITHUB_OUTPUT
           "source_sha=$($run.head_sha)" >> $env:GITHUB_OUTPUT
           "Testing existing Native Image from $($run.html_url), commit $($run.head_sha)." >> $env:GITHUB_STEP_SUMMARY
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.source.outputs.source_sha }}
 
       - uses: actions/download-artifact@v8
         with:

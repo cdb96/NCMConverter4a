@@ -89,6 +89,9 @@ are separate and must remain enabled.
 
 `native-portability.yml` downloads an already-built Windows Native Image into a
 separate [GitHub-hosted VM](https://docs.github.com/en/actions/concepts/runners/github-hosted-runners).
+It runs after successful CI completion (or a manual dispatch), and checks out
+the artifact's source commit so its verifier matches the packaged application.
+It does not race a new push by testing a previous release with current checks.
 It does not build the application or restore build
 caches. `VerifyNativeImageIsolation.ps1` first launches the ordinary entry point
 with new settings, home and temporary directories, no Java in PATH, and Skiko's
