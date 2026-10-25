@@ -1,8 +1,11 @@
 import com.cdb96.ncmconverter4a.MainKt;
 import com.cdb96.ncmconverter4a.NativeCaption;
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt;
+import com.cdb96.ncmconverter4a.jni.KGGDecrypt;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.util.Arrays;
+import java.util.HexFormat;
 
 /** Native Image entry point: prepare the portable AWT support directory, then start Compose. */
 public final class NativeImageMain {
@@ -33,6 +36,7 @@ public final class NativeImageMain {
             PgoTraining.run();
             return;
         }
+        configureSkikoCache();
         if (args.length == 1 && "--runtime-smoke".equals(args[0])) {
             NativeImageSmoke.verifyResources();
             verifyNativeLibrary();
@@ -54,6 +58,25 @@ public final class NativeImageMain {
             return;
         }
         MainKt.main();
+    }
+
+    private static void configureSkikoCache() throws Exception {
+        if (!isWindows()) return;
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (var stream = NativeImageMain.class.getResourceAsStream("/icudtl.dat")) {
+            if (stream == null) throw new IllegalStateException("Missing Skiko ICU data");
+            byte[] buffer = new byte[8192];
+            int length;
+            while ((length = stream.read(buffer)) != -1) digest.update(buffer, 0, length);
+        }
+        // Skiko's own cache key includes only the DLL hash. Keep our trimmed
+        // ICU separate from other applications and from every previous payload.
+        String base = System.getProperty("skiko.data.path");
+        if (base == null || base.isBlank()) {
+            base = Path.of(System.getProperty("user.home"), ".ncmconverter4a", "skiko").toString();
+        }
+        String version = "icu-" + HexFormat.of().formatHex(digest.digest()).substring(0, 16);
+        System.setProperty("skiko.data.path", Path.of(base, version).toString());
     }
 
     /** JVM-only metadata collection; Native Image training never starts AWT. */
@@ -85,10 +108,20 @@ public final class NativeImageMain {
         if (!Arrays.equals(expected, actual)) {
             throw new IllegalStateException("ncmc4a RC4 JNI smoke test returned an unexpected vector");
         }
+        byte[] kggActual = new byte[32];
+        for (int i = 0; i < kggActual.length; i++) kggActual[i] = (byte) (i * 17 + 3);
+        byte[] kggExpected = java.util.HexFormat.of().parseHex(
+            "c05ef3fcd73f9e28533dcbdc50bbf802d07aa065c87b68f4433e82724f4b751c");
+        byte[] kggState = KGGDecrypt.prepare(new byte[0]);
+        KGGDecrypt.decrypt(kggState, kggActual, 0L, kggActual.length);
+        if (!Arrays.equals(kggExpected, kggActual)) {
+            throw new IllegalStateException("ncmc4a KGG JNI smoke test returned an unexpected vector");
+        }
         if (isWindows() && NativeCaption.INSTANCE.setColors(0L, 0, 0, false)) {
             throw new IllegalStateException("native caption JNI accepted an invalid window handle");
         }
         System.out.println("ncmc4a RC4 JNI smoke test passed");
+        System.out.println("ncmc4a KGG JNI smoke test passed");
     }
 
     private static boolean isWindows() {

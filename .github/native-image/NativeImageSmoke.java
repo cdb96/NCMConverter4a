@@ -27,7 +27,10 @@ public final class NativeImageSmoke {
         String expected = new String(resource(skiko + ".sha256"), StandardCharsets.US_ASCII).trim();
         String actual = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(library));
         if (!actual.equalsIgnoreCase(expected)) throw new IllegalStateException("Skiko checksum mismatch: " + skiko);
-        if (windows) resource("icudtl.dat");
+        if (windows) {
+            String icuHash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(resource("icudtl.dat")));
+            System.out.println("Skiko ICU SHA-256: " + icuHash);
+        }
         System.out.println("Native Image resources verified");
     }
 

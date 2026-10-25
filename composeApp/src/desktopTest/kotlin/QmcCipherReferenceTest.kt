@@ -1,6 +1,10 @@
 package com.cdb96.ncmconverter4a
 
 import com.cdb96.ncmconverter4a.converter.kgg.QmcCipher
+import com.cdb96.ncmconverter4a.jni.KGGDecrypt
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertFailsWith
@@ -113,6 +117,78 @@ class QmcCipherReferenceTest {
             assertFailsWith<IllegalArgumentException> { cipher.decrypt(data, 0, data.size + 1) }
             assertFailsWith<IllegalArgumentException> { cipher.decrypt(data, 0, -1) }
             assertFailsWith<IllegalArgumentException> { cipher.decrypt(data, Long.MAX_VALUE) }
+        }
+    }
+
+    @Test
+    fun arbitraryChunksMatchOneShotForAllModes() {
+        val sizes = intArrayOf(1, 15, 16, 17, 63, 64, 65, 127, 128, 129, 5119, 5120, 5121, 32767, 32768)
+        for (key in listOf(qmcKey(301, 3), ByteArray(512), qmcKey(7, 2), ByteArray(0))) {
+            val cipher = QmcCipher.createCipher(key)
+            val input = ByteArray(180_013) { (it * 13 + 7).toByte() }
+            val expected = input.copyOf().also { referenceDecrypt(key, it, 0) }
+            val actual = ByteArray(input.size)
+            var position = 0
+            var chunk = 0
+            while (position < input.size) {
+                val length = minOf(sizes[chunk++ % sizes.size], input.size - position)
+                val buffer = input.copyOfRange(position, position + length).copyOf(length + 19)
+                buffer.fill(0x5A, length)
+                cipher.decrypt(buffer, position.toLong(), length)
+                assertContentEquals(ByteArray(19) { 0x5A }, buffer.copyOfRange(length, buffer.size))
+                buffer.copyInto(actual, position, 0, length)
+                position += length
+            }
+            assertContentEquals(expected, actual, "key=${key.size}")
+        }
+    }
+
+    @Test
+    fun cipherSnapshotsTheKeyAndSupportsConcurrentInterleavedFiles() {
+        val keys = listOf(qmcKey(768, 3), qmcKey(301, 7), ByteArray(512), qmcKey(300, 5), ByteArray(0))
+        val ciphers = keys.map { key ->
+            val mutableKey = key.copyOf()
+            QmcCipher.createCipher(mutableKey).also { mutableKey.fill(0) }
+        }
+        val executor = Executors.newFixedThreadPool(4)
+        try {
+            val work = (0 until 30).map { task -> Callable {
+                val index = task % keys.size
+                val offset = when (task % 3) {
+                    0 -> Long.MAX_VALUE - 12_345
+                    1 -> 127L
+                    else -> 32767L
+                }
+                val expected = ByteArray(12_345) { (it * 7 + task).toByte() }
+                val actual = expected.copyOf()
+                referenceDecrypt(keys[index], expected, offset)
+                ciphers[index].decrypt(actual, offset)
+                assertContentEquals(expected, actual, "task=$task")
+            } }
+            executor.invokeAll(work).forEach { it.get() }
+        } finally {
+            executor.shutdownNow()
+            executor.awaitTermination(10, TimeUnit.SECONDS)
+        }
+    }
+
+    @Test
+    fun nativeBridgeRejectsMalformedStateAndAllowsEmptyRangesAtLongMax() {
+        val data = ByteArray(16)
+        assertFailsWith<IllegalArgumentException> { KGGDecrypt.decrypt(ByteArray(0), data, 0, 16) }
+        assertFailsWith<IllegalArgumentException> { KGGDecrypt.decrypt(ByteArray(8), data, 0, 16) }
+        val state = KGGDecrypt.prepare(qmcKey(512, 1))
+        assertFailsWith<IllegalArgumentException> { KGGDecrypt.decrypt(state.copyOf(state.size - 1), data, 0, 16) }
+        assertFailsWith<IllegalArgumentException> { KGGDecrypt.decrypt(state, state, 0, 0) }
+        KGGDecrypt.decrypt(state, data, Long.MAX_VALUE, 0)
+        assertContentEquals(ByteArray(16), data)
+    }
+
+    private fun referenceDecrypt(key: ByteArray, data: ByteArray, offset: Long) {
+        when {
+            key.size > 300 -> ReferenceQmcRc4(key).decrypt(data, offset)
+            key.isNotEmpty() -> ReferenceQmcMap(key).decrypt(data, offset)
+            else -> ReferenceQmcStatic.decrypt(data, offset)
         }
     }
 }

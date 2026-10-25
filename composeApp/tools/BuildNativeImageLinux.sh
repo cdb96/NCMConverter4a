@@ -57,6 +57,7 @@ cd "$build"
 args=(--no-fallback --enable-native-access=ALL-UNNAMED -march=compatibility
     "-H:ConfigurationFileDirectories=$metadata,$root/.github/native-image/metadata,$root/.github/native-image/metadata-linux"
     -cp "$classpath")
+# Instrumentation controls its optimization level; the final build uses -O3.
 "$JAVA_HOME/bin/native-image" "${args[@]}" --pgo-instrument NativeImageMain NCMConverter4a-instrumented
 
 # AWT still uses shared libraries. Match its java.home-relative support layout.
@@ -67,7 +68,7 @@ for file in "$JAVA_HOME"/lib/fontconfig*; do
     if [[ -f "$file" ]]; then cp -p "$file" lib/; fi
 done
 
-# Train the conversion code once; this does not open windows or initialize AWT.
+# Train the current conversion code without opening windows or initializing AWT.
 if [[ -e default.iprof ]]; then
     echo 'Unexpected PGO profile already exists; use a clean build directory.' >&2
     exit 1
@@ -77,7 +78,7 @@ test -s default.iprof
 profile="$build/pgo/conversion.iprof"
 mv default.iprof "$profile"
 profile_option="--pgo=$profile"
-"$JAVA_HOME/bin/native-image" "${args[@]}" "$profile_option" NativeImageMain NCMConverter4a
+"$JAVA_HOME/bin/native-image" "${args[@]}" "$profile_option" -O3 NativeImageMain NCMConverter4a
 
 # Stage an allowlisted runtime. It contains no JDK, classpath,
 # build metadata, instrumented binary or profiles.

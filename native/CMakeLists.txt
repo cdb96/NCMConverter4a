@@ -4,7 +4,7 @@
 #   * Desktop: standalone, `cmake -S native -B native/build` (see README.md).
 #   * Android: androidApp builds this file directly with NCM_BUILD_SELFTEST=OFF.
 #
-# The two algorithm sources implement the JNI entry points directly.
+# The algorithm sources implement the JNI entry points directly.
 cmake_minimum_required(VERSION 3.22)
 project(ncmc4a CXX)
 
@@ -34,10 +34,25 @@ endif()
 
 set(NCM_CORE_SOURCES
     "${CMAKE_CURRENT_LIST_DIR}/cpp/RC4Core.cpp"
-    "${CMAKE_CURRENT_LIST_DIR}/cpp/KGMCore.cpp")
+    "${CMAKE_CURRENT_LIST_DIR}/cpp/KGMCore.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/cpp/KGGCore.cpp")
+
+# Keep the decryption library optimized for throughput independently of the
+# Desktop Native Image optimization settings. Android releases use RelWithDebInfo.
+function(ncm_optimize_core target)
+    if(MSVC)
+        # MSVC's speed optimization level is /O2; it has no /O3 option.
+        target_compile_options(${target} PRIVATE
+            "$<$<CONFIG:Release,RelWithDebInfo,MinSizeRel>:/O2>")
+    else()
+        target_compile_options(${target} PRIVATE
+            "$<$<CONFIG:Release,RelWithDebInfo,MinSizeRel>:-O3>")
+    endif()
+endfunction()
 
 if(NCM_BUILD_JNI)
     add_library(ncmc4a SHARED ${NCM_CORE_SOURCES})
+    ncm_optimize_core(ncmc4a)
     target_include_directories(ncmc4a PRIVATE
         "${CMAKE_CURRENT_LIST_DIR}/cpp" ${NCM_JNI_INCLUDE_DIRS})
 
@@ -87,4 +102,5 @@ if(NCM_BUILD_SELFTEST)
     target_include_directories(ncm_core_selftest PRIVATE
         "${CMAKE_CURRENT_LIST_DIR}/cpp" ${NCM_JNI_INCLUDE_DIRS})
     target_compile_features(ncm_core_selftest PRIVATE cxx_std_17)
+    ncm_optimize_core(ncm_core_selftest)
 endif()

@@ -348,12 +348,32 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           native-image-job-reports: 'true'
 
-      - name: Trace conversion and desktop metadata
-        timeout-minutes: 5
+      - name: Prepare trimmed Windows ICU
         shell: pwsh
         run: |
           $jar = Get-ChildItem composeApp/build/compose/jars/*-release.jar | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $jar) { throw 'Release UberJar not found' }
+          $trimmedJar = Join-Path $PWD.Path 'build/native-image-input/app.jar'
+          & "$env:JAVA_HOME\bin\java.exe" '.github/native-image/TrimSkikoIcu.java' $jar.FullName $trimmedJar
+          if ($LASTEXITCODE -ne 0) { throw "ICU trimming failed: $LASTEXITCODE" }
+          $unicodeRoot = Join-Path $PWD.Path ('build/icu-check-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+          foreach ($variant in @('original', 'trimmed')) {
+            $probeJar = if ($variant -eq 'original') { $jar.FullName } else { $trimmedJar }
+            $probeOutput = Join-Path $unicodeRoot $variant
+            $probeCache = Join-Path $probeOutput 'cache'
+            & "$env:JAVA_HOME\bin\java.exe" '--enable-native-access=ALL-UNNAMED' '-Djava.awt.headless=true' "-Dskiko.data.path=$probeCache" -cp $probeJar '.github/native-image/SkikoIcuRenderCheck.java' $probeOutput
+            if ($LASTEXITCODE -ne 0) { throw "ICU rendering probe failed ($variant): $LASTEXITCODE" }
+          }
+          $originalHash = (Get-FileHash -LiteralPath (Join-Path $unicodeRoot 'original/results.txt') -Algorithm SHA256).Hash
+          $trimmedHash = (Get-FileHash -LiteralPath (Join-Path $unicodeRoot 'trimmed/results.txt') -Algorithm SHA256).Hash
+          if ($originalHash -ne $trimmedHash) { throw 'ICU trimming changed text rendering or layout' }
+          "NCM_NATIVE_IMAGE_JAR=$trimmedJar" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Trace conversion and desktop metadata
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $jar = Get-Item -LiteralPath $env:NCM_NATIVE_IMAGE_JAR
           $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
           $classes = Join-Path $PWD.Path 'build/native-image/trace-classes'
           New-Item -ItemType Directory -Force $metadata,$classes | Out-Null
@@ -389,12 +409,11 @@ jobs:
             throw 'GraalVM tracing did not produce reachability-metadata.json'
           }
 
-      - name: Build and train PGO Native Image
+      - name: Build and train O3 + PGO Native Image
         shell: pwsh
         run: |
           native-image --version
-          $jar = Get-ChildItem composeApp/build/compose/jars/*-release.jar | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-          if (-not $jar) { throw 'Release UberJar not found' }
+          $jar = Get-Item -LiteralPath $env:NCM_NATIVE_IMAGE_JAR
           $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
           $staticMetadata = Join-Path $PWD.Path '.github/native-image/metadata'
           $windowsMetadata = Join-Path $PWD.Path '.github/native-image/metadata-windows'
@@ -415,6 +434,7 @@ jobs:
             "-H:ConfigurationFileDirectories=$metadata,$staticMetadata,$windowsMetadata"
             '-cp', $classPath
           )
+          # Instrumentation chooses its own optimization level; -O3 is for the final build.
           native-image @nativeImageArgs '--pgo-instrument' 'NativeImageMain' 'NCMConverter4a-instrumented'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $mt = (Get-Command mt.exe -ErrorAction SilentlyContinue).Source
@@ -442,7 +462,7 @@ jobs:
           }
           $pgoDir = Join-Path $PWD 'pgo'
           New-Item -ItemType Directory -Force $pgoDir | Out-Null
-          # Train conversion code once without starting AWT or Compose.
+          # Train the current conversion code without starting AWT or Compose.
           $rawProfile = Join-Path $PWD 'default.iprof'
           if (Test-Path -LiteralPath $rawProfile) { throw "Unexpected profile already exists: $rawProfile" }
           $stdout = Join-Path $PWD 'pgo-train.stdout.log'
@@ -456,7 +476,7 @@ jobs:
           $profilePath = Join-Path $pgoDir 'conversion.iprof'
           Move-Item -LiteralPath $rawProfile -Destination $profilePath -Force
           $profileOption = "--pgo=$profilePath"
-          native-image @nativeImageArgs $profileOption 'NativeImageMain' 'NCMConverter4a'
+          native-image @nativeImageArgs $profileOption '-O3' 'NativeImageMain' 'NCMConverter4a'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $imagePath = Join-Path $PWD 'NCMConverter4a.exe'
           & $mt -manifest $dpiManifest "-outputresource:$imagePath;#1"
@@ -475,9 +495,9 @@ jobs:
             (Get-Item -LiteralPath (Join-Path $PWD 'lib/fontconfig.bfc'))
           )
           $runtimeBytes = ($runtimeFiles | Measure-Object -Property Length -Sum).Sum
-          Write-Host ("Native Image executable (PGO): {0:N2} MiB ({1} bytes)" -f ($image.Length / 1MB), $image.Length)
+          Write-Host ("Native Image executable (O3 + PGO): {0:N2} MiB ({1} bytes)" -f ($image.Length / 1MB), $image.Length)
           Write-Host ("Windows runtime files: {0:N2} MiB ({1} bytes)" -f ($runtimeBytes / 1MB), $runtimeBytes)
-          "Native Image executable (PGO): $($image.Length) bytes" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "Native Image executable (O3 + PGO): $($image.Length) bytes" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           "Windows runtime files (EXE, generated DLLs, font config): $runtimeBytes bytes" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           Pop-Location
           Get-ChildItem build/native-image -Recurse -File | Select-Object FullName,Length

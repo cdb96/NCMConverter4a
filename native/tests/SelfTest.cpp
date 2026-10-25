@@ -5,16 +5,20 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "KgmTables.h"
+#include "KggVectors.h"
 
 extern "C" {
 JNIEXPORT void JNICALL Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_init(JNIEnv*, jclass, jbyteArray);
 JNIEXPORT void JNICALL Java_com_cdb96_ncmconverter4a_jni_RC4Decrypt_decrypt(JNIEnv*, jclass, jbyteArray, jint);
 JNIEXPORT void JNICALL Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_init(JNIEnv*, jclass, jbyteArray);
 JNIEXPORT jint JNICALL Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv*, jclass, jbyteArray, jint, jint);
+JNIEXPORT jbyteArray JNICALL Java_com_cdb96_ncmconverter4a_jni_KGGDecrypt_prepare(JNIEnv*, jclass, jbyteArray);
+JNIEXPORT void JNICALL Java_com_cdb96_ncmconverter4a_jni_KGGDecrypt_decrypt(JNIEnv*, jclass, jbyteArray, jbyteArray, jlong, jint);
 }
 
 namespace {
@@ -26,6 +30,25 @@ struct TestByteArray : _jbyteArray {
     jsize length;
     TestByteArray(const std::uint8_t* data, jsize size) : bytes(data), length(size) {}
 };
+
+struct OwnedByteArray : TestByteArray {
+    std::vector<std::uint8_t> storage;
+    explicit OwnedByteArray(jsize size) : TestByteArray(nullptr, size), storage(size) {
+        bytes = storage.data();
+    }
+};
+
+jbyteArray JNICALL newByteArray(JNIEnv*, jsize length) {
+    return new OwnedByteArray(length);
+}
+
+void JNICALL setByteArrayRegion(JNIEnv*, jbyteArray array, jsize start, jsize length, const jbyte* input) {
+    std::memcpy(const_cast<std::uint8_t*>(static_cast<TestByteArray*>(array)->bytes) + start, input, length);
+}
+
+jboolean JNICALL isSameObject(JNIEnv*, jobject a, jobject b) {
+    return a == b;
+}
 
 jsize JNICALL getArrayLength(JNIEnv*, jarray array) {
     return static_cast<TestByteArray*>(array)->length;
@@ -57,6 +80,9 @@ const JNINativeInterface_ testFunctions = [] {
     functions.GetPrimitiveArrayCritical = getPrimitiveArrayCritical;
     functions.ReleasePrimitiveArrayCritical = releasePrimitiveArrayCritical;
     functions.GetByteArrayRegion = getByteArrayRegion;
+    functions.NewByteArray = newByteArray;
+    functions.SetByteArrayRegion = setByteArrayRegion;
+    functions.IsSameObject = isSameObject;
     functions.FindClass = findClass;
     functions.ThrowNew = throwNew;
     return functions;
@@ -470,6 +496,38 @@ void checkKgmAlignedChunking() {
            position == total && refPosition == total && expected == actual);
 }
 
+void checkKggGoldenVectors() {
+    bool ok = true;
+    for (const auto& vector : kggVectors) {
+        std::vector<std::uint8_t> key(vector.keySize);
+        for (int i = 0; i < vector.keySize; ++i) {
+            key[i] = vector.zeroKey ? 0 : static_cast<std::uint8_t>(i * 31 + 7);
+        }
+        TestByteArray keyArray(key.data(), vector.keySize);
+        std::unique_ptr<OwnedByteArray> state(static_cast<OwnedByteArray*>(
+            Java_com_cdb96_ncmconverter4a_jni_KGGDecrypt_prepare(&testEnv, nullptr, &keyArray)));
+        for (const int chunkSize : {1, 15, 16, 17, 63, 64, 65, 81}) {
+            std::uint8_t data[81 + 19];
+            for (int i = 0; i < 81; ++i) data[i] = static_cast<std::uint8_t>(i * 17 + 3);
+            std::memset(data + 81, 0x5A, 19);
+            for (int position = 0; position < 81; position += chunkSize) {
+                const int length = std::min(chunkSize, 81 - position);
+                TestByteArray array(data + position, 81 + 19 - position);
+                Java_com_cdb96_ncmconverter4a_jni_KGGDecrypt_decrypt(
+                    &testEnv, nullptr, state.get(), &array, vector.offset + position, length);
+            }
+            bool tailOk = true;
+            for (int i = 81; i < 100; ++i) tailOk = tailOk && data[i] == 0x5A;
+            if (!tailOk || std::memcmp(data, vector.expected, 81) != 0) {
+                ok = false;
+                std::printf("       KGG mismatch key=%d offset=%lld chunk=%d\n",
+                    vector.keySize, static_cast<long long>(vector.offset), chunkSize);
+            }
+        }
+    }
+    report("kgg RC4/map/static golden vectors and arbitrary SIMD chunks", ok);
+}
+
 }  // namespace
 
 int main() {
@@ -481,6 +539,7 @@ int main() {
     checkKgmChunking();
     checkKgmAlignedBoundaryOffsets();
     checkKgmAlignedChunking();
+    checkKggGoldenVectors();
 
     if (failures == 0) {
         std::printf("ALL CHECKS PASSED\n");

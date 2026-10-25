@@ -40,3 +40,4 @@
 
 -keep class com.cdb96.ncmconverter4a.jni.RC4Decrypt { *; }
 -keep class com.cdb96.ncmconverter4a.jni.KGMDecrypt { *; }
+-keep class com.cdb96.ncmconverter4a.jni.KGGDecrypt { *; }

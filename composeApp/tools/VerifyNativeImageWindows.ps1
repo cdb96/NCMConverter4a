@@ -114,6 +114,13 @@ if ($CheckRuntime) {
                 if ($icu.Count -ne 1 -or $icu[0].Length -eq 0) {
                     throw "Packaged $test did not extract ICU data to its empty cache"
                 }
+                $icuHash = (Get-FileHash -LiteralPath $icu[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                if (-not (Select-String -LiteralPath $stdout -Pattern "Skiko ICU SHA-256: $icuHash" -SimpleMatch -Quiet)) {
+                    throw 'Extracted ICU differs from the embedded data'
+                }
+                if ($icu[0].FullName -notlike "*\icu-$($icuHash.Substring(0, 16))\*") {
+                    throw 'Skiko cache does not include the ICU content version'
+                }
             }
             Write-Host "Packaged check passed: $test"
         }

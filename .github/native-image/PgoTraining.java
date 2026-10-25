@@ -3,6 +3,7 @@ import com.cdb96.ncmconverter4a.converter.NcmFileInfo;
 import com.cdb96.ncmconverter4a.io.BinaryInput;
 import com.cdb96.ncmconverter4a.io.BinaryOutput;
 import com.cdb96.ncmconverter4a.jni.KGMDecrypt;
+import com.cdb96.ncmconverter4a.jni.KGGDecrypt;
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt;
 import java.util.Arrays;
 
@@ -41,6 +42,23 @@ public final class PgoTraining {
         KGMDecrypt.init(new byte[17]);
         int next = KGMDecrypt.decrypt(kgmPayload, 0, kgmPayload.length);
         if (next != kgmPayload.length) throw new IllegalStateException("PGO KGM training failed");
+        for (int keySize : new int[] {0, 256, 768}) {
+            byte[] kggKey = new byte[keySize];
+            for (int i = 0; i < keySize; i++) kggKey[i] = (byte) (i * 31 + 7);
+            byte[] plain = makePayload("mp3");
+            byte[] encrypted = plain.clone();
+            KGGDecrypt.decrypt(KGGDecrypt.prepare(kggKey), encrypted, 0L, encrypted.length);
+            byte[] state = KGGDecrypt.prepare(kggKey);
+            byte[] actual = new byte[plain.length];
+            int bufferSize = 64 * 5120;
+            for (int offset = 0; offset < encrypted.length; offset += bufferSize) {
+                int length = Math.min(bufferSize, encrypted.length - offset);
+                byte[] buffer = Arrays.copyOfRange(encrypted, offset, offset + length);
+                KGGDecrypt.decrypt(state, buffer, offset, length);
+                System.arraycopy(buffer, 0, actual, offset, length);
+            }
+            if (!Arrays.equals(plain, actual)) throw new IllegalStateException("PGO KGG training failed");
+        }
         System.out.println("PGO conversion training passed");
     }
 

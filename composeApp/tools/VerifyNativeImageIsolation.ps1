@@ -92,6 +92,11 @@ try {
             }
             $icu = @(Get-ChildItem -LiteralPath $profile -Recurse -File -Filter icudtl.dat)
             if ($icu.Count -ne 1 -or $icu[0].Length -eq 0) { throw 'First startup did not extract exactly one nonempty ICU resource' }
+            $icuHash = (Get-FileHash -LiteralPath $icu[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $expectedCache = Join-Path $userDirectory ".ncmconverter4a\skiko\icu-$($icuHash.Substring(0, 16))"
+            if (-not $icu[0].FullName.StartsWith($expectedCache + '\', [StringComparison]::OrdinalIgnoreCase)) {
+                throw 'Default startup did not use the application-specific, ICU-versioned cache'
+            }
             $loadedModules = @($modules | Sort-Object | ForEach-Object {
                 [pscustomobject]@{Path=$_;SHA256=(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash}
             })

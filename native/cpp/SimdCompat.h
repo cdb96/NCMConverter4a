@@ -8,8 +8,8 @@
 //   ARM / AArch64 -> <arm_neon.h>          native NEON
 //   x86 / x86_64  -> NEON_2_SSE.h          Intel ARM_NEON_2_x86_SSE, SSE/SSSE3/SSE4
 //
-// That is why Android and Desktop can compile one and the same RC4Core.cpp /
-// KGMCore.cpp without keeping separate NEON and SSE implementations.
+// Android and Desktop compile the same RC4Core.cpp, KGMCore.cpp and KGGCore.cpp
+// without keeping separate NEON and SSE implementations.
 //
 // There is no scalar build variant: the intrinsics are the implementation, so an
 // architecture without a backend is rejected here instead of silently compiling a

@@ -30,8 +30,8 @@ android {
     defaultConfig {
         applicationId = "com.cdb96.ncmconverter4a"
         minSdk = 29
-        versionCode = 2
-        versionName = "4.0.0"
+        versionCode = 3
+        versionName = "4.1.0"
         ndk {
             abiFilters += listOf("x86_64", "arm64-v8a")
         }

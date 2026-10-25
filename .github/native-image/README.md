@@ -1,5 +1,46 @@
 # Native Image portability checks
 
+Windows and Linux build the main executable with `-O3` and a PGO profile trained
+from the current conversion code. First build with `--pgo-instrument`, run the
+headless NCM/KGM/KGG workload, then build the final executable with
+`--pgo=<conversion.iprof> -O3`. Instrumentation controls its own optimization level;
+do not pass `-O3` in the shared arguments used for the instrumented build.
+Desktop metadata tracing and all runtime/conversion checks remain enabled.
+The separately compiled SIMD decryption library favors speed: `-O3` on
+Clang/GCC and `/O2` with Release LTO on MSVC (see `native/CMakeLists.txt`).
+
+## Windows ICU data
+
+The Windows Native Image job runs `TrimSkikoIcu.java` on a separate copy of the
+release UberJar before metadata tracing and both Native Image builds. The
+published JVM UberJar and dependency caches keep their original ICU data.
+The filter is pinned to the audited Skiko 0.150.1 DLL and ICU 74 input/output
+SHA-256 values and fails if any changes. It needs only JDK 25, without an
+external ICU tool or a downloaded data package.
+
+The filter removes collation, currency, language/region display names, unit and
+time-zone data. It preserves every break rule/dictionary, root locale resource,
+Unicode property/normalization/case table and converter. Retained item payloads
+are copied verbatim. ICU falls from 10,468,208 to 5,758,880 bytes. Local Windows
+O3 + PGO validation reduced the EXE by 4.50 MiB and the ZIP by 1.24 MiB;
+72 multilingual layout/image comparisons and all packaged runtime checks passed.
+CI repeats those comparisons using `SkikoIcuRenderCheck.java`, with separate
+JVMs/caches for the original and trimmed JAR and verified extracted data.
+This is a Skiko text-data policy, not a general-purpose ICU distribution.
+
+`NativeImageMain` configures a private Windows cache under
+`user.home/.ncmconverter4a/skiko/icu-<content-hash-prefix>` before loading Skiko.
+An explicit `skiko.data.path` selects the parent of that content-version
+directory. Skiko's own DLL checksum directory remains underneath it. This is
+necessary because Skiko's default shared cache keys only on the unchanged DLL,
+not the ICU payload. Headless PGO and JNI-only checks do not read or hash ICU.
+Archive checks compare the extracted data against the embedded checksum and
+verify the versioned cache; ordinary startup checks also verify the private
+default cache without a property override. Updating Skiko requires reviewing
+the filter and repeating Unicode rendering checks before changing the hashes.
+
+## Runtime verification
+
 The Windows build must embed `icudtl.dat`, `skiko-windows-x64.dll`, its
 `.sha256` sidecar and the shared `ncmc4a` DLL. Linux must embed the Skiko `.so`,
 its `.sha256` sidecar and the shared `ncmc4a` `.so`. Keep these in the platform
@@ -29,7 +70,7 @@ profile and cache for each check:
 - First startup with software rendering selected.
 - Software rendering after removing an empty inherited environment override.
 - Music, database and directory pickers.
-- The headless conversion workload used for PGO training.
+- The headless NCM/KGM/KGG conversion workload.
 
 The Linux build script checks the final tar archive in the same way under Xvfb.
 Linux still needs the host's X11/OpenGL/font libraries and fonts; removing JDK
@@ -41,8 +82,10 @@ can leave an empty value under PowerShell 7/.NET 9+, which differs from Windows
 PowerShell 5.1. Remove the variable before starting Skiko: its environment
 override takes precedence over the system property even when empty.
 
-Keep PGO training headless. Desktop tracing and archive checks are separate from
-the instrumented conversion workload and must not be removed to speed up PGO.
+Keep PGO training and conversion checks headless. `--pgo-train` runs the conversion
+workload without AWT or Compose; it collects a profile only in the instrumented
+build and also verifies the final executable. Desktop tracing and archive checks
+are separate and must remain enabled.
 
 `native-portability.yml` downloads an already-built Windows Native Image into a
 separate [GitHub-hosted VM](https://docs.github.com/en/actions/concepts/runners/github-hosted-runners).

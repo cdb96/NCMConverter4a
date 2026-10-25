@@ -90,7 +90,7 @@ kotlin {
 // ---------------------------------------------------------------------------
 // Desktop native core
 //
-// native/ holds the single C++ implementation of RC4 and KGM. androidApp builds
+// native/ holds the shared C++ SIMD implementations of RC4, KGM and KGG. androidApp builds
 // it for Android; this task builds the same sources into the Desktop JVM library
 // and bundles it as a resource, so both platforms share one bridge as well.
 //
@@ -279,7 +279,7 @@ compose.desktop {
             // Windows/Linux ship Native Image archives. macOS keeps its DMG
             // while GraalVM's AWT support is unavailable on that platform.
             packageName = "NCMConverter4a"
-            packageVersion = "4.0.0"
+            packageVersion = "4.1.0"
             if (ncmHostOs.isMacOsX) {
                 targetFormats(TargetFormat.Dmg)
                 appResourcesRootDir.set(desktopNativeResources)
