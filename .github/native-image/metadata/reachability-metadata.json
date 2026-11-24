@@ -41,6 +41,10 @@
             "java.awt.Component", "int", "long", "int", "int", "int", "int",
             "int", "int", "boolean", "int", "int", "int", "double"
           ]
+        },
+        {
+          "name": "getWheelRotation",
+          "parameterTypes": []
         }
       ]
     },
@@ -65,5 +69,13 @@
   ],
   "resources": [
     { "module": "java.datatransfer", "glob": "sun/datatransfer/resources/flavormap.properties" }
-  ]
+  ],
+  "foreign": {
+    "downcalls": [
+      {
+        "returnType": "jint",
+        "parameterTypes": ["jlong", "jint", "jlong", "jlong"]
+      }
+    ]
+  }
 }

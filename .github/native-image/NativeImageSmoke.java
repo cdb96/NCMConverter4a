@@ -8,7 +8,13 @@ import java.awt.Frame;
 import java.awt.Window;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.SystemFlavorMap;
+import java.awt.event.MouseWheelEvent;
 import java.io.InputStream;
+import java.lang.foreign.Arena;
+import java.lang.foreign.FunctionDescriptor;
+import java.lang.foreign.Linker;
+import java.lang.foreign.SymbolLookup;
+import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
@@ -99,10 +105,51 @@ public final class NativeImageSmoke {
                     throw new IllegalStateException("Native file drop formats are missing");
                 }
                 System.out.println("Skiko renderer: " + layer.getRenderApi() + " (" + layer.getRenderInfo() + ")");
-                System.out.println("Compose desktop startup smoke test passed");
-                System.exit(0);
+                ((Timer) event.getSource()).stop();
+                exerciseMouseWheel(layer);
+                // The wheel is processed asynchronously on the EDT; only a later EDT
+                // callback proves the queue survived it. A dead or blocked EDT never
+                // runs this, so the startup watchdog fails the check instead.
+                Timer survived = new Timer(750, done -> {
+                    System.out.println("Compose desktop startup smoke test passed");
+                    System.exit(0);
+                });
+                survived.setRepeats(false);
+                survived.start();
             }
         }).start());
+    }
+
+    private static void exerciseMouseWheel(SkiaLayer layer) {
+        if (!System.getProperty("os.name").startsWith("Windows")) {
+            // Only the Windows AWT peer resolves getWheelRotation through JNI.
+            for (int rotation : new int[]{3, -3}) {
+                layer.dispatchEvent(new MouseWheelEvent(layer, MouseWheelEvent.MOUSE_WHEEL,
+                    System.currentTimeMillis(), 0, layer.getWidth() / 2, layer.getHeight() / 2,
+                    0, false, MouseWheelEvent.WHEEL_UNIT_SCROLL, 3, rotation));
+            }
+            return;
+        }
+        // The Windows AWT peer resolves MouseWheelEvent.getWheelRotation through JNI
+        // while processing a real WM_MOUSEWHEEL; synthetic dispatchEvent never reaches
+        // that native path. PostMessageW needs no focus, unlike injected input.
+        long hwnd = layer.getWindowHandle();
+        if (hwnd == 0) throw new IllegalStateException("SkiaLayer has no native window handle");
+        var screen = layer.getLocationOnScreen();
+        long lparam = ((screen.x + layer.getWidth() / 2) & 0xFFFFL)
+            | (((screen.y + layer.getHeight() / 2) & 0xFFFFL) << 16);
+        try (var arena = Arena.ofConfined()) {
+            var post = Linker.nativeLinker().downcallHandle(
+                SymbolLookup.libraryLookup("user32", arena).find("PostMessageW").orElseThrow(),
+                FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG,
+                    ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG));
+            for (int delta : new int[]{3 * 120, -3 * 120}) {
+                int posted = (int) post.invoke(hwnd, 0x020A, (long) delta << 16, lparam);
+                if (posted == 0) throw new IllegalStateException("PostMessageW WM_MOUSEWHEEL failed");
+            }
+        } catch (Throwable failure) {
+            throw new IllegalStateException("Wheel message injection failed", failure);
+        }
     }
 
     private static Thread watchdog(String name, long timeoutMillis) {
