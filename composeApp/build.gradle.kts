@@ -77,6 +77,12 @@ kotlin {
                 implementation(libs.androidx.documentfile)
             }
         }
+        getByName("desktopTest") {
+            dependencies {
+                implementation(compose.desktop.uiTestJUnit4)
+                implementation(compose.desktop.currentOs)
+            }
+        }
         getByName("desktopMain") {
             resources.srcDir(desktopNativeResources)
             dependencies {
