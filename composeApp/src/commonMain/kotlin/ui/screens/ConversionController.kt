@@ -68,7 +68,7 @@ class ConversionController(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                state = state.copy(convertResult = "转换失败: ${error.message}")
+                state = state.copy(errorMessage = "转换失败: ${error.message}")
                 onError(error)
             } finally {
                 progressJob.cancel()

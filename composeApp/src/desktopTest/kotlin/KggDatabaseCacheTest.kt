@@ -4,6 +4,7 @@ import com.cdb96.ncmconverter4a.converter.kgg.KggBatchKeys
 import com.cdb96.ncmconverter4a.converter.kgg.KggDbDecryptor
 import com.cdb96.ncmconverter4a.converter.kgg.KggKeyDatabase
 import com.cdb96.ncmconverter4a.converter.kgg.MMKVParser
+import com.cdb96.ncmconverter4a.converter.kgg.SqliteKggReader
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayOutputStream
@@ -111,7 +112,7 @@ class KggDatabaseCacheTest {
                 val file = File(root, name).apply { writeBytes(bytes) }
                 val database = loadDesktopKggDatabase(file.path)
                 file.writeBytes(byteArrayOf(0))
-                assertEquals(expected, KggDbDecryptor.extractKeyMapping(plain))
+                assertEquals(expected, SqliteKggReader.readKeyMapping(plain))
                 expected.forEach { (hash, value) -> assertContentEquals(value.encodeToByteArray(), database.getBytes(hash)) }
                 val legacy = hash(99)
                 assertContentEquals("L".repeat(1024).encodeToByteArray(), database.getBytes(legacy))

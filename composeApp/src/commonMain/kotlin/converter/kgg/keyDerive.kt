@@ -1,6 +1,7 @@
 //ported from Unlock Music Project
 package com.cdb96.ncmconverter4a.converter.kgg
 
+import com.cdb96.ncmconverter4a.converter.startsWith
 import kotlin.io.encoding.Base64
 import kotlin.math.abs
 import kotlin.math.tan
@@ -142,12 +143,4 @@ fun decryptTencentTea(inBuf: ByteArray, key: ByteArray): ByteArray {
     }
 
     return out
-}
-
-fun ByteArray.startsWith(prefix: ByteArray): Boolean {
-    if (this.size < prefix.size) return false
-    for (i in prefix.indices) {
-        if (this[i] != prefix[i]) return false
-    }
-    return true
 }

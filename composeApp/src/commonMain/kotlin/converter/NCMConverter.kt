@@ -168,13 +168,6 @@ object NCMConverter {
         }
     }
 
-    /** Decrypts the NCM key and metadata blocks. */
-    fun decrypt(key: ByteArray, encryptedBytes: ByteArray): ByteArray {
-        val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
-        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"))
-        return cipher.doFinal(encryptedBytes)
-    }
-
     private fun decryptCached(holder: ThreadLocal<Cipher>, encryptedBytes: ByteArray): ByteArray =
         try {
             holder.get().doFinal(encryptedBytes)

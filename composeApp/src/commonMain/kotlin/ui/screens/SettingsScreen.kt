@@ -30,13 +30,26 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 
 @Composable
+internal fun SectionCard(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    OutlinedCard(
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.outlinedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        content = content,
+    )
+}
+
+@Composable
 fun SettingsScreen(
     state: SettingsUiState,
-    onRawWriteModeChange: (Boolean) -> Unit,
-    onDuplicateConflictMitigationChange: (Boolean) -> Unit,
-    onThreadCountChange: (Int) -> Unit,
+    onSettingsChange: (SettingsUiState) -> Unit,
     onSelectKggDatabase: () -> Unit,
-    onKggRootModeChange: (Boolean) -> Unit,
     supportsRoot: Boolean,
     onGpuRenderingChange: ((Boolean) -> Unit)? = null,
     gpuRenderingBusy: Boolean = false,
@@ -47,14 +60,8 @@ fun SettingsScreen(
 ) {
     val conversionSettings: @Composable () -> Unit = {
         SettingsCard(
-            rawWriteMode = state.rawWriteMode,
-            onRawWriteModeChange = onRawWriteModeChange,
-            duplicateConflictMitigation = state.duplicateConflictMitigation,
-            onDuplicateConflictMitigationChange = onDuplicateConflictMitigationChange,
-            threadCount = state.threadCount,
-            onThreadCountChange = onThreadCountChange,
-            enabled = state.enabled,
-            gpuRenderingEnabled = state.gpuRenderingEnabled,
+            state = state,
+            onSettingsChange = onSettingsChange,
             onGpuRenderingChange = onGpuRenderingChange,
             gpuRenderingBusy = gpuRenderingBusy,
             gpuRenderingError = gpuRenderingError,
@@ -74,7 +81,7 @@ fun SettingsScreen(
             KggDatabaseCard(
                 state = state,
                 onSelectClick = onSelectKggDatabase,
-                onRootModeChange = onKggRootModeChange,
+                onRootModeChange = { onSettingsChange(state.copy(kggRootMode = it)) },
                 supportsRoot = supportsRoot,
             )
         }
@@ -100,14 +107,7 @@ private fun SettingsSection(
     title: String,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    OutlinedCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
+    SectionCard(Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -219,15 +219,9 @@ private fun KggDatabaseCard(
 }
 
 @Composable
-fun SettingsCard(
-    rawWriteMode: Boolean,
-    onRawWriteModeChange: (Boolean) -> Unit,
-    duplicateConflictMitigation: Boolean,
-    onDuplicateConflictMitigationChange: (Boolean) -> Unit,
-    threadCount: Int,
-    onThreadCountChange: (Int) -> Unit,
-    enabled: Boolean,
-    gpuRenderingEnabled: Boolean = true,
+private fun SettingsCard(
+    state: SettingsUiState,
+    onSettingsChange: (SettingsUiState) -> Unit,
     onGpuRenderingChange: ((Boolean) -> Unit)? = null,
     gpuRenderingBusy: Boolean = false,
     gpuRenderingError: String? = null,
@@ -237,16 +231,16 @@ fun SettingsCard(
             SettingSwitch(
                 title = "原始写入模式",
                 description = "仅解密，不补写 NCM 元数据",
-                checked = rawWriteMode,
-                enabled = enabled,
-                onChange = onRawWriteModeChange,
+                checked = state.rawWriteMode,
+                enabled = state.enabled,
+                onChange = { onSettingsChange(state.copy(rawWriteMode = it)) },
             )
             SettingSwitch(
                 title = "处理重名文件",
                 description = "重名时添加序号，保留已有文件",
-                checked = duplicateConflictMitigation,
-                enabled = enabled,
-                onChange = onDuplicateConflictMitigationChange,
+                checked = state.duplicateConflictMitigation,
+                enabled = state.enabled,
+                onChange = { onSettingsChange(state.copy(duplicateConflictMitigation = it)) },
             )
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -265,18 +259,18 @@ fun SettingsCard(
                     color = MaterialTheme.colorScheme.secondaryContainer,
                 ) {
                     Text(
-                        "$threadCount",
+                        "${state.threadCount}",
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         style = MaterialTheme.typography.titleSmall,
                     )
                 }
             }
             Slider(
-                value = threadCount.toFloat(),
-                onValueChange = { onThreadCountChange(it.roundToInt()) },
+                value = state.threadCount.toFloat(),
+                onValueChange = { onSettingsChange(state.copy(threadCount = it.roundToInt())) },
                 valueRange = 1f..8f,
                 steps = 6,
-                enabled = enabled,
+                enabled = state.enabled,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -286,8 +280,8 @@ fun SettingsCard(
                 title = "GPU 渲染",
                 description = if (gpuRenderingBusy) "正在切换…"
                     else "关闭后使用软件渲染；切换会重启程序",
-                checked = gpuRenderingEnabled,
-                enabled = enabled && !gpuRenderingBusy,
+                checked = state.gpuRenderingEnabled,
+                enabled = state.enabled && !gpuRenderingBusy,
                 onChange = onChange,
             )
             SettingError(gpuRenderingError)

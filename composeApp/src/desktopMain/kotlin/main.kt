@@ -19,9 +19,9 @@ import com.cdb96.ncmconverter4a.service.DirectoryScanService
 import com.cdb96.ncmconverter4a.service.ScanDirectory
 import com.cdb96.ncmconverter4a.ui.BenchmarkDialog
 import com.cdb96.ncmconverter4a.ui.screens.ConversionController
+import com.cdb96.ncmconverter4a.ui.screens.DirectoryScanController
 import com.cdb96.ncmconverter4a.ui.screens.MainScreen
 import com.cdb96.ncmconverter4a.ui.screens.SettingsUiState
-import com.cdb96.ncmconverter4a.ui.screens.DirectoryScanController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.swing.Swing
@@ -32,8 +32,8 @@ fun main() {
     val gpuEnabled = DesktopRenderingPreference.loadGpuEnabled()
     if (System.getenv("SKIKO_RENDER_API") == null && System.getProperty("skiko.renderApi") == null) {
         val renderer = if (!gpuEnabled) "SOFTWARE" else when {
-            System.getProperty("os.name").startsWith("Windows", ignoreCase = true) -> "DIRECT3D"
-            System.getProperty("os.name").startsWith("Mac", ignoreCase = true) -> "METAL"
+            isWindows -> "DIRECT3D"
+            isMacOs -> "METAL"
             else -> "OPENGL"
         }
         System.setProperty("skiko.renderApi", renderer)
@@ -51,7 +51,7 @@ fun NCMConverter4aDesktopApp(window: ComposeWindow, gpuEnabled: Boolean, onClose
     App {
         DesktopNativeCaption(window)
         Column(Modifier.fillMaxSize()) {
-            if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+            if (isWindows) {
                 DesktopTallTitleBar(window, onClose)
             }
             DesktopMainScreen(gpuEnabled, onClose)
@@ -108,11 +108,7 @@ fun DesktopMainScreen(gpuEnabled: Boolean, onClose: () -> Unit) {
             conversionState = conversionState,
             settingsState = settingsState,
             desktopMode = true,
-            onRawWriteModeChange = { settingsState = settingsState.copy(rawWriteMode = it) },
-            onDuplicateConflictMitigationChange = {
-                settingsState = settingsState.copy(duplicateConflictMitigation = it)
-            },
-            onThreadCountChange = { settingsState = settingsState.copy(threadCount = it) },
+            onSettingsChange = { settingsState = it },
             onPickFiles = { startConversion(DesktopFilePicker.pickFiles()) },
             onBenchmark = { showBenchmark = true },
             onSelectOutputDirectory = {

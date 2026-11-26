@@ -7,7 +7,6 @@ import com.cdb96.ncmconverter4a.service.OpenedInput
 import com.cdb96.ncmconverter4a.service.PendingOutput
 import com.cdb96.ncmconverter4a.service.boundedWorkerBufferSize
 import java.io.File
-import java.io.InputStream
 import java.io.OutputStream
 
 private const val DESKTOP_BUFFER_BUDGET = 1024 * 1024
@@ -28,12 +27,6 @@ private class DesktopConversionFiles(outputDirectory: File) : ConversionFiles {
     private val outputAllocator = DesktopOutputAllocator(outputDirectory)
 
     override fun fileName(source: String): String = File(source).name
-
-    override fun openInput(source: String): InputStream {
-        val file = File(source)
-        require(file.isFile) { "输入文件不存在: $source" }
-        return file.inputStream()
-    }
 
     override fun openInputWithSize(source: String): OpenedInput {
         val file = File(source)

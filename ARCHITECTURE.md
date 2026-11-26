@@ -56,7 +56,7 @@ NCMConverter4a 采用 **Kotlin Multiplatform (KMP) + Compose Multiplatform + 共
 | `androidApp/` | Android 应用入口 (`MainActivity`)、Manifest、资源与 NDK CMake 集成，构建 `libncmc4a.so`。 |
 | `composeApp/src/commonMain/` | 跨平台共享代码：Compose UI、Controller、批量转换与目录扫描服务、NCM/KGM/KGG 解析与流式转换、音频标签生成、流式 I/O 工具及 `expect` JNI 声明。 |
 | `composeApp/src/androidMain/` | Android 平台实现：SAF/MediaStore 文件读写 (`AndroidConversionFiles`)、目录扫描 (`AndroidDirectoryScanner`)、Root 读取 KGG 密钥 (`RootDatabaseReader`) 及 JNI `actual` 绑定。 |
-| `composeApp/src/desktopMain/` | Desktop 平台实现：本地文件输出与冲突分配 (`DesktopConversionFiles` / `DesktopOutputAllocator`)、本地目录扫描 (`DesktopDirectoryScanner`)、拖拽/文件选择、Skiko 渲染配置、Windows 原生标题栏、`KggDbDecryptor` 与 `NativeLibrary` 加载器。 |
+| `composeApp/src/desktopMain/` | Desktop 平台实现：本地文件输出与冲突分配 (`DesktopConversionFiles` / `DesktopOutputAllocator`)、本地目录扫描 (`DesktopDirectoryScanner`)、配置持久化与系统判断 (`DesktopConfig`)、拖拽/文件选择、Skiko 渲染配置、Windows 原生标题栏、`KggDbDecryptor` 与 `NativeLibrary` 加载器。 |
 | `composeApp/src/commonTest/` & `desktopTest/` | 跨平台单元测试与桌面端回归测试（含解密向量、并发、元数据、I/O、`MainScreenScrollTest` 及 `DirectoryScanScreenTest`）。 |
 | `native/` | 跨平台共享 C++17 解密核心 (`cpp/`)、Windows 标题栏支持 (`windows/NativeCaption.cpp`)、独立自测 (`tests/SelfTest.cpp`) 与 `third_party/NEON_2_SSE/`。 |
 | `composeApp/tools/` & `.github/native-image/` | Desktop GraalVM Native Image 打包脚本、冒烟验证入口、Skiko ICU 裁剪工具及可达性元数据。 |

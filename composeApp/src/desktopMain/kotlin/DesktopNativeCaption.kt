@@ -14,7 +14,7 @@ import kotlinx.coroutines.delay
 /** Extends the decorated native window's client area into a taller title bar. */
 @Composable
 internal fun DesktopNativeCaption(window: ComposeWindow) {
-    if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
+    if (!isWindows) return
 
     val colors = MaterialTheme.colorScheme
     val caption = colors.surface.toArgb()

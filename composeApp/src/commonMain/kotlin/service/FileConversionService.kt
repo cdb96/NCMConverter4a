@@ -8,7 +8,7 @@ import com.cdb96.ncmconverter4a.converter.kgg.KggBatchKeys
 import com.cdb96.ncmconverter4a.converter.kgg.KggKeyDatabase
 import com.cdb96.ncmconverter4a.converter.kgg.QmcCipher
 import com.cdb96.ncmconverter4a.converter.kgg.parseKgmHeader
-import com.cdb96.ncmconverter4a.converter.kgg.startsWith
+import com.cdb96.ncmconverter4a.converter.startsWith
 import com.cdb96.ncmconverter4a.io.BinaryInput
 import com.cdb96.ncmconverter4a.io.BinaryInputException
 import com.cdb96.ncmconverter4a.io.BinaryOutput
@@ -53,8 +53,7 @@ internal interface ConversionFiles {
     fun fileName(source: String): String
     fun resolveFileNames(sources: List<String>, knownFileNames: Map<String, String>): Map<String, String> =
         knownFileNames
-    fun openInput(source: String): InputStream
-    fun openInputWithSize(source: String): OpenedInput = OpenedInput(openInput(source))
+    fun openInputWithSize(source: String): OpenedInput
     fun writeOutput(
         fileName: String,
         extension: String,
@@ -62,10 +61,7 @@ internal interface ConversionFiles {
         write: (OutputStream) -> Unit,
     ): PendingOutput?
     fun loadKggDatabase(database: String?, rootMode: Boolean): KggKeyDatabase
-    fun prepareOutput(mitigateConflicts: Boolean) {}
-    fun beginBatch(mitigateConflicts: Boolean) {
-        prepareOutput(mitigateConflicts)
-    }
+    fun beginBatch(mitigateConflicts: Boolean) {}
     fun endBatch() {}
     fun bufferSize(inputCount: Int, threadCount: Int): Int = NCMConverter.AUDIO_BUFFER_SIZE
     fun publishParallelism(): Int = 2

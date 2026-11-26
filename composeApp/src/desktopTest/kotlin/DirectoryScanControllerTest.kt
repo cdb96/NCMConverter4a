@@ -73,7 +73,7 @@ class DirectoryScanControllerTest {
         assertEquals(directory, saved[ScanFormat.NCM])
         assertEquals(listOf(directory), browser.roots)
         assertEquals(listOf("song.ncm"), controller.state.files.map { it.name })
-        assertEquals(listOf("song"), controller.selectedSources())
+        assertEquals(listOf("song"), controller.selectedFiles().map { it.source })
         assertFalse(controller.state.isScanning)
         assertNull(controller.state.message)
     }

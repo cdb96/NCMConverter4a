@@ -185,8 +185,8 @@ class Tier1IoOptimizationTest {
                 return sources.dropLast(1).associateWith { inputMap.getValue(it).fileName } + knownFileNames
             }
 
-            override fun openInput(source: String): InputStream =
-                ByteArrayInputStream(inputMap.getValue(source).encryptedBytes)
+            override fun openInputWithSize(source: String): OpenedInput =
+                OpenedInput(ByteArrayInputStream(inputMap.getValue(source).encryptedBytes))
 
             override fun writeOutput(
                 fileName: String,
@@ -231,7 +231,6 @@ class Tier1IoOptimizationTest {
             override fun endBatch() {
                 endCount.incrementAndGet()
             }
-            override fun openInput(source: String) = error("should call openInputWithSize")
             override fun openInputWithSize(source: String): OpenedInput {
                 val bytes = inputMap.getValue(source).encryptedBytes
                 val raw = object : ByteArrayInputStream(bytes) {
@@ -308,8 +307,8 @@ class Tier1IoOptimizationTest {
                 return inputMap.getValue(source).fileName
             }
 
-            override fun openInput(source: String): InputStream =
-                ByteArrayInputStream(inputMap.getValue(source).encryptedBytes)
+            override fun openInputWithSize(source: String): OpenedInput =
+                OpenedInput(ByteArrayInputStream(inputMap.getValue(source).encryptedBytes))
 
             override fun writeOutput(
                 fileName: String,
@@ -380,8 +379,8 @@ class Tier1IoOptimizationTest {
 
         val failSecondFiles = object : ConversionFiles {
             override fun fileName(source: String): String = inputMap.getValue(source).fileName
-            override fun openInput(source: String): InputStream =
-                ByteArrayInputStream(inputMap.getValue(source).encryptedBytes)
+            override fun openInputWithSize(source: String): OpenedInput =
+                OpenedInput(ByteArrayInputStream(inputMap.getValue(source).encryptedBytes))
 
             override fun writeOutput(
                 fileName: String,
@@ -424,8 +423,8 @@ class Tier1IoOptimizationTest {
         val cancelCreated = AtomicInteger(0)
         val cancelFiles = object : ConversionFiles {
             override fun fileName(source: String): String = inputMap.getValue(source).fileName
-            override fun openInput(source: String): InputStream =
-                ByteArrayInputStream(inputMap.getValue(source).encryptedBytes)
+            override fun openInputWithSize(source: String): OpenedInput =
+                OpenedInput(ByteArrayInputStream(inputMap.getValue(source).encryptedBytes))
 
             override fun writeOutput(
                 fileName: String,
@@ -542,7 +541,7 @@ class Tier1IoOptimizationTest {
             val tier1DiskResult = FileConversionService(
                 object : ConversionFiles {
                     override fun fileName(source: String) = File(source).name
-                    override fun openInput(source: String) = File(source).inputStream()
+                    override fun openInputWithSize(source: String) = OpenedInput(File(source).inputStream())
                     override fun writeOutput(
                         fileName: String,
                         extension: String,
@@ -730,8 +729,8 @@ class Tier1IoOptimizationTest {
                 return sampleMap.getValue(source).fileName
             }
 
-            override fun openInput(source: String): InputStream =
-                ByteArrayInputStream(sampleMap.getValue(source).encryptedBytes)
+            override fun openInputWithSize(source: String): OpenedInput =
+                OpenedInput(ByteArrayInputStream(sampleMap.getValue(source).encryptedBytes))
 
             override fun writeOutput(
                 fileName: String,

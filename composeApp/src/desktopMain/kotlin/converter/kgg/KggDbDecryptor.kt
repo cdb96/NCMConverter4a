@@ -1,8 +1,8 @@
 package com.cdb96.ncmconverter4a.converter.kgg
 
+import com.cdb96.ncmconverter4a.converter.startsWith
+import com.cdb96.ncmconverter4a.util.LengthUtils.readIntLEInline
 import com.cdb96.ncmconverter4a.util.LengthUtils.writeIntLE
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.security.MessageDigest
 import java.util.stream.IntStream
 import javax.crypto.Cipher
@@ -79,8 +79,8 @@ object KggDbDecryptor {
     private val pageDecryptor = ThreadLocal.withInitial { PageDecryptor() }
 
     private fun validateFirstPageHeader(header: ByteArray): Boolean {
-        val o10 = ByteBuffer.wrap(header, 0x10, 4).order(ByteOrder.LITTLE_ENDIAN).int
-        val o14 = ByteBuffer.wrap(header, 0x14, 4).order(ByteOrder.LITTLE_ENDIAN).int
+        val o10 = readIntLEInline(header, 0x10)
+        val o14 = readIntLEInline(header, 0x14)
         val v6 = ((o10 and 0xff) shl 8) or ((o10 and 0xff00) shl 16)
         return o14 == 0x20204000 && (v6 - 0x200) <= 0xFE00 && ((v6 - 1) and v6) == 0
     }
@@ -100,13 +100,9 @@ object KggDbDecryptor {
         return true
     }
 
-    private fun startsWithSqliteHeader(buffer: ByteArray): Boolean =
-        buffer.size >= SQLITE_HEADER.size &&
-            SQLITE_HEADER.indices.all { buffer[it] == SQLITE_HEADER[it] }
-
     /** 判断是否为 SQLite 数据库 (已解密或 KGG 加密格式), 否则视为 MMKV */
     fun isSqliteDatabase(buffer: ByteArray): Boolean {
-        if (startsWithSqliteHeader(buffer)) return true
+        if (buffer.startsWith(SQLITE_HEADER)) return true
         if (buffer.size < 0x18) return false
         return validateFirstPageHeader(buffer)
     }
@@ -118,7 +114,7 @@ object KggDbDecryptor {
      */
     fun decryptDatabase(bytes: ByteArray): ByteArray {
         require(bytes.size >= PAGE_SIZE) { "数据库文件太小或读取失败" }
-        if (startsWithSqliteHeader(bytes)) return bytes
+        if (bytes.startsWith(SQLITE_HEADER)) return bytes
         require(decryptFirstPage(bytes)) { "第一页解密失败，可能是无效的数据库文件" }
 
         val pageCount = (bytes.size + PAGE_SIZE - 1) / PAGE_SIZE
@@ -127,14 +123,5 @@ object KggDbDecryptor {
             pageDecryptor.get().decrypt(bytes, offset, minOf(PAGE_SIZE, bytes.size - offset), page)
         }
         return bytes
-    }
-
-    fun extractKeyMapping(buffer: ByteArray): Map<String, String> {
-        return SqliteKggReader.readKeyMapping(buffer)
-    }
-
-    /** 直接按 audioHash 在解密后的数据库字节中提取 ekey (绕过行解析). */
-    fun extractEkey(buffer: ByteArray, audioHash: String): ByteArray? {
-        return SqliteKggReader.extractEkey(buffer, audioHash)
     }
 }

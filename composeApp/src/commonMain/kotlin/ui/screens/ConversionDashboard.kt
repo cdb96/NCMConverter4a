@@ -37,7 +37,7 @@ internal fun ConversionDashboard(
     val automaticDatabase = supportsRoot && settings.kggRootMode
     val databaseReady = automaticDatabase || settings.kggDatabase != null
     val showOutputDirectory = desktopMode &&
-        (conversionState.isProcessing || conversionState.convertResult != "done")
+        (conversionState.isProcessing || !conversionState.isDone)
     val visibleOutputDirectory = settings.outputDirectory.takeIf { showOutputDirectory }
     BoxWithConstraints {
         if (maxWidth >= 720.dp) {

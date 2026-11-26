@@ -145,7 +145,7 @@ private class AndroidConversionFiles(private val context: Context) : ConversionF
         return resolved
     }
 
-    override fun openInput(source: String): InputStream =
+    private fun openInputStream(source: String): InputStream =
         context.contentResolver.openInputStream(Uri.parse(source))
             ?: throw IllegalStateException("无法打开输入文件: $source")
 
@@ -162,7 +162,7 @@ private class AndroidConversionFiles(private val context: Context) : ConversionF
         if (pfd != null) {
             return OpenedInput(ParcelFileDescriptor.AutoCloseInputStream(pfd), pfd.statSize)
         }
-        return OpenedInput(openInput(source), -1L)
+        return OpenedInput(openInputStream(source), -1L)
     }
 
     override fun loadKggDatabase(database: String?, rootMode: Boolean): KggKeyDatabase {
@@ -176,10 +176,6 @@ private class AndroidConversionFiles(private val context: Context) : ConversionF
         }
         val parser = MMKVParser(bytes)
         return KggKeyDatabase(parser::getBytes)
-    }
-
-    override fun prepareOutput(mitigateConflicts: Boolean) {
-        if (mitigateConflicts) scanExistingFiles()
     }
 
     override fun bufferSize(inputCount: Int, threadCount: Int): Int =

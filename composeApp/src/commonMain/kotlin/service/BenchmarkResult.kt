@@ -24,14 +24,15 @@ enum class TestStatus {
 }
 
 data class ConversionResult(
-    val successCount: Int,
-    val failureCount: Int,
     val durationMillis: Long,
     val allFileNames: String,
     val successfulFileNames: List<String>,
-    val failedFileNames: List<String>,
     val failedFiles: List<FileConversionResult> = emptyList(),
 ) {
+    val successCount: Int get() = successfulFileNames.size
+    val failureCount: Int get() = failedFiles.size
+    val failedFileNames: List<String> get() = failedFiles.map { it.fileName }
+
     companion object {
         fun from(
             results: List<FileConversionResult>,
@@ -40,12 +41,9 @@ data class ConversionResult(
         ): ConversionResult {
             val (successful, failed) = results.partition { it.success }
             return ConversionResult(
-                successCount = successful.size,
-                failureCount = failed.size,
                 durationMillis = durationMillis,
                 allFileNames = sourceNames.joinToString(", "),
                 successfulFileNames = successful.map { it.fileName },
-                failedFileNames = failed.map { it.fileName },
                 failedFiles = failed,
             )
         }

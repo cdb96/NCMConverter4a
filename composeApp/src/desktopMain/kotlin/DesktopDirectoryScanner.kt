@@ -10,7 +10,6 @@ import kotlinx.coroutines.ensureActive
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.Properties
 
 internal class DesktopDirectoryBrowser : ScanDirectoryBrowser {
     override fun root(directory: ScanDirectory): ScanNode {
@@ -38,11 +37,10 @@ internal class DesktopDirectoryBrowser : ScanDirectoryBrowser {
 }
 
 internal class DesktopScanDirectoryPreference(
-    private val file: Path = Path.of(System.getenv("APPDATA") ?: System.getProperty("user.home"),
-        "NCMConverter4a", "scan-directories.properties"),
+    private val file: Path = desktopConfigFile("scan-directories.properties"),
 ) {
     fun load(): Map<ScanFormat, ScanDirectory> {
-        val properties = runCatching { read() }.getOrDefault(Properties())
+        val properties = runCatching { loadProperties(file) }.getOrDefault(java.util.Properties())
         return defaultScanDirectories(android = false).mapValues { (format, _) ->
             ScanDirectory(properties.getProperty(format.name, ""))
         }
@@ -50,12 +48,10 @@ internal class DesktopScanDirectoryPreference(
 
     fun save(format: ScanFormat, directory: ScanDirectory) {
         if (directory.configured) require(File(directory.path).isDirectory) { "所选目录不存在" }
-        val properties = read().apply { setProperty(format.name, directory.path) }
-        Files.createDirectories(file.toAbsolutePath().parent)
-        Files.newOutputStream(file).use { properties.store(it, "NCMConverter4a scan directories") }
-    }
-
-    private fun read(): Properties = Properties().apply {
-        if (Files.exists(file)) Files.newInputStream(file).use { load(it) }
+        val existing = loadProperties(file)
+        saveProperties(file, "NCMConverter4a scan directories") {
+            putAll(existing)
+            setProperty(format.name, directory.path)
+        }
     }
 }

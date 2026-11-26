@@ -29,8 +29,6 @@ internal class RootDatabaseReader(
         return checkedBytes(result)
     }
 
-    fun read(builder: ProcessBuilder): ByteArray = checkedBytes(execute(builder))
-
     private fun databaseCommand(): String {
         // cacheDir identifies our Android user (and adopted storage volume).
         // Probe paths in the root shell; File.exists() here sees the app sandbox.

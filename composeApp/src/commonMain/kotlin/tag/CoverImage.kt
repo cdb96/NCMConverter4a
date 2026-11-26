@@ -1,5 +1,7 @@
 package com.cdb96.ncmconverter4a.tag
 
+import com.cdb96.ncmconverter4a.converter.startsWith
+
 /** Cover art helpers shared by the ID3 and FLAC writers. */
 internal object CoverImage {
     private val PNG_SIGNATURE = byteArrayOf(
@@ -10,9 +12,6 @@ internal object CoverImage {
      * NCM covers are JPEG or PNG. Anything else keeps the historical JPEG
      * label, which players treat as a hint and sniff past anyway.
      */
-    fun mimeType(coverData: ByteArray): String {
-        val isPng = coverData.size >= PNG_SIGNATURE.size &&
-            PNG_SIGNATURE.indices.all { coverData[it] == PNG_SIGNATURE[it] }
-        return if (isPng) "image/png" else "image/jpeg"
-    }
+    fun mimeType(coverData: ByteArray): String =
+        if (coverData.startsWith(PNG_SIGNATURE)) "image/png" else "image/jpeg"
 }

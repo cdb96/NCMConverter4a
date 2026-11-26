@@ -1,5 +1,7 @@
 package com.cdb96.ncmconverter4a.jni
 
+import com.cdb96.ncmconverter4a.isMacOs
+import com.cdb96.ncmconverter4a.isWindows
 import java.io.File
 import java.io.InputStream
 import java.nio.file.AtomicMoveNotSupportedException
@@ -112,8 +114,8 @@ internal object NativeLibrary {
     }
 
     private fun osName(): String = when {
-        System.getProperty("os.name").startsWith("Windows", ignoreCase = true) -> "windows"
-        System.getProperty("os.name").startsWith("Mac", ignoreCase = true) -> "macos"
+        isWindows -> "windows"
+        isMacOs -> "macos"
         else -> "linux"
     }
 

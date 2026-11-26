@@ -3,6 +3,7 @@ package com.cdb96.ncmconverter4a
 import com.cdb96.ncmconverter4a.converter.kgg.KggDbDecryptor
 import com.cdb96.ncmconverter4a.converter.kgg.KggKeyDatabase
 import com.cdb96.ncmconverter4a.converter.kgg.MMKVParser
+import com.cdb96.ncmconverter4a.converter.kgg.SqliteKggReader
 import com.cdb96.ncmconverter4a.platform.Logger
 import java.io.File
 import java.util.Optional
@@ -20,13 +21,13 @@ internal fun loadDesktopKggDatabase(path: String): KggKeyDatabase {
     }
 
     val decrypted = KggDbDecryptor.decryptDatabase(bytes)
-    val mapping = KggDbDecryptor.extractKeyMapping(decrypted)
+    val mapping = SqliteKggReader.readKeyMapping(decrypted)
     // Keep the decrypted snapshot for the compatibility fallback, and cache
     // both hits and misses so duplicate hashes do not scan it repeatedly.
     val fallback = ConcurrentHashMap<String, Optional<ByteArray>>()
     return KggKeyDatabase { hash ->
         mapping[hash]?.encodeToByteArray() ?: fallback.computeIfAbsent(hash) {
-            Optional.ofNullable(KggDbDecryptor.extractEkey(decrypted, it))
+            Optional.ofNullable(SqliteKggReader.extractEkey(decrypted, it))
         }.orElse(null)?.copyOf()
     }
 }

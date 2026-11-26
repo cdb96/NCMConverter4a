@@ -11,6 +11,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runDesktopComposeUiTest
 import androidx.compose.ui.test.scrollBy
 import androidx.compose.ui.unit.dp
+import com.cdb96.ncmconverter4a.service.FileConversionResult
 import kotlin.test.Test
 
 @OptIn(ExperimentalTestApi::class)
@@ -23,9 +24,6 @@ class MainScreenScrollTest {
                 conversionState = state,
                 settingsState = SettingsUiState(outputDirectory = "C:\\out"),
                 desktopMode = true,
-                onRawWriteModeChange = {},
-                onDuplicateConflictMitigationChange = {},
-                onThreadCountChange = {},
                 onPickFiles = {},
                 onBenchmark = {},
                 onSelectKggDatabase = {},
@@ -52,11 +50,9 @@ class MainScreenScrollTest {
             TestMainScreen(
                 ConversionUiState(
                     hasConversionStarted = true,
-                    convertResult = "done",
-                    successCount = 2,
-                    failureCount = 1,
+                    isDone = true,
                     successfulFileNames = listOf("a.mp3", "b.mp3"),
-                    failedFileNames = listOf("c.ncm"),
+                    failedFiles = listOf(FileConversionResult("c.ncm", success = false)),
                     conversionDurationMillis = 1234,
                     currentFile = List(40) { "文件 $it.mp3" }.joinToString("\n"),
                 )
@@ -71,7 +67,7 @@ class MainScreenScrollTest {
             TestMainScreen(
                 ConversionUiState(
                     hasConversionStarted = true,
-                    convertResult = "转换失败: " + "错误详情 ".repeat(60),
+                    errorMessage = "转换失败: " + "错误详情 ".repeat(60),
                 )
             )
         }
@@ -92,8 +88,8 @@ class MainScreenScrollTest {
             TestMainScreen(
                 ConversionUiState(
                     hasConversionStarted = true,
-                    convertResult = "done",
-                    successCount = 1,
+                    isDone = true,
+                    successfulFileNames = listOf("a.mp3"),
                     currentFile = List(40) { "文件 $it.mp3" }.joinToString("\n"),
                 )
             )

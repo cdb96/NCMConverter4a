@@ -1,8 +1,8 @@
 package com.cdb96.ncmconverter4a.ui.screens
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
@@ -111,19 +111,8 @@ internal fun DirectoryScanScreen(
     }
 }
 
-@Composable
-private fun ScanSectionCard(
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    OutlinedCard(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        content = content,
-    )
-}
+internal fun ScanDirectory.displayPath(emptyText: String): String =
+    if (suggested) "建议目录：$path" else path.ifBlank { emptyText }
 
 @Composable
 private fun ScanOptionsCard(
@@ -138,7 +127,7 @@ private fun ScanOptionsCard(
 ) {
     val editable = enabled && !state.isScanning
     val selectedFormats = state.selectedFormats.filter { state.directories[it]?.selectable == true }.toSet()
-    ScanSectionCard {
+    SectionCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
                 Modifier.fillMaxWidth(),
@@ -239,7 +228,7 @@ private fun ScanDirectoriesCard(
     onClearDirectory: (ScanFormat) -> Unit,
 ) {
     val configuredCount = ScanFormat.entries.count { directories[it]?.configured == true }
-    ScanSectionCard {
+    SectionCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 Modifier.fillMaxWidth(),
@@ -287,8 +276,7 @@ private fun ScanDirectoriesCard(
                         }
                     }
                     Text(
-                        text = if (directory.suggested) "建议目录：${directory.path}"
-                        else directory.path.ifBlank { "未选择目录" },
+                        text = directory.displayPath("未选择目录"),
                         style = MaterialTheme.typography.bodySmall,
                         color = if (directory.configured || directory.suggested) {
                             MaterialTheme.colorScheme.onSurfaceVariant
@@ -304,6 +292,40 @@ private fun ScanDirectoriesCard(
     }
 }
 
+private fun LazyListScope.scanFileItems(
+    state: DirectoryScanUiState,
+    editable: Boolean,
+    horizontalPadding: Dp,
+    dividerModifier: Modifier = Modifier,
+    onSelectFile: (String, Boolean) -> Unit,
+) {
+    itemsIndexed(state.files, key = { _, file -> file.id }) { index, file ->
+        Column {
+            ScanFileRow(
+                file = file,
+                selected = file.id in state.selectedIds,
+                enabled = editable,
+                horizontalPadding = horizontalPadding,
+                onSelect = { onSelectFile(file.id, it) },
+            )
+            if (index < state.files.lastIndex) {
+                HorizontalDivider(
+                    modifier = dividerModifier,
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RowScope.ConvertActionContent(selectedCount: Int) {
+    Icon(Icons.Outlined.PlayArrow, null, Modifier.size(18.dp))
+    Spacer(Modifier.width(6.dp))
+    Text("转换 ($selectedCount)")
+}
+
 @Composable
 private fun ScanResultsCard(
     state: DirectoryScanUiState,
@@ -317,12 +339,7 @@ private fun ScanResultsCard(
         .filter { it.id in state.selectedIds }
         .mapNotNull { it.size }
         .sum()
-    OutlinedCard(
-        modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
+    SectionCard(modifier) {
         Column(Modifier.fillMaxSize()) {
             ScanResultsHeader(
                 state = state,
@@ -343,24 +360,13 @@ private fun ScanResultsCard(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(vertical = 4.dp),
                     ) {
-                        itemsIndexed(state.files, key = { _, file -> file.id }) { index, file ->
-                            Column {
-                                ScanFileRow(
-                                    file = file,
-                                    selected = file.id in state.selectedIds,
-                                    enabled = editable,
-                                    horizontalPadding = 16.dp,
-                                    onSelect = { onSelectFile(file.id, it) },
-                                )
-                                if (index < state.files.lastIndex) {
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(horizontal = 16.dp),
-                                        thickness = 0.5.dp,
-                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                                    )
-                                }
-                            }
-                        }
+                        scanFileItems(
+                            state = state,
+                            editable = editable,
+                            horizontalPadding = 16.dp,
+                            dividerModifier = Modifier.padding(horizontal = 16.dp),
+                            onSelectFile = onSelectFile,
+                        )
                     }
                 }
             }
@@ -389,9 +395,7 @@ private fun ScanResultsCard(
                     onClick = onConvert,
                     enabled = editable && state.selectedIds.isNotEmpty(),
                 ) {
-                    Icon(Icons.Outlined.PlayArrow, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("转换 (${state.selectedIds.size})")
+                    ConvertActionContent(state.selectedIds.size)
                 }
             }
         }
@@ -436,20 +440,12 @@ private fun ScanResultsPane(
                     )
                 }
             }
-            itemsIndexed(state.files, key = { _, file -> file.id }) { index, file ->
-                Column {
-                    ScanFileRow(
-                        file = file,
-                        selected = file.id in state.selectedIds,
-                        enabled = editable,
-                        horizontalPadding = 0.dp,
-                        onSelect = { onSelectFile(file.id, it) },
-                    )
-                    if (index < state.files.lastIndex) {
-                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
-                    }
-                }
-            }
+            scanFileItems(
+                state = state,
+                editable = editable,
+                horizontalPadding = 0.dp,
+                onSelectFile = onSelectFile,
+            )
         }
         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
         FilledTonalButton(
@@ -457,9 +453,7 @@ private fun ScanResultsPane(
             enabled = editable && state.selectedIds.isNotEmpty(),
             modifier = Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = 8.dp),
         ) {
-            Icon(Icons.Outlined.PlayArrow, null, Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("转换 (${state.selectedIds.size})")
+            ConvertActionContent(state.selectedIds.size)
         }
     }
 }
@@ -573,11 +567,7 @@ private fun ScanEmptyState(
                 }
             }
         }
-        Text(
-            title,
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
+        Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
         Text(
             helper,
             style = MaterialTheme.typography.bodySmall,

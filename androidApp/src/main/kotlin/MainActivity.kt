@@ -1,7 +1,5 @@
 package com.cdb96.ncmconverter4a
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -12,9 +10,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.cdb96.ncmconverter4a.service.BenchmarkService
 import com.cdb96.ncmconverter4a.service.createFileConversionService
@@ -96,13 +96,10 @@ class MainActivity : ComponentActivity() {
                 MainScreen(
                     conversionState = conversionState,
                     settingsState = settingsState,
-                    onRawWriteModeChange = { settingsState = settingsState.copy(rawWriteMode = it) },
-                    onDuplicateConflictMitigationChange = { settingsState = settingsState.copy(duplicateConflictMitigation = it) },
-                    onThreadCountChange = { settingsState = settingsState.copy(threadCount = it) },
+                    onSettingsChange = { settingsState = it },
                     onPickFiles = { filePicker.launch("*/*") },
                     onBenchmark = { showBenchmark = true },
                     onSelectKggDatabase = { dbPicker.launch(arrayOf("*/*")) },
-                    onKggRootModeChange = { settingsState = settingsState.copy(kggRootMode = it) },
                     supportsRoot = true,
                     scanController = directoryScan.controller,
                     onSelectScanDirectory = directoryScan.selectDirectory,

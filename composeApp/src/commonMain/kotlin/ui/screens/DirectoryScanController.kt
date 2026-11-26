@@ -73,7 +73,6 @@ class DirectoryScanController(
     fun selectAll(selected: Boolean) {
         if (!state.isScanning) state = state.copy(selectedIds = if (selected) state.files.map { it.id }.toSet() else emptySet())
     }
-    fun selectedSources(): List<String> = state.files.filter { it.id in state.selectedIds }.map { it.source }
     fun selectedFiles(): List<ScannedAudioFile> = state.files.filter { it.id in state.selectedIds }
     fun cancel() { scanJob?.cancel() }
 

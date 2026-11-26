@@ -3,18 +3,7 @@ package com.cdb96.ncmconverter4a.ui
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -24,17 +13,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -59,142 +37,86 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- * 基准测试Dialog - platform-agnostic
- * @param onDismiss 关闭回调
- * @param onRunBenchmark 平台提供的基准测试执行函数
- */
-@OptIn(ExperimentalMaterial3Api::class)
+/** 基准测试 Dialog - platform-agnostic */
 @Composable
 fun BenchmarkDialog(
     onDismiss: () -> Unit,
     onRunBenchmark: suspend (onProgress: suspend (TestStatus) -> Unit) -> BenchmarkResult,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     var testing by remember { mutableStateOf(false) }
     var currentStatus by remember { mutableStateOf(TestStatus.IDLE) }
     var benchmarkResult by remember { mutableStateOf<BenchmarkResult?>(null) }
-
     val coroutineScope = rememberCoroutineScope()
 
     Dialog(
-        onDismissRequest = {
-            if (!testing) onDismiss()
-        },
+        onDismissRequest = { if (!testing) onDismiss() },
         properties = DialogProperties(
             dismissOnBackPress = !testing,
             dismissOnClickOutside = !testing,
-            usePlatformDefaultWidth = false
-        )
+            usePlatformDefaultWidth = false,
+        ),
     ) {
         Card(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier = modifier.fillMaxWidth().padding(16.dp),
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(24.dp)
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                // 标题栏
-                DialogHeader(
-                    onClose = { if (!testing) onDismiss() },
-                    closeEnabled = !testing
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 主要内容区域
+                DialogHeader(onClose = { if (!testing) onDismiss() }, closeEnabled = !testing)
                 when {
-                    testing -> {
-                        // 测试进行中
-                        TestingContent(status = currentStatus)
-                    }
-                    benchmarkResult != null -> {
-                        // 显示结果
-                        ResultsContent(
-                            result = benchmarkResult!!,
-                            onRetest = {
-                                benchmarkResult = null
-                                currentStatus = TestStatus.IDLE
-                            },
-                            onClose = onDismiss
-                        )
-                    }
-                    else -> {
-                        // 初始状态 - 显示开始按钮
-                        StartContent(
-                            onStart = {
-                                testing = true
-                                currentStatus = TestStatus.IDLE
-                                coroutineScope.launch {
-                                    try {
-                                        benchmarkResult = onRunBenchmark { status ->
-                                            withContext(Dispatchers.Main.immediate) {
-                                                currentStatus = status
-                                            }
-                                        }
-                                    } catch (e: Exception) {
-                                        currentStatus = TestStatus.IDLE
-                                    } finally {
-                                        testing = false
+                    testing -> TestingContent(status = currentStatus)
+                    benchmarkResult != null -> ResultsContent(
+                        result = benchmarkResult!!,
+                        onRetest = {
+                            benchmarkResult = null
+                            currentStatus = TestStatus.IDLE
+                        },
+                        onClose = onDismiss,
+                    )
+                    else -> StartContent(
+                        onStart = {
+                            testing = true
+                            currentStatus = TestStatus.IDLE
+                            coroutineScope.launch {
+                                try {
+                                    benchmarkResult = onRunBenchmark { status ->
+                                        withContext(Dispatchers.Main.immediate) { currentStatus = status }
                                     }
+                                } catch (_: Exception) {
+                                    currentStatus = TestStatus.IDLE
+                                } finally {
+                                    testing = false
                                 }
                             }
-                        )
-                    }
+                        },
+                    )
                 }
             }
         }
     }
 }
 
-// ======================== Sub-composables ========================
-
 @Composable
-private fun DialogHeader(
-    onClose: () -> Unit,
-    closeEnabled: Boolean
-) {
+private fun DialogHeader(onClose: () -> Unit, closeEnabled: Boolean) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Star,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(28.dp)
-            )
-            Text(
-                text = "性能基准测试",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(Icons.Default.Star, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
+            Text("性能基准测试", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         }
-        IconButton(
-            onClick = onClose,
-            enabled = closeEnabled
-        ) {
+        IconButton(onClick = onClose, enabled = closeEnabled) {
             Icon(
-                imageVector = Icons.Default.Close,
+                Icons.Default.Close,
                 contentDescription = "关闭",
-                tint = if (closeEnabled)
-                    MaterialTheme.colorScheme.onSurface
-                else
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = if (closeEnabled) 1f else 0.38f),
             )
         }
     }
@@ -202,114 +124,59 @@ private fun DialogHeader(
 
 @Composable
 private fun StartContent(onStart: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
         Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            ),
-            shape = RoundedCornerShape(16.dp)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+            shape = RoundedCornerShape(16.dp),
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("测试说明", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
-                    text = "测试说明",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "• 测试 KGM、NCM 和 KGG 解密算法性能\n• KGG 包含 RC4 和 Map 两种模式，计入初始化耗时\n• 结果取多次运行中的最高吞吐量",
+                    "• 测试 KGM、NCM 和 KGG 解密算法性能\n• KGG 包含 RC4 和 Map 两种模式，计入初始化耗时\n• 结果取多次运行中的最高吞吐量",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                    lineHeight = MaterialTheme.typography.bodyMedium.lineHeight * 1.3
+                    lineHeight = MaterialTheme.typography.bodyMedium.lineHeight * 1.3,
                 )
             }
         }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
         Button(
             onClick = onStart,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
+            modifier = Modifier.fillMaxWidth().height(56.dp),
             shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary
-            )
         ) {
-            Icon(
-                imageVector = Icons.Default.PlayArrow,
-                contentDescription = null,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "开始测试",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
+            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("开始测试", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         }
     }
 }
 
 @Composable
 private fun TestingContent(status: TestStatus) {
-    val progress = when (status) {
-        TestStatus.IDLE -> 0f
-        TestStatus.WARMING -> 0.15f
-        TestStatus.TESTING_KGM -> 0.4f
-        TestStatus.TESTING_NCM -> 0.65f
-        TestStatus.TESTING_KGG -> 0.85f
-        TestStatus.COMPLETED -> 1f
-    }
-
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress,
-        animationSpec = tween(500),
-        label = "progress"
-    )
+    val (targetProgress, statusLabel) = status.progressAndLabel()
+    val animatedProgress by animateFloatAsState(targetValue = targetProgress, animationSpec = tween(500), label = "progress")
 
     Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(120.dp)
-                .padding(8.dp),
-            contentAlignment = Alignment.Center
-        ) {
+        Box(Modifier.size(120.dp).padding(8.dp), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(
                 progress = { animatedProgress },
                 modifier = Modifier.fillMaxSize(),
                 strokeWidth = 8.dp,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                color = MaterialTheme.colorScheme.primary
             )
             Text(
-                text = "${(animatedProgress * 100).toInt()}%",
+                "${(animatedProgress * 100).toInt()}%",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text(
-            text = getStatusDisplayName(status),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
+        Text(statusLabel, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
         StepIndicator(currentStatus = status)
     }
 }
@@ -320,20 +187,16 @@ private fun StepIndicator(currentStatus: TestStatus) {
         TestStatus.WARMING to "预热",
         TestStatus.TESTING_KGM to "KGM",
         TestStatus.TESTING_NCM to "NCM",
-        TestStatus.TESTING_KGG to "KGG"
+        TestStatus.TESTING_KGG to "KGG",
     )
-
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
         steps.forEachIndexed { index, (status, label) ->
             val isCompleted = currentStatus.ordinal > status.ordinal
             val isCurrent = currentStatus == status
-
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Box(
                     modifier = Modifier
                         .size(24.dp)
@@ -343,94 +206,71 @@ private fun StepIndicator(currentStatus: TestStatus) {
                                 isCompleted -> MaterialTheme.colorScheme.primary
                                 isCurrent -> MaterialTheme.colorScheme.primaryContainer
                                 else -> MaterialTheme.colorScheme.surfaceVariant
-                            }
+                            },
                         ),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = "${index + 1}",
+                        "${index + 1}",
                         style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
                         color = when {
                             isCompleted -> MaterialTheme.colorScheme.onPrimary
                             isCurrent -> MaterialTheme.colorScheme.onPrimaryContainer
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                         },
-                        fontWeight = FontWeight.Bold
                     )
                 }
-                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = label,
+                    label,
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (isCurrent || isCompleted)
-                        MaterialTheme.colorScheme.onSurface
-                    else
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isCurrent || isCompleted) 1f else 0.5f),
                 )
             }
         }
     }
 }
 
+private data class BenchmarkCardData(
+    val title: String,
+    val results: List<SizeThroughput>,
+    val gradientColors: List<Color>,
+)
+
 @Composable
 private fun ResultsContent(
     result: BenchmarkResult,
     onRetest: () -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        PerformanceCard(
-            title = "KGM 解密",
-            icon = Icons.Default.Star,
-            results = result.kgmResults,
-            gradientColors = listOf(Color(0xFF6366F1), Color(0xFF8B5CF6))
-        )
-
-        PerformanceCard(
-            title = "NCM 解密",
-            icon = Icons.Default.Star,
-            results = result.ncmResults,
-            gradientColors = listOf(Color(0xFF10B981), Color(0xFF34D399))
-        )
-
-        PerformanceCard(
-            title = "KGG 解密（RC4）",
-            icon = Icons.Default.Star,
-            results = result.kggRc4Results,
-            gradientColors = listOf(Color(0xFFF59E0B), Color(0xFFFBBF24))
-        )
-
-        PerformanceCard(
-            title = "KGG 解密（Map）",
-            icon = Icons.Default.Star,
-            results = result.kggMapResults,
-            gradientColors = listOf(Color(0xFF0EA5E9), Color(0xFF38BDF8))
-        )
-
+    val cards = listOf(
+        BenchmarkCardData("KGM 解密", result.kgmResults, listOf(Color(0xFF6366F1), Color(0xFF8B5CF6))),
+        BenchmarkCardData("NCM 解密", result.ncmResults, listOf(Color(0xFF10B981), Color(0xFF34D399))),
+        BenchmarkCardData("KGG 解密（RC4）", result.kggRc4Results, listOf(Color(0xFFF59E0B), Color(0xFFFBBF24))),
+        BenchmarkCardData("KGG 解密（Map）", result.kggMapResults, listOf(Color(0xFF0EA5E9), Color(0xFF38BDF8))),
+    )
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        cards.forEach { card ->
+            PerformanceCard(card.title, card.results, card.gradientColors)
+        }
         SummaryCard(totalDuration = result.totalDuration)
-
-        Spacer(modifier = Modifier.height(8.dp))
-
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             OutlinedButton(
                 onClick = onRetest,
                 modifier = Modifier.weight(1f).height(48.dp),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
             ) {
                 Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(Modifier.width(6.dp))
                 Text("重新测试")
             }
             Button(
                 onClick = onClose,
                 modifier = Modifier.weight(1f).height(48.dp),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
             ) {
                 Text("完成")
             }
@@ -441,95 +281,38 @@ private fun ResultsContent(
 @Composable
 private fun PerformanceCard(
     title: String,
-    icon: ImageVector,
     results: List<SizeThroughput>,
-    gradientColors: List<Color>
+    gradientColors: List<Color>,
 ) {
-    val maxThroughput = remember(results) {
-        results.maxOfOrNull { it.throughputKBps } ?: 100.0
-    }
-
+    val maxThroughput = remember(results) { results.maxOfOrNull { it.throughputKBps } ?: 100.0 }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Brush.linearGradient(gradientColors)),
-                    contentAlignment = Alignment.Center
+                    modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(Brush.linearGradient(gradientColors)),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Star, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                 }
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
+            Spacer(Modifier.height(12.dp))
             results.forEach { item ->
-                PerformanceBar(
-                    sizeKB = item.sizeKB,
-                    throughput = item.throughputKBps,
-                    maxThroughput = maxThroughput,
-                    barColor = gradientColors[0]
-                )
+                val progress = (item.throughputKBps / maxThroughput.coerceAtLeast(1.0)).toFloat().coerceIn(0f, 1f)
+                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("${"%.2f".format(item.sizeKB / 1024.0)}MB", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                        Text("${"%.2f".format(item.throughputKBps / 1024.0)} MB/s", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    }
+                    Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
+                        Box(Modifier.fillMaxWidth(progress).fillMaxHeight().clip(RoundedCornerShape(4.dp)).background(gradientColors[0]))
+                    }
+                }
             }
-        }
-    }
-}
-
-@Composable
-private fun PerformanceBar(
-    sizeKB: Int,
-    throughput: Double,
-    maxThroughput: Double,
-    barColor: Color
-) {
-    val progress = (throughput / maxThroughput.coerceAtLeast(1.0)).toFloat().coerceIn(0f, 1f)
-
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = "${"%.2f".format(sizeKB / 1024.0)}MB",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-            )
-            Text(
-                text = "${"%.2f".format(throughput / 1024.0)} MB/s",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(progress)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(barColor)
-            )
         }
     }
 }
@@ -539,43 +322,32 @@ private fun SummaryCard(totalDuration: Long) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    Icons.Filled.Info, contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(20.dp)
-                )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(20.dp))
                 Text("测试总耗时", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
             }
             Text(
-                text = "${"%.2f".format(totalDuration / 1000.0)} 秒",
+                "${"%.2f".format(totalDuration / 1000.0)} 秒",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
         }
     }
 }
 
-private fun getStatusDisplayName(status: TestStatus): String {
-    return when (status) {
-        TestStatus.IDLE -> "准备就绪"
-        TestStatus.WARMING -> "正在预热解密算法..."
-        TestStatus.TESTING_KGM -> "测试 KGM 解密性能..."
-        TestStatus.TESTING_NCM -> "测试 NCM 解密..."
-        TestStatus.TESTING_KGG -> "测试 KGG 解密性能..."
-        TestStatus.COMPLETED -> "测试完成"
-    }
+private fun TestStatus.progressAndLabel(): Pair<Float, String> = when (this) {
+    TestStatus.IDLE -> 0f to "准备就绪"
+    TestStatus.WARMING -> 0.15f to "正在预热解密算法..."
+    TestStatus.TESTING_KGM -> 0.4f to "测试 KGM 解密性能..."
+    TestStatus.TESTING_NCM -> 0.65f to "测试 NCM 解密..."
+    TestStatus.TESTING_KGG -> 0.85f to "测试 KGG 解密性能..."
+    TestStatus.COMPLETED -> 1f to "测试完成"
 }
