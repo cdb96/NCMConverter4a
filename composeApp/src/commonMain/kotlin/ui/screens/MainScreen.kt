@@ -188,6 +188,11 @@ fun MainScreen(
                     DirectoryScanScreen(
                         state = scanController.state, enabled = enabled,
                         onConfigureDirectories = configureScanDirectories,
+                        onSelectDirectory = {
+                            scanController.clearMessage()
+                            onSelectScanDirectory(it)
+                        },
+                        onClearDirectory = { scanController.setDirectory(it, ScanDirectory()) },
                         onScan = onScanDirectories, onCancel = scanController::cancel,
                         onFormatSelectionChange = scanController::selectFormat,
                         onRecursiveChange = scanController::setRecursive, onSelectFile = scanController::selectFile,
