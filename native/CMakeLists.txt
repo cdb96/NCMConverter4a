@@ -47,6 +47,13 @@ function(ncm_optimize_core target)
     else()
         target_compile_options(${target} PRIVATE
             "$<$<CONFIG:Release,RelWithDebInfo,MinSizeRel>:-O3>")
+        # NEON_2_SSE baseline requires SSSE3 (<tmmintrin.h>); MSVC enables it
+        # implicitly and Android x86_64 NDK enables it by default, while desktop
+        # GCC/MinGW/Clang default to SSE2-only.
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i[3-6]86|x86)$"
+                AND NOT CMAKE_OSX_ARCHITECTURES MATCHES "arm64")
+            target_compile_options(${target} PRIVATE -mssse3)
+        endif()
     endif()
 endfunction()
 
