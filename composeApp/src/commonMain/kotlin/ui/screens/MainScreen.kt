@@ -4,8 +4,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import com.cdb96.ncmconverter4a.service.ConversionResult
 import com.cdb96.ncmconverter4a.service.FileConversionResult
-import com.cdb96.ncmconverter4a.service.ScanFormat
 import com.cdb96.ncmconverter4a.service.ScanDirectory
+import com.cdb96.ncmconverter4a.service.ScanFormat
+import com.cdb96.ncmconverter4a.service.ScannedAudioFile
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -139,7 +140,7 @@ fun MainScreen(
     scanController: DirectoryScanController? = null,
     onSelectScanDirectory: (ScanFormat) -> Unit = {},
     onScanDirectories: (Set<ScanFormat>) -> Unit = {},
-    onConvertScannedFiles: (List<String>) -> Unit = {},
+    onConvertScannedFiles: (List<ScannedAudioFile>) -> Unit = {},
 ) {
     var page by remember { mutableStateOf(AppPage.CONVERSION) }
     var showScanDirectoryDialog by remember { mutableStateOf(false) }
@@ -192,7 +193,7 @@ fun MainScreen(
                         onRecursiveChange = scanController::setRecursive, onSelectFile = scanController::selectFile,
                         onSelectAll = scanController::selectAll,
                         onConvert = {
-                            onConvertScannedFiles(scanController.selectedSources())
+                            onConvertScannedFiles(scanController.selectedFiles())
                             page = AppPage.CONVERSION
                         },
                     )

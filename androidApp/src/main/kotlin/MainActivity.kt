@@ -57,7 +57,10 @@ class MainActivity : ComponentActivity() {
             var showBenchmark by remember { mutableStateOf(false) }
             val directoryScan = rememberAndroidDirectoryScan(conversionState.isProcessing)
 
-            fun startConversion(selectedUris: List<Uri>) {
+            fun startConversion(
+                selectedUris: List<Uri>,
+                knownFileNames: Map<String, String> = emptyMap(),
+            ) {
                 if (selectedUris.isEmpty()) return
                 if (conversion.state.isProcessing) {
                     // A second batch (for example files shared while converting)
@@ -65,7 +68,7 @@ class MainActivity : ComponentActivity() {
                     Toast.makeText(context, "正在转换中，请等待完成后再选择文件", Toast.LENGTH_SHORT).show()
                     return
                 }
-                conversion.start(selectedUris.map(Uri::toString), settingsState)
+                conversion.start(selectedUris.map(Uri::toString), settingsState, knownFileNames)
             }
 
             val dbPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -104,7 +107,12 @@ class MainActivity : ComponentActivity() {
                     scanController = directoryScan.controller,
                     onSelectScanDirectory = directoryScan.selectDirectory,
                     onScanDirectories = directoryScan.scan,
-                    onConvertScannedFiles = { sources -> startConversion(sources.map(Uri::parse)) },
+                    onConvertScannedFiles = { scanned ->
+                        startConversion(
+                            selectedUris = scanned.map { Uri.parse(it.source) },
+                            knownFileNames = scanned.associate { it.source to it.name },
+                        )
+                    },
                 )
 
                 if (showBenchmark) {

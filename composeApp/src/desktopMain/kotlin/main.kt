@@ -96,8 +96,8 @@ fun DesktopMainScreen(gpuEnabled: Boolean, onClose: () -> Unit) {
         }
     }
 
-    fun startConversion(files: List<String>) {
-        conversion.start(files, settingsState)
+    fun startConversion(files: List<String>, knownFileNames: Map<String, String> = emptyMap()) {
+        conversion.start(files, settingsState, knownFileNames)
     }
 
     DesktopFileDropArea(
@@ -171,7 +171,12 @@ fun DesktopMainScreen(gpuEnabled: Boolean, onClose: () -> Unit) {
                     "选择 ${format.name} 扫描目录")?.let { scanController.setDirectory(format, ScanDirectory(it)) }
             },
             onScanDirectories = scanController::start,
-            onConvertScannedFiles = ::startConversion,
+            onConvertScannedFiles = { scanned ->
+                startConversion(
+                    files = scanned.map { it.source },
+                    knownFileNames = scanned.associate { it.source to it.name },
+                )
+            },
         )
     }
 

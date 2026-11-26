@@ -48,6 +48,16 @@ object NCMConverter {
         0x23, 0x31, 0x34, 0x6C, 0x6A, 0x6B, 0x5F, 0x21,
         0x5C, 0x5D, 0x26, 0x30, 0x55, 0x3C, 0x27, 0x28
     )
+    private val coreAesCipher = ThreadLocal.withInitial {
+        Cipher.getInstance("AES/ECB/PKCS5Padding").apply {
+            init(Cipher.DECRYPT_MODE, SecretKeySpec(coreKey, "AES"))
+        }
+    }
+    private val metaAesCipher = ThreadLocal.withInitial {
+        Cipher.getInstance("AES/ECB/PKCS5Padding").apply {
+            init(Cipher.DECRYPT_MODE, SecretKeySpec(metaKey, "AES"))
+        }
+    }
 
     /** Reads the NCM header; raw conversion can validate and skip the unused cover. */
     fun readHeader(input: BinaryInput, includeCover: Boolean = true): NcmFileInfo {
@@ -83,7 +93,8 @@ object NCMConverter {
         output: BinaryOutput,
         info: NcmFileInfo,
         rawWriteMode: Boolean,
-        bufferSize: Int = AUDIO_BUFFER_SIZE
+        bufferSize: Int = AUDIO_BUFFER_SIZE,
+        buffer: ByteArray? = null,
     ) {
         require(bufferSize > 0 && bufferSize % 256 == 0) {
             "NCM buffer size must be a positive multiple of 256"
@@ -93,7 +104,7 @@ object NCMConverter {
         // keystream. Filling every non-final chunk to a multiple of 256 keeps the
         // stream position consistent across calls without buffering the whole file.
         RC4Decrypt.init(info.RC4key)
-        val reader = DecryptedPayloadReader(input, bufferSize)
+        val reader = DecryptedPayloadReader(input, bufferSize, buffer)
 
         val prefix = ByteArray(3)
         val prefixSize = reader.readAtMost(prefix)
@@ -164,6 +175,14 @@ object NCMConverter {
         return cipher.doFinal(encryptedBytes)
     }
 
+    private fun decryptCached(holder: ThreadLocal<Cipher>, encryptedBytes: ByteArray): ByteArray =
+        try {
+            holder.get().doFinal(encryptedBytes)
+        } catch (error: Throwable) {
+            holder.remove()
+            throw error
+        }
+
     private fun readRc4Key(input: BinaryInput): ByteArray {
         val keyLength = readLength(input, "key", minimum = 1, maximum = MAX_KEY_LENGTH)
         val encryptedKey = ByteArray(keyLength)
@@ -172,7 +191,7 @@ object NCMConverter {
             encryptedKey[index] = (encryptedKey[index].toInt() xor 0x64).toByte()
         }
 
-        val decrypted = decrypt(coreKey, encryptedKey)
+        val decrypted = decryptCached(coreAesCipher, encryptedKey)
         require(decrypted.size > 17) { "NCM RC4 key payload is truncated" }
         return decrypted.copyOfRange(17, decrypted.size)
     }
@@ -186,7 +205,7 @@ object NCMConverter {
         }
 
         val decoded = Base64.decode(raw, startIndex = 22)
-        return decrypt(metaKey, decoded)
+        return decryptCached(metaAesCipher, decoded)
     }
 
     private fun readCoverData(input: BinaryInput, includeCover: Boolean): ByteArray {
@@ -229,7 +248,14 @@ object NCMConverter {
     }
 
     internal fun combineArtistsString(artistsString: String): String {
-        val arr = artistsString.replace(Regex("[\\\\\\[\\]\"]"), "").split(",")
+        val cleaned = buildString(artistsString.length) {
+            for (ch in artistsString) {
+                if (ch != '\\' && ch != '[' && ch != ']' && ch != '"') {
+                    append(ch)
+                }
+            }
+        }
+        val arr = cleaned.split(",")
         return arr.filterIndexed { i, _ -> i % 2 == 0 }.joinToString("/") { it.trim() }
     }
 
@@ -287,9 +313,10 @@ object NCMConverter {
 
     private class DecryptedPayloadReader(
         private val input: BinaryInput,
-        bufferSize: Int
+        bufferSize: Int,
+        buffer: ByteArray? = null,
     ) : BinaryInput {
-        private val encryptedBuffer = ByteArray(bufferSize)
+        private val encryptedBuffer = if (buffer != null && buffer.size == bufferSize) buffer else ByteArray(bufferSize)
         private var position = 0
         private var limit = 0
         private var endOfInput = false
