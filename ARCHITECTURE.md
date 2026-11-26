@@ -57,15 +57,15 @@ NCMConverter4a 采用 **Kotlin Multiplatform (KMP) + Compose Multiplatform + 共
 | `composeApp/src/commonMain/` | 跨平台共享代码：Compose UI、Controller、批量转换与目录扫描服务、NCM/KGM/KGG 解析与流式转换、音频标签生成、流式 I/O 工具及 `expect` JNI 声明。 |
 | `composeApp/src/androidMain/` | Android 平台实现：SAF/MediaStore 文件读写 (`AndroidConversionFiles`)、目录扫描 (`AndroidDirectoryScanner`)、Root 读取 KGG 密钥 (`RootDatabaseReader`) 及 JNI `actual` 绑定。 |
 | `composeApp/src/desktopMain/` | Desktop 平台实现：本地文件输出与冲突分配 (`DesktopConversionFiles` / `DesktopOutputAllocator`)、本地目录扫描 (`DesktopDirectoryScanner`)、拖拽/文件选择、Skiko 渲染配置、Windows 原生标题栏、`KggDbDecryptor` 与 `NativeLibrary` 加载器。 |
-| `composeApp/src/commonTest/` & `desktopTest/` | 跨平台单元测试与桌面端回归测试（含解密向量、并发、元数据、I/O 及 `MainScreenScrollTest`）。 |
+| `composeApp/src/commonTest/` & `desktopTest/` | 跨平台单元测试与桌面端回归测试（含解密向量、并发、元数据、I/O、`MainScreenScrollTest` 及 `DirectoryScanScreenTest`）。 |
 | `native/` | 跨平台共享 C++17 解密核心 (`cpp/`)、Windows 标题栏支持 (`windows/NativeCaption.cpp`)、独立自测 (`tests/SelfTest.cpp`) 与 `third_party/NEON_2_SSE/`。 |
-| `composeApp/tools/` & `.github/native-image/` | Desktop GraalVM Native Image 打包脚本、PGO 训练入口、Skiko ICU 裁剪工具及可达性元数据。 |
+| `composeApp/tools/` & `.github/native-image/` | Desktop GraalVM Native Image 打包脚本、冒烟验证入口、Skiko ICU 裁剪工具及可达性元数据。 |
 
 ## 3. 核心分层与数据流
 
 ### 3.1 UI 与状态控制 (`commonMain/kotlin/ui/`)
 - **`App.kt`**：提供共享的 `NCMConverter4aTheme` 包装壳。
-- **自适应界面 (`ui/screens/`)**：`MainScreen` 根据窗口宽度在单列与双列布局之间切换，组合 `ConversionDashboard`、`DirectoryScanScreen`、`SettingsScreen` 与 `BenchmarkDialog`。
+- **自适应界面 (`ui/screens/`)**：`MainScreen` 根据窗口宽度在单列与双列布局之间切换，组合 `ConversionDashboard`、`DirectoryScanScreen`（宽屏采用左侧控制与内联目录管理栏 + 右侧固定顶/底栏的结果卡片，窄屏采用单列与弹窗配置目录）、`SettingsScreen` 与 `BenchmarkDialog`。
 - **控制器**：`ConversionController` 与 `DirectoryScanController` 管理协程生命周期，通过 `MutableStateFlow` 对工作线程上报的进度进行合并，避免高频状态更新阻塞 UI 线程。
 
 ### 3.2 服务编排与内存控制 (`commonMain/kotlin/service/`)
@@ -106,4 +106,4 @@ NCMConverter4a 采用 **Kotlin Multiplatform (KMP) + Compose Multiplatform + 共
 ## 5. 构建与分发
 
 - **Android**：使用 AGP + Kotlin Multiplatform + NDK (`arm64-v8a`、`x86_64`) 构建，Release 启用 R8 代码压缩与资源缩减。
-- **Desktop**：`:composeApp:nativeBuild` 调用 CMake/Ninja 编译 `ncmc4a` 并打入资源；CI 流程支持 GraalVM Native Image 构建（包含 `-O3`、基于真实转换负载训练的 PGO Profile、Windows 下 `TrimSkikoIcu.java` 对 Skiko ICU 数据的裁剪以及独立启动冒烟测试）。
+- **Desktop**：`:composeApp:nativeBuild` 调用 CMake/Ninja 编译 `ncmc4a` 并打入资源；CI 流程支持 GraalVM Native Image 构建（包含 `-Os` 优化、Windows 下 `TrimSkikoIcu.java` 对 Skiko ICU 数据的裁剪以及独立启动冒烟测试）。

@@ -1,5 +1,12 @@
 import com.cdb96.ncmconverter4a.DesktopFilePicker;
 import com.cdb96.ncmconverter4a.DesktopRenderingPreference;
+import com.cdb96.ncmconverter4a.converter.NCMConverter;
+import com.cdb96.ncmconverter4a.converter.NcmFileInfo;
+import com.cdb96.ncmconverter4a.io.BinaryInput;
+import com.cdb96.ncmconverter4a.io.BinaryOutput;
+import com.cdb96.ncmconverter4a.jni.KGGDecrypt;
+import com.cdb96.ncmconverter4a.jni.KGMDecrypt;
+import com.cdb96.ncmconverter4a.jni.RC4Decrypt;
 import org.jetbrains.skiko.SkiaLayer;
 import java.awt.Component;
 import java.awt.Container;
@@ -17,6 +24,7 @@ import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.swing.SwingUtilities;
@@ -184,5 +192,80 @@ public final class NativeImageSmoke {
             for (Component child : container.getComponents()) if (hasDropTarget(child)) return true;
         }
         return false;
+    }
+
+    public static void verifyConversion() {
+        byte[] key = {1, 3, 5, 7, 9};
+        for (String format : new String[] {"mp3", "flac", "m4a"}) {
+            byte[] plain = makePayload(format);
+            byte[] encrypted = plain.clone();
+            RC4Decrypt.init(key);
+            RC4Decrypt.decrypt(encrypted, encrypted.length);
+
+            for (int iteration = 0; iteration < 3; iteration++) {
+                int[] position = {0};
+                long[] outputBytes = {0};
+                BinaryInput input = (buffer, offset, length) -> {
+                    if (position[0] == encrypted.length) return -1;
+                    int count = Math.min(length, encrypted.length - position[0]);
+                    System.arraycopy(encrypted, position[0], buffer, offset, count);
+                    position[0] += count;
+                    return count;
+                };
+                BinaryOutput output = (buffer, offset, length) -> outputBytes[0] += length;
+                NCMConverter.INSTANCE.writeAudio(
+                    input, output,
+                    new NcmFileInfo(key, new byte[0], "Smoke Song", "Smoke Album", "Smoke Artist", format),
+                    false, 256 * 1024, null);
+                if (position[0] != encrypted.length || outputBytes[0] < 1024 * 1024) {
+                    throw new IllegalStateException("NCM conversion smoke failed for " + format);
+                }
+            }
+        }
+
+        byte[] kgmPayload = new byte[1024 * 1024];
+        KGMDecrypt.init(new byte[17]);
+        int next = KGMDecrypt.decrypt(kgmPayload, 0, kgmPayload.length);
+        if (next != kgmPayload.length) throw new IllegalStateException("KGM conversion smoke failed");
+        for (int keySize : new int[] {0, 256, 768}) {
+            byte[] kggKey = new byte[keySize];
+            for (int i = 0; i < keySize; i++) kggKey[i] = (byte) (i * 31 + 7);
+            byte[] plain = makePayload("mp3");
+            byte[] encrypted = plain.clone();
+            KGGDecrypt.decrypt(KGGDecrypt.prepare(kggKey), encrypted, 0L, encrypted.length);
+            byte[] state = KGGDecrypt.prepare(kggKey);
+            byte[] actual = new byte[plain.length];
+            int bufferSize = 64 * 5120;
+            for (int offset = 0; offset < encrypted.length; offset += bufferSize) {
+                int length = Math.min(bufferSize, encrypted.length - offset);
+                byte[] buffer = Arrays.copyOfRange(encrypted, offset, offset + length);
+                KGGDecrypt.decrypt(state, buffer, offset, length);
+                System.arraycopy(buffer, 0, actual, offset, length);
+            }
+            if (!Arrays.equals(plain, actual)) throw new IllegalStateException("KGG conversion smoke failed");
+        }
+        System.out.println("Conversion smoke test passed");
+    }
+
+    private static byte[] makePayload(String format) {
+        byte[] audio = new byte[1024 * 1024];
+        for (int index = 0; index < audio.length; index++) audio[index] = (byte) (index * 29 + 11);
+        byte[] header = switch (format) {
+            case "mp3" -> new byte[] {'I', 'D', '3', 3, 0, 0, 0, 0, 0, 0};
+            case "flac" -> {
+                byte[] flac = new byte[4 + 4 + 34];
+                System.arraycopy(new byte[] {'f', 'L', 'a', 'C', (byte) 0x80, 0, 0, 34}, 0,
+                    flac, 0, 8);
+                yield flac;
+            }
+            case "m4a" -> new byte[] {
+                0, 0, 0, 16, 'f', 't', 'y', 'p', 'M', '4', 'A', ' ', 0, 0, 0, 0,
+                0, 16, 0, 8, 'm', 'd', 'a', 't'
+            };
+            default -> throw new IllegalArgumentException(format);
+        };
+        byte[] payload = Arrays.copyOf(header, header.length + audio.length);
+        System.arraycopy(audio, 0, payload, header.length, audio.length);
+        return payload;
     }
 }

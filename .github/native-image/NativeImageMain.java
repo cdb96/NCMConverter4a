@@ -10,8 +10,7 @@ import java.util.HexFormat;
 /** Native Image entry point: prepare the portable AWT support directory, then start Compose. */
 public final class NativeImageMain {
     public static void main(String[] args) throws Exception {
-        if (args.length == 1 && (args[0].endsWith("-smoke")
-                || "--pgo-train".equals(args[0]) || "--trace-desktop".equals(args[0]))) {
+        if (args.length == 1 && (args[0].endsWith("-smoke") || "--trace-desktop".equals(args[0]))) {
             Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
                 System.err.println("Uncaught Native Image helper failure on " + thread.getName());
                 error.printStackTrace();
@@ -32,8 +31,8 @@ public final class NativeImageMain {
             verifyNativeLibrary();
             return;
         }
-        if (args.length == 1 && "--pgo-train".equals(args[0])) {
-            PgoTraining.run();
+        if (args.length == 1 && "--conversion-smoke".equals(args[0])) {
+            NativeImageSmoke.verifyConversion();
             return;
         }
         configureSkikoCache();
@@ -79,11 +78,11 @@ public final class NativeImageMain {
         System.setProperty("skiko.data.path", Path.of(base, version).toString());
     }
 
-    /** JVM-only metadata collection; Native Image training never starts AWT. */
+    /** JVM-only metadata collection. */
     private static void traceDesktopMetadata() throws Exception {
         // Check resources even when Skiko's DLL/data are already cached.
         NativeImageSmoke.verifyResources();
-        PgoTraining.run();
+        NativeImageSmoke.verifyConversion();
         NativeImageSmoke.verifyFilePickers();
         NativeImageSmoke.watchDesktopStartup();
         MainKt.main();

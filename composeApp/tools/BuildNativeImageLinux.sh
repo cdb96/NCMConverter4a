@@ -24,7 +24,7 @@ jar="${jars[0]}"
 build="$root/build/native-image/linux"
 metadata="$build/metadata"
 classes="$build/trace-classes"
-mkdir -p "$metadata" "$classes" "$build/pgo"
+mkdir -p "$metadata" "$classes"
 
 # Mesa's software GL driver supports JVM metadata tracing under Xvfb.
 export LIBGL_ALWAYS_SOFTWARE=true
@@ -33,7 +33,7 @@ export GALLIUM_DRIVER=softpipe
 unset SKIKO_RENDER_API
 if command -v glxinfo >/dev/null 2>&1; then glxinfo -B; fi
 "$JAVA_HOME/bin/javac" -cp "$jar" -d "$classes" \
-    .github/native-image/NativeImageMain.java .github/native-image/NativeImageSmoke.java .github/native-image/PgoTraining.java
+    .github/native-image/NativeImageMain.java .github/native-image/NativeImageSmoke.java
 classpath="$classes:$jar"
 
 for gpu in true false; do
@@ -57,8 +57,7 @@ cd "$build"
 args=(--no-fallback --enable-native-access=ALL-UNNAMED -march=compatibility
     "-H:ConfigurationFileDirectories=$metadata,$root/.github/native-image/metadata,$root/.github/native-image/metadata-linux"
     -cp "$classpath")
-# Instrumentation controls its optimization level; the final build uses -O3.
-"$JAVA_HOME/bin/native-image" "${args[@]}" --pgo-instrument NativeImageMain NCMConverter4a-instrumented
+"$JAVA_HOME/bin/native-image" "${args[@]}" -Os NativeImageMain NCMConverter4a
 
 # AWT still uses shared libraries. Match its java.home-relative support layout.
 if [[ ! -f libjawt.so ]]; then cp -p "$JAVA_HOME/lib/libjawt.so" libjawt.so; fi
@@ -68,20 +67,8 @@ for file in "$JAVA_HOME"/lib/fontconfig*; do
     if [[ -f "$file" ]]; then cp -p "$file" lib/; fi
 done
 
-# Train the current conversion code without opening windows or initializing AWT.
-if [[ -e default.iprof ]]; then
-    echo 'Unexpected PGO profile already exists; use a clean build directory.' >&2
-    exit 1
-fi
-timeout 90s ./NCMConverter4a-instrumented --pgo-train 2>&1 | tee pgo-train.log
-test -s default.iprof
-profile="$build/pgo/conversion.iprof"
-mv default.iprof "$profile"
-profile_option="--pgo=$profile"
-"$JAVA_HOME/bin/native-image" "${args[@]}" "$profile_option" -O3 NativeImageMain NCMConverter4a
-
 # Stage an allowlisted runtime. It contains no JDK, classpath,
-# build metadata, instrumented binary or profiles.
+# build metadata or logs.
 runtime="$(mktemp -d "$build/runtime.XXXXXX")"
 mkdir -p "$runtime/NCMConverter4a/lib"
 cp -p NCMConverter4a "$runtime/NCMConverter4a/"
@@ -102,7 +89,7 @@ for check in runtime startup-default startup-software file-picker conversion; do
     case "$check" in
         runtime) flag=--runtime-smoke; marker='Native Image runtime smoke test passed' ;;
         file-picker) flag=--file-picker-smoke; marker='File picker smoke test passed' ;;
-        conversion) flag=--pgo-train; marker='PGO conversion training passed' ;;
+        conversion) flag=--conversion-smoke; marker='Conversion smoke test passed' ;;
         startup-software)
             mkdir -p "$profile_root/appdata/NCMConverter4a"
             printf 'gpuRendering=false\n' > "$profile_root/appdata/NCMConverter4a/rendering.properties"

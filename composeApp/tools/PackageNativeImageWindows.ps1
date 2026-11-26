@@ -9,8 +9,7 @@ $archivePath = [IO.Path]::GetFullPath($OutputArchive)
 $archiveDirectory = Split-Path -Parent $archivePath
 New-Item -ItemType Directory -Force -Path $archiveDirectory | Out-Null
 
-# Publish only runtime files. Metadata, profiles, logs, reports and the
-# instrumented training executable must stay outside the portable archive.
+# Publish only runtime files. Metadata, logs and reports must stay outside the portable archive.
 $required = @('NCMConverter4a.exe', 'awt.dll', 'jawt.dll', 'fontmanager.dll', 'freetype.dll',
     'javajpeg.dll', 'lcms.dll',
     'java.dll', 'jvm.dll', 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll',

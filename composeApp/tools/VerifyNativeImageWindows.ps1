@@ -75,13 +75,13 @@ if ($CheckRuntime) {
             $flag = switch ($test) {
                 'runtime' { '--runtime-smoke' }
                 'file-picker' { '--file-picker-smoke' }
-                'conversion' { '--pgo-train' }
+                'conversion' { '--conversion-smoke' }
                 default { '--startup-smoke' }
             }
             $marker = switch ($test) {
                 'runtime' { 'Native Image runtime smoke test passed' }
                 'file-picker' { 'File picker smoke test passed' }
-                'conversion' { 'PGO conversion training passed' }
+                'conversion' { 'Conversion smoke test passed' }
                 default { 'Compose desktop startup smoke test passed' }
             }
             $stdout = Join-Path $profileRoot 'stdout.log'

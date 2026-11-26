@@ -388,7 +388,7 @@ jobs:
           $metadata = Join-Path $PWD.Path 'build/native-image/metadata'
           $classes = Join-Path $PWD.Path 'build/native-image/trace-classes'
           New-Item -ItemType Directory -Force $metadata,$classes | Out-Null
-          & "$env:JAVA_HOME\bin\javac.exe" -cp $jar.FullName -d $classes '.github/native-image/NativeImageMain.java' '.github/native-image/NativeImageSmoke.java' '.github/native-image/PgoTraining.java'
+          & "$env:JAVA_HOME\bin\javac.exe" -cp $jar.FullName -d $classes '.github/native-image/NativeImageMain.java' '.github/native-image/NativeImageSmoke.java'
           if ($LASTEXITCODE -ne 0) { throw "Trace helper compilation failed: $LASTEXITCODE" }
           $classPath = "$classes;$($jar.FullName)"
           $traceRoot = Join-Path $PWD.Path ('build/native-image/trace-' + [guid]::NewGuid())
@@ -420,7 +420,7 @@ jobs:
             throw 'GraalVM tracing did not produce reachability-metadata.json'
           }
 
-      - name: Build and train O3 + PGO Native Image
+      - name: Build Native Image (-Os)
         shell: pwsh
         run: |
           native-image --version
@@ -445,8 +445,7 @@ jobs:
             "-H:ConfigurationFileDirectories=$metadata,$staticMetadata,$windowsMetadata"
             '-cp', $classPath
           )
-          # Instrumentation chooses its own optimization level; -O3 is for the final build.
-          native-image @nativeImageArgs '--pgo-instrument' 'NativeImageMain' 'NCMConverter4a-instrumented'
+          native-image @nativeImageArgs '-Os' 'NativeImageMain' 'NCMConverter4a'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $mt = (Get-Command mt.exe -ErrorAction SilentlyContinue).Source
           if (-not $mt) {
@@ -456,8 +455,8 @@ jobs:
               Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
           }
           if (-not $mt) { throw 'Windows SDK manifest tool mt.exe not found' }
-          $instrumentedPath = Join-Path $PWD 'NCMConverter4a-instrumented.exe'
-          & $mt -manifest $dpiManifest "-outputresource:$instrumentedPath;#1"
+          $imagePath = Join-Path $PWD 'NCMConverter4a.exe'
+          & $mt -manifest $dpiManifest "-outputresource:$imagePath;#1"
           if ($LASTEXITCODE -ne 0) { throw "Embedding DPI manifest failed: $LASTEXITCODE" }
           New-Item -ItemType Directory -Force bin | Out-Null
           Copy-Item -LiteralPath jawt.dll -Destination bin/jawt.dll -Force
@@ -471,28 +470,6 @@ jobs:
           foreach ($runtimeDll in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
             Copy-Item -LiteralPath (Join-Path $env:JAVA_HOME "bin/$runtimeDll") -Destination $runtimeDll -Force
           }
-          $pgoDir = Join-Path $PWD 'pgo'
-          New-Item -ItemType Directory -Force $pgoDir | Out-Null
-          # Train the current conversion code without starting AWT or Compose.
-          $rawProfile = Join-Path $PWD 'default.iprof'
-          if (Test-Path -LiteralPath $rawProfile) { throw "Unexpected profile already exists: $rawProfile" }
-          $stdout = Join-Path $PWD 'pgo-train.stdout.log'
-          $stderr = Join-Path $PWD 'pgo-train.stderr.log'
-          $process = Start-Process -FilePath $instrumentedPath -ArgumentList '--pgo-train' -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-          Get-Content -LiteralPath $stdout
-          Get-Content -LiteralPath $stderr
-          if ($process.ExitCode -ne 0) { throw "PGO conversion training failed: $($process.ExitCode)" }
-          $profile = Get-Item -LiteralPath $rawProfile -ErrorAction Stop
-          if ($profile.Length -eq 0) { throw 'PGO conversion training produced an empty profile' }
-          $profilePath = Join-Path $pgoDir 'conversion.iprof'
-          Move-Item -LiteralPath $rawProfile -Destination $profilePath -Force
-          $profileOption = "--pgo=$profilePath"
-          native-image @nativeImageArgs $profileOption '-O3' 'NativeImageMain' 'NCMConverter4a'
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $imagePath = Join-Path $PWD 'NCMConverter4a.exe'
-          & $mt -manifest $dpiManifest "-outputresource:$imagePath;#1"
-          if ($LASTEXITCODE -ne 0) { throw "Embedding DPI manifest failed: $LASTEXITCODE" }
-          Copy-Item -LiteralPath jawt.dll -Destination bin/jawt.dll -Force
           # GUI-subsystem executables must be explicitly waited on by PowerShell.
           $stdout = Join-Path $PWD 'native-smoke.stdout.log'
           $stderr = Join-Path $PWD 'native-smoke.stderr.log'
@@ -506,9 +483,9 @@ jobs:
             (Get-Item -LiteralPath (Join-Path $PWD 'lib/fontconfig.bfc'))
           )
           $runtimeBytes = ($runtimeFiles | Measure-Object -Property Length -Sum).Sum
-          Write-Host ("Native Image executable (O3 + PGO): {0:N2} MiB ({1} bytes)" -f ($image.Length / 1MB), $image.Length)
+          Write-Host ("Native Image executable (-Os): {0:N2} MiB ({1} bytes)" -f ($image.Length / 1MB), $image.Length)
           Write-Host ("Windows runtime files: {0:N2} MiB ({1} bytes)" -f ($runtimeBytes / 1MB), $runtimeBytes)
-          "Native Image executable (O3 + PGO): $($image.Length) bytes" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "Native Image executable (-Os): $($image.Length) bytes" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           "Windows runtime files (EXE, generated DLLs, font config): $runtimeBytes bytes" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           Pop-Location
           Get-ChildItem build/native-image -Recurse -File | Select-Object FullName,Length
