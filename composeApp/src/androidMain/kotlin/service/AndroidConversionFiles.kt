@@ -10,6 +10,7 @@ import android.os.ParcelFileDescriptor
 import android.os.RemoteException
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import androidx.documentfile.provider.DocumentFile
 import com.cdb96.ncmconverter4a.converter.kgg.KggKeyDatabase
 import com.cdb96.ncmconverter4a.converter.kgg.MMKVParser
@@ -19,11 +20,10 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 
-private const val ANDROID_BUFFER_BUDGET = 4 * 1024 * 1024
+private const val ANDROID_BUFFER_BUDGET = 8 * 1024 * 1024
 private const val MIN_ANDROID_BUFFER_SIZE = 512 * 1024
-private const val MAX_ANDROID_BUFFER_SIZE = 1024 * 1024
+private const val MAX_ANDROID_BUFFER_SIZE = 2 * 1024 * 1024
 private const val MEDIASTORE_QUERY_BATCH_SIZE = 200
 private const val EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY = "com.android.externalstorage.documents"
 
@@ -42,40 +42,83 @@ fun createFileConversionService(context: Context): FileConversionService =
 private class AndroidConversionFiles(private val context: Context) : ConversionFiles {
     private val mediaRelativePath = "${Environment.DIRECTORY_MUSIC}/NCMConverter4A/"
     private val rootDatabaseReader by lazy { RootDatabaseReader(context.cacheDir) }
-    private val mediaClientRef = AtomicReference<ContentProviderClient?>(null)
+    private val providerClients = ConcurrentHashMap<String, ContentProviderClient>()
 
     // Reserve a sequence while holding the per-basename CHM compute lock.
     private val seqTable = ConcurrentHashMap<String, MutableSet<Int>>()
 
-    override fun fileName(source: String): String =
-        DocumentFile.fromSingleUri(context, Uri.parse(source))?.name ?: "未知文件"
+    override fun fileName(source: String): String {
+        val uri = Uri.parse(source)
+        if (uri.scheme == "content") {
+            val projection = arrayOf(OpenableColumns.DISPLAY_NAME)
+            val name = runCatching {
+                withProviderClient(
+                    authority = uri.authority,
+                    clientOp = { it.query(uri, projection, null, null, null) },
+                    fallbackOp = { context.contentResolver.query(uri, projection, null, null, null) },
+                )?.use { cursor ->
+                    val col = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (col >= 0 && cursor.moveToFirst()) cursor.getString(col) else null
+                }
+            }.getOrNull()
+            if (!name.isNullOrBlank()) return name
+        }
+        return DocumentFile.fromSingleUri(context, uri)?.name ?: "未知文件"
+    }
 
     override fun beginBatch(mitigateConflicts: Boolean) {
-        val client = runCatching {
-            context.contentResolver.acquireContentProviderClient(MediaStore.AUTHORITY)
-        }.getOrNull()
-        mediaClientRef.getAndSet(client)?.close()
+        acquireClient(MediaStore.AUTHORITY)
         if (mitigateConflicts) scanExistingFiles()
     }
 
     override fun endBatch() {
-        mediaClientRef.getAndSet(null)?.close()
+        val iterator = providerClients.entries.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            if (providerClients.remove(entry.key, entry.value)) {
+                entry.value.close()
+            }
+        }
+    }
+
+    private fun acquireClient(authority: String): ContentProviderClient? {
+        providerClients[authority]?.let { return it }
+        val created = runCatching {
+            context.contentResolver.acquireContentProviderClient(authority)
+        }.getOrNull() ?: return null
+        val existing = providerClients.putIfAbsent(authority, created)
+        if (existing != null) {
+            created.close()
+            return existing
+        }
+        return created
+    }
+
+    private inline fun <T> withProviderClient(
+        authority: String?,
+        clientOp: (ContentProviderClient) -> T,
+        fallbackOp: () -> T,
+    ): T {
+        if (authority != null) {
+            val client = acquireClient(authority)
+            if (client != null) {
+                try {
+                    return clientOp(client)
+                } catch (_: RemoteException) {
+                    // Evict stale binder client and fall back to ContentResolver.
+                    if (providerClients.remove(authority, client)) {
+                        client.close()
+                    }
+                }
+            }
+        }
+        return fallbackOp()
     }
 
     private inline fun <T> withMediaClient(
         clientOp: (ContentProviderClient) -> T,
         fallbackOp: () -> T,
-    ): T {
-        val client = mediaClientRef.get()
-        if (client != null) {
-            try {
-                return clientOp(client)
-            } catch (_: RemoteException) {
-                // Fall back to ContentResolver if the cached client binder died.
-            }
-        }
-        return fallbackOp()
-    }
+    ): T = withProviderClient(MediaStore.AUTHORITY, clientOp, fallbackOp)
 
     override fun resolveFileNames(
         sources: List<String>,
@@ -145,24 +188,26 @@ private class AndroidConversionFiles(private val context: Context) : ConversionF
         return resolved
     }
 
-    private fun openInputStream(source: String): InputStream =
-        context.contentResolver.openInputStream(Uri.parse(source))
-            ?: throw IllegalStateException("无法打开输入文件: $source")
-
-    override fun openInputWithSize(source: String): OpenedInput {
+    override fun openInput(source: String): InputStream {
         val uri = Uri.parse(source)
-        val pfd = if (uri.authority == MediaStore.AUTHORITY) {
-            withMediaClient(
-                { it.openFile(uri, "r") },
-                { context.contentResolver.openFileDescriptor(uri, "r") },
-            )
+        val pfd = if (uri.scheme == "content") {
+            try {
+                withProviderClient(
+                    authority = uri.authority,
+                    clientOp = { it.openFile(uri, "r") },
+                    fallbackOp = { context.contentResolver.openFileDescriptor(uri, "r") },
+                )
+            } catch (_: Exception) {
+                null
+            }
         } else {
-            runCatching { context.contentResolver.openFileDescriptor(uri, "r") }.getOrNull()
+            null
         }
         if (pfd != null) {
-            return OpenedInput(ParcelFileDescriptor.AutoCloseInputStream(pfd), pfd.statSize)
+            return ParcelFileDescriptor.AutoCloseInputStream(pfd)
         }
-        return OpenedInput(openInputStream(source), -1L)
+        return context.contentResolver.openInputStream(uri)
+            ?: throw IllegalStateException("无法打开输入文件: $source")
     }
 
     override fun loadKggDatabase(database: String?, rootMode: Boolean): KggKeyDatabase {

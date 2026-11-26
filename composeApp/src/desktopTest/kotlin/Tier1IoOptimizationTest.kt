@@ -15,7 +15,6 @@ import com.cdb96.ncmconverter4a.jni.KGMDecrypt
 import com.cdb96.ncmconverter4a.jni.RC4Decrypt
 import com.cdb96.ncmconverter4a.service.ConversionFiles
 import com.cdb96.ncmconverter4a.service.FileConversionService
-import com.cdb96.ncmconverter4a.service.OpenedInput
 import com.cdb96.ncmconverter4a.service.PendingOutput
 import com.cdb96.ncmconverter4a.service.boundedWorkerBufferSize
 import com.cdb96.ncmconverter4a.util.FileNameUtils
@@ -58,7 +57,9 @@ class Tier1IoOptimizationTest {
         val rawWrites = mutableListOf<Int>()
         val backing = ByteArrayOutputStream()
         val observedDirect = AtomicBoolean(false)
+        val observedHalfDirect = AtomicBoolean(false)
         val largePayload = ByteArray(1024) { (it * 31 + 3).toByte() }
+        val kggLikeChunk = ByteArray(48) { (it * 13 + 7).toByte() } // < scratch.size (64), >= directThreshold (32)
 
         val out = object : OutputStream() {
             override fun write(b: Int) {
@@ -69,6 +70,7 @@ class Tier1IoOptimizationTest {
             override fun write(b: ByteArray, off: Int, len: Int) {
                 rawWrites.add(len)
                 if (b === largePayload) observedDirect.set(true)
+                if (b === kggLikeChunk) observedHalfDirect.set(true)
                 backing.write(b, off, len)
             }
         }
@@ -84,17 +86,28 @@ class Tier1IoOptimizationTest {
 
         // Large write (>= scratch.size) flushes buffered 61 bytes, then forwards largePayload directly.
         buffered.write(largePayload, 0, largePayload.size)
+        // KGG/NCM-style chunk (>= scratch.size / 2) with empty scratch forwards directly without copy.
+        buffered.write(kggLikeChunk, 0, kggLikeChunk.size)
+        // Small header + medium cover that still fits inside scratch coalesces into one write.
+        val mediumCover = ByteArray(40) { (it * 5 + 1).toByte() }
         buffered.write(byteArrayOf(9, 8, 7))
+        buffered.write(mediumCover, 0, mediumCover.size)
+        // Next large chunk (> remaining scratch) flushes coalesced 43 bytes and writes directly without copy.
+        buffered.write(kggLikeChunk, 0, kggLikeChunk.size)
         buffered.flush()
 
-        assertEquals(listOf(61, 1024, 3), rawWrites)
+        assertEquals(listOf(61, 1024, 48, 43, 48), rawWrites)
         assertTrue(observedDirect.get(), "large write should bypass scratch buffer without copying")
+        assertTrue(observedHalfDirect.get(), "half-scratch or larger audio chunk should bypass copy")
 
         val expected = ByteArrayOutputStream().apply {
             repeat(20) { i -> write(byteArrayOf(i.toByte(), (i + 1).toByte(), (i + 2).toByte())) }
             write(0x7F)
             write(largePayload)
+            write(kggLikeChunk)
             write(byteArrayOf(9, 8, 7))
+            write(mediumCover)
+            write(kggLikeChunk)
         }.toByteArray()
         assertContentEquals(expected, backing.toByteArray())
     }
@@ -153,13 +166,14 @@ class Tier1IoOptimizationTest {
     }
 
     private fun androidBufSize(inputCount: Int, threadCount: Int): Int =
-        boundedWorkerBufferSize(inputCount, threadCount, 4 * 1024 * 1024, 512 * 1024, 1024 * 1024)
+        boundedWorkerBufferSize(inputCount, threadCount, 8 * 1024 * 1024, 512 * 1024, 2 * 1024 * 1024)
 
     @Test
     fun androidBufferSizeScalesAcrossThreadCounts() {
-        assertEquals(1024 * 1024, androidBufSize(inputCount = 10, threadCount = 1))
-        assertEquals(1024 * 1024, androidBufSize(inputCount = 10, threadCount = 4))
-        assertEquals(512 * 1024, androidBufSize(inputCount = 10, threadCount = 8))
+        assertEquals(2 * 1024 * 1024, androidBufSize(inputCount = 10, threadCount = 1))
+        assertEquals(2 * 1024 * 1024, androidBufSize(inputCount = 10, threadCount = 4))
+        assertEquals(1024 * 1024, androidBufSize(inputCount = 10, threadCount = 8))
+        assertEquals(512 * 1024, androidBufSize(inputCount = 20, threadCount = 16))
         assertTrue(androidBufSize(inputCount = 10, threadCount = 5) % 256 == 0)
     }
 
@@ -185,8 +199,8 @@ class Tier1IoOptimizationTest {
                 return sources.dropLast(1).associateWith { inputMap.getValue(it).fileName } + knownFileNames
             }
 
-            override fun openInputWithSize(source: String): OpenedInput =
-                OpenedInput(ByteArrayInputStream(inputMap.getValue(source).encryptedBytes))
+            override fun openInput(source: String): InputStream =
+                ByteArrayInputStream(inputMap.getValue(source).encryptedBytes)
 
             override fun writeOutput(
                 fileName: String,
@@ -214,10 +228,9 @@ class Tier1IoOptimizationTest {
     }
 
     @Test
-    fun smallFileFastPathUsesSingleReadAndSingleWriteWithBatchLifecycle() = runBlocking {
+    fun smallFileCoalescesToSingleWriteWithBatchLifecycle() = runBlocking {
         val samples = generateSampleCorpus(ncmMp3Count = 1, ncmFlacCount = 1, kgmCount = 1, payloadBytes = 64 * 1024)
         val inputMap = samples.associateBy { it.source }
-        val readCalls = AtomicInteger(0)
         val writeCalls = AtomicInteger(0)
         val beginCount = AtomicInteger(0)
         val endCount = AtomicInteger(0)
@@ -231,16 +244,8 @@ class Tier1IoOptimizationTest {
             override fun endBatch() {
                 endCount.incrementAndGet()
             }
-            override fun openInputWithSize(source: String): OpenedInput {
-                val bytes = inputMap.getValue(source).encryptedBytes
-                val raw = object : ByteArrayInputStream(bytes) {
-                    override fun read(b: ByteArray, off: Int, len: Int): Int {
-                        readCalls.incrementAndGet()
-                        return super.read(b, off, len)
-                    }
-                }
-                return OpenedInput(raw, bytes.size.toLong())
-            }
+            override fun openInput(source: String): InputStream =
+                ByteArrayInputStream(inputMap.getValue(source).encryptedBytes)
             override fun writeOutput(
                 fileName: String,
                 extension: String,
@@ -278,13 +283,12 @@ class Tier1IoOptimizationTest {
         assertEquals(samples.size, result.successCount)
         assertEquals(1, beginCount.get())
         assertEquals(1, endCount.get())
-        assertEquals(samples.size, readCalls.get(), "each small file should need only 1 InputStream.read()")
         assertEquals(samples.size, writeCalls.get(), "each small file should need only 1 OutputStream.write()")
 
         val baseline = convertAllWithBaseline(samples, rawWriteMode = false)
         assertEquals(baseline.keys, outputs.keys)
         for ((name, expected) in baseline) {
-            assertContentEquals(expected, outputs.getValue(name), "small fast-path mismatch: $name")
+            assertContentEquals(expected, outputs.getValue(name), "coalesced output mismatch: $name")
         }
     }
 
@@ -307,8 +311,8 @@ class Tier1IoOptimizationTest {
                 return inputMap.getValue(source).fileName
             }
 
-            override fun openInputWithSize(source: String): OpenedInput =
-                OpenedInput(ByteArrayInputStream(inputMap.getValue(source).encryptedBytes))
+            override fun openInput(source: String): InputStream =
+                ByteArrayInputStream(inputMap.getValue(source).encryptedBytes)
 
             override fun writeOutput(
                 fileName: String,
@@ -379,8 +383,8 @@ class Tier1IoOptimizationTest {
 
         val failSecondFiles = object : ConversionFiles {
             override fun fileName(source: String): String = inputMap.getValue(source).fileName
-            override fun openInputWithSize(source: String): OpenedInput =
-                OpenedInput(ByteArrayInputStream(inputMap.getValue(source).encryptedBytes))
+            override fun openInput(source: String): InputStream =
+                ByteArrayInputStream(inputMap.getValue(source).encryptedBytes)
 
             override fun writeOutput(
                 fileName: String,
@@ -423,8 +427,8 @@ class Tier1IoOptimizationTest {
         val cancelCreated = AtomicInteger(0)
         val cancelFiles = object : ConversionFiles {
             override fun fileName(source: String): String = inputMap.getValue(source).fileName
-            override fun openInputWithSize(source: String): OpenedInput =
-                OpenedInput(ByteArrayInputStream(inputMap.getValue(source).encryptedBytes))
+            override fun openInput(source: String): InputStream =
+                ByteArrayInputStream(inputMap.getValue(source).encryptedBytes)
 
             override fun writeOutput(
                 fileName: String,
@@ -541,7 +545,7 @@ class Tier1IoOptimizationTest {
             val tier1DiskResult = FileConversionService(
                 object : ConversionFiles {
                     override fun fileName(source: String) = File(source).name
-                    override fun openInputWithSize(source: String) = OpenedInput(File(source).inputStream())
+                    override fun openInput(source: String) = File(source).inputStream()
                     override fun writeOutput(
                         fileName: String,
                         extension: String,
@@ -729,8 +733,8 @@ class Tier1IoOptimizationTest {
                 return sampleMap.getValue(source).fileName
             }
 
-            override fun openInputWithSize(source: String): OpenedInput =
-                OpenedInput(ByteArrayInputStream(sampleMap.getValue(source).encryptedBytes))
+            override fun openInput(source: String): InputStream =
+                ByteArrayInputStream(sampleMap.getValue(source).encryptedBytes)
 
             override fun writeOutput(
                 fileName: String,

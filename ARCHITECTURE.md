@@ -91,7 +91,7 @@ NCMConverter4a 采用 **Kotlin Multiplatform (KMP) + Compose Multiplatform + 共
 ### 3.4 平台适配与 JNI 桥接 (`jni/`, `androidMain/`, `desktopMain/`)
 - **`commonMain/kotlin/jni/`**：通过 `expect object RC4Decrypt`、`KGMDecrypt`、`KGGDecrypt` 定义统一的 JNI 契约。
 - **Android 端**：
-  - `AndroidConversionFiles` 使用 `ContentProviderClient` 批量查询并写入 `MediaStore`（支持冲突序号规避），通过 `DocumentFile` 读取 SAF 目录。
+  - `AndroidConversionFiles` 在批次内按 URI authority 复用 `ContentProviderClient` 打开 SAF/MediaStore 输入并批量查询、写入 `MediaStore`（支持冲突序号规避），目录扫描由 `AndroidDirectoryScanner` 通过 `DocumentsContract` 遍历。
   - `libncmc4a.so` 由 `androidApp` 的 NDK CMake 构建打入 APK，直接通过 `System.loadLibrary("ncmc4a")` 加载。
 - **Desktop 端**：
   - `NativeLibrary` 按 `-Dncmc4a.library` 覆盖路径 → Classpath 资源 (`ncmc4a/<os>-<arch>/ncmc4a.<ext>`) 按内容哈希解压至临时目录 → 本地 `native/build/` 目录的顺序加载原生库。

@@ -30,7 +30,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
-import java.io.Closeable
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -43,17 +42,12 @@ internal interface PendingOutput {
     fun discard()
 }
 
-internal class OpenedInput(
-    val stream: InputStream,
-    val knownSize: Long = -1L,
-) : Closeable by stream
-
 /** Platform file access; conversion and batch orchestration are shared. */
 internal interface ConversionFiles {
     fun fileName(source: String): String
     fun resolveFileNames(sources: List<String>, knownFileNames: Map<String, String>): Map<String, String> =
         knownFileNames
-    fun openInputWithSize(source: String): OpenedInput
+    fun openInput(source: String): InputStream
     fun writeOutput(
         fileName: String,
         extension: String,
@@ -236,51 +230,20 @@ class FileConversionService internal constructor(private val files: ConversionFi
         bufferSize: Int,
         buffers: WorkerBuffers,
         kggKeys: KggBatchKeys?,
-    ): PendingOutput? {
-        val opened = files.openInputWithSize(source)
-        if (opened.knownSize in 1L..buffers.smallInputBuffer.size.toLong()) {
-            val expected = opened.knownSize.toInt()
-            var total = 0
-            opened.use { input ->
-                val stream = input.stream
-                while (total < expected) {
-                    val read = stream.read(buffers.smallInputBuffer, total, expected - total)
-                    if (read < 0) break
-                    if (read == 0) throw BinaryInputException("input returned zero bytes")
-                    total += read
+    ): PendingOutput? =
+        PrefetchInputStream(files.openInput(source), buffers.inputPrefetch).use { input ->
+            val size = input.peek(buffers.headerPeek)
+            when (detectEncryptedFormat(buffers.headerPeek.copyOf(size))) {
+                EncryptedFormat.NCM -> convertNcm(input, rawWriteMode, mitigateConflicts, bufferSize, buffers)
+                EncryptedFormat.KGM -> convertKgm(input, fileName, mitigateConflicts, bufferSize, buffers)
+                EncryptedFormat.KGG -> {
+                    require(kggKeys != null) { "请先在设置中选择 KGG 数据库" }
+                    convertKgg(input, fileName, mitigateConflicts, buffers, kggKeys)
                 }
-            }
-            return PrefetchInputStream.fromBuffer(buffers.smallInputBuffer, total).use { input ->
-                convertOpenedStream(input, fileName, rawWriteMode, mitigateConflicts, bufferSize, buffers, kggKeys)
+                EncryptedFormat.UNSUPPORTED ->
+                    throw IllegalArgumentException("不支持的加密文件格式: $fileName")
             }
         }
-
-        return PrefetchInputStream(opened.stream, buffers.inputPrefetch).use { input ->
-            convertOpenedStream(input, fileName, rawWriteMode, mitigateConflicts, bufferSize, buffers, kggKeys)
-        }
-    }
-
-    private fun convertOpenedStream(
-        input: PrefetchInputStream,
-        fileName: String,
-        rawWriteMode: Boolean,
-        mitigateConflicts: Boolean,
-        bufferSize: Int,
-        buffers: WorkerBuffers,
-        kggKeys: KggBatchKeys?,
-    ): PendingOutput? {
-        val size = input.peek(buffers.headerPeek)
-        return when (detectEncryptedFormat(buffers.headerPeek.copyOf(size))) {
-            EncryptedFormat.NCM -> convertNcm(input, rawWriteMode, mitigateConflicts, bufferSize, buffers)
-            EncryptedFormat.KGM -> convertKgm(input, fileName, mitigateConflicts, bufferSize, buffers)
-            EncryptedFormat.KGG -> {
-                require(kggKeys != null) { "请先在设置中选择 KGG 数据库" }
-                convertKgg(input, fileName, mitigateConflicts, buffers, kggKeys)
-            }
-            EncryptedFormat.UNSUPPORTED ->
-                throw IllegalArgumentException("不支持的加密文件格式: $fileName")
-        }
-    }
 
     private fun writeCoalesced(
         fileName: String,

@@ -13,6 +13,7 @@ internal class PassThroughBufferedOutputStream(
     private val out: OutputStream,
     private val buf: ByteArray,
 ) : OutputStream() {
+    private val directThreshold = (buf.size ushr 1).coerceAtLeast(1)
     private var count = 0
 
     override fun write(b: Int) {
@@ -28,13 +29,17 @@ internal class PassThroughBufferedOutputStream(
         }
         if (len == 0) return
 
-        if (len >= buf.size) {
+        if (len >= buf.size || (count == 0 && len >= directThreshold)) {
             flushBuffer()
             out.write(b, off, len)
             return
         }
         if (len > buf.size - count) {
             flushBuffer()
+            if (len >= directThreshold) {
+                out.write(b, off, len)
+                return
+            }
         }
         b.copyInto(buf, destinationOffset = count, startIndex = off, endIndex = off + len)
         count += len
@@ -55,25 +60,15 @@ internal class PassThroughBufferedOutputStream(
 
 /**
  * Prefetching input wrapper that supports arbitrary small [peek] inspections
- * (replacing BufferedInputStream mark/reset), forwards large reads directly to
- * [raw], and can also wrap an already-read in-memory small-file buffer via [fromBuffer].
+ * (replacing BufferedInputStream mark/reset) and forwards large reads directly to [raw].
  */
-internal class PrefetchInputStream private constructor(
-    private val raw: InputStream?,
+internal class PrefetchInputStream(
+    private val raw: InputStream,
     private val buf: ByteArray,
-    initialLimit: Int,
-    initialEof: Boolean,
 ) : InputStream() {
-    constructor(raw: InputStream, buf: ByteArray) : this(raw, buf, 0, false)
-
-    companion object {
-        fun fromBuffer(buf: ByteArray, length: Int): PrefetchInputStream =
-            PrefetchInputStream(raw = null, buf = buf, initialLimit = length, initialEof = true)
-    }
-
     private var pos = 0
-    private var limit = initialLimit
-    private var eof = initialEof
+    private var limit = 0
+    private var eof = false
 
     fun peek(dest: ByteArray, length: Int = dest.size): Int {
         require(length in 0..minOf(dest.size, buf.size)) {
@@ -82,7 +77,7 @@ internal class PrefetchInputStream private constructor(
         if (length == 0) return 0
 
         val unread = limit - pos
-        if (unread < length && !eof && raw != null) {
+        if (unread < length && !eof) {
             if (pos > 0 && buf.size - pos < length) {
                 if (unread > 0) {
                     buf.copyInto(buf, destinationOffset = 0, startIndex = pos, endIndex = limit)
@@ -128,7 +123,7 @@ internal class PrefetchInputStream private constructor(
             pos += copied
             return copied
         }
-        if (eof || raw == null) return -1
+        if (eof) return -1
 
         if (len >= buf.size) {
             val read = raw.read(b, off, len)
@@ -156,9 +151,6 @@ internal class PrefetchInputStream private constructor(
         }
 
         while (remaining > 0) {
-            if (raw == null) {
-                throw BinaryInputException("unexpected end of input while skipping $bytes bytes")
-            }
             val skipped = raw.skip(remaining)
             if (skipped > 0) {
                 remaining -= skipped
@@ -177,11 +169,11 @@ internal class PrefetchInputStream private constructor(
     }
 
     override fun close() {
-        raw?.close()
+        raw.close()
     }
 
     private fun refill(): Boolean {
-        if (eof || raw == null) return false
+        if (eof) return false
         pos = 0
         limit = 0
         val read = raw.read(buf, 0, buf.size)
@@ -197,14 +189,15 @@ internal class PrefetchInputStream private constructor(
     }
 }
 
+private const val MAX_OUTPUT_SCRATCH_SIZE = 512 * 1024
+
 internal class WorkerBuffers(
     audioBufferSize: Int,
     inputPrefetchSize: Int = 16 * 1024,
-    outputScratchSize: Int = audioBufferSize,
+    outputScratchSize: Int = minOf(audioBufferSize, MAX_OUTPUT_SCRATCH_SIZE),
 ) {
     val audioBuffer = ByteArray(audioBufferSize)
     val inputPrefetch = ByteArray(inputPrefetchSize)
-    val smallInputBuffer = ByteArray(audioBufferSize)
     val outputScratch = ByteArray(outputScratchSize)
     val headerPeek = ByteArray(24)
 }
