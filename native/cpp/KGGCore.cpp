@@ -1,11 +1,12 @@
 // KGG/QMC audio ciphers, ported from the Unlock Music based Kotlin implementation.
 #include <jni.h>
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <memory>
-#include <new>
 #include <utility>
 
 #include "SimdCompat.h"
@@ -63,6 +64,18 @@ constexpr std::uint8_t staticBox[256] = {
 void throwJava(JNIEnv* env, const char* type, const char* message) {
     const auto exception = env->FindClass(type);
     if (exception != nullptr) env->ThrowNew(exception, message);
+}
+
+struct FreeDeleter {
+    void operator()(std::uint8_t* ptr) const noexcept { std::free(ptr); }
+};
+
+using ByteBuffer = std::unique_ptr<std::uint8_t[], FreeDeleter>;
+
+// Use libc allocation directly so Android's -fno-exceptions/-fno-rtti .so
+// does not pull libc++'s allocating new and unwind/exception machinery.
+ByteBuffer allocBytes(std::size_t size) {
+    return ByteBuffer(static_cast<std::uint8_t*>(std::malloc(size)));
 }
 
 std::uint64_t stateSize(std::uint32_t n) {
@@ -162,8 +175,8 @@ Java_com_cdb96_ncmconverter4a_jni_KGGDecrypt_prepare(JNIEnv* env, jclass, jbyteA
         throwJava(env, "java/lang/IllegalArgumentException", "KGG key is too long");
         return nullptr;
     }
-    std::unique_ptr<std::uint8_t[]> bytes(new (std::nothrow) std::uint8_t[size]);
-    std::unique_ptr<std::uint8_t[]> box(n > 300 ? new (std::nothrow) std::uint8_t[n] : nullptr);
+    auto bytes = allocBytes(static_cast<std::size_t>(size));
+    auto box = n > 300 ? allocBytes(n) : ByteBuffer{};
     if (!bytes || (n > 300 && !box)) {
         throwJava(env, "java/lang/OutOfMemoryError", "KGG key schedule allocation failed");
         return nullptr;
