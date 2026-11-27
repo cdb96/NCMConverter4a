@@ -4,15 +4,16 @@
 
 ### 程序界面
 
-PC 端默认启动界面：
+| PC 端默认界面 | PC 端目录扫描界面 |
+| :---: | :---: |
+| ![PC 端默认启动的双列界面](docs/images/desktop-screenshot.png) | ![PC 端目录扫描的双列界面](docs/images/scan-screenshot.png) |
 
-![PC 端默认启动的双列界面](docs/images/desktop-screenshot.png)
+<p align="center">
+  <strong>单列布局（供手机端界面参考）</strong><br /><br />
+  <img src="docs/images/single-column-screenshot.png" alt="程序单列布局，供手机端界面参考" width="320" />
+</p>
 
-单列布局，供手机端界面参考：
-
-![程序单列布局，供手机端界面参考](docs/images/single-column-screenshot.png)
-
-单列截图来自 PC 端窄窗口，两张截图中的输出路径均为示例配置。
+> 单列截图来自 PC 端窄窗口，截图中的路径与曲目均为示例配置。
 
 ### 使用方法：
 1.从"选择音乐文件"按钮选择文件 
