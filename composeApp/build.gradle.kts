@@ -285,7 +285,7 @@ compose.desktop {
             // Windows/Linux ship Native Image archives. macOS keeps its DMG
             // while GraalVM's AWT support is unavailable on that platform.
             packageName = "NCMConverter4a"
-            packageVersion = "4.1.0"
+            packageVersion = "4.2.0"
             if (ncmHostOs.isMacOsX) {
                 targetFormats(TargetFormat.Dmg)
                 appResourcesRootDir.set(desktopNativeResources)
