@@ -80,6 +80,7 @@ object SqliteKggReader {
             "Invalid page size: $pageSize"
         }
         val usableSize = pageSize - (data[20].toInt() and 0xFF)
+        require(usableSize >= 48) { "Invalid usable page size: $usableSize" }
         return Db(data, pageSize, usableSize)
     }
 
@@ -151,7 +152,10 @@ object SqliteKggReader {
         require(pageNum in 1..db.maxPage) {
             "Invalid page $pageNum (max=${db.maxPage}, fileSize=${db.data.size}, pageSize=${db.pageSize})"
         }
-        val hdrBase = db.pageOffset(pageNum) + headerOffset
+        val pageStart = db.pageOffset(pageNum)
+        val pageEnd = minOf(pageStart + db.pageSize, db.data.size)
+        val hdrBase = pageStart + headerOffset
+        if (hdrBase + 8 > pageEnd) return
         val pageType = db.data[hdrBase].toInt() and 0xFF
         val numCells = db.u16(hdrBase + 3)
         var contentStart = db.u16(hdrBase + 5)
@@ -163,21 +167,23 @@ object SqliteKggReader {
             else -> throw IllegalArgumentException("Unknown page type 0x${pageType.toString(16)} at page $pageNum")
         }
         val cellPtrArrayStart = hdrBase + pageHeaderSize
+        if (cellPtrArrayStart > pageEnd) return
+        val safeCellCount = minOf(numCells, (pageEnd - cellPtrArrayStart) / 2)
 
         when (pageType) {
             PT_LEAF_TABLE -> {
-                for (i in 0 until numCells) {
+                for (i in 0 until safeCellCount) {
                     val co = db.u16(cellPtrArrayStart + i * 2)
                     if (co < contentStart || co >= db.pageSize) continue
-                    readCellRecord(db, db.pageOffset(pageNum) + co, columns)?.let(onRow)
+                    readCellRecord(db, pageStart + co, columns)?.let(onRow)
                 }
             }
             PT_INTERIOR_TABLE -> {
                 val children = mutableListOf<Int>()
-                for (i in 0 until numCells) {
+                for (i in 0 until safeCellCount) {
                     val co = db.u16(cellPtrArrayStart + i * 2)
                     if (co < contentStart || co + 4 > db.pageSize) continue
-                    val leftChild = db.u32(db.pageOffset(pageNum) + co)
+                    val leftChild = db.u32(pageStart + co)
                     if (leftChild in 1..db.maxPage) children.add(leftChild)
                 }
                 val rightChild = db.u32(hdrBase + 8)
@@ -199,11 +205,18 @@ object SqliteKggReader {
         pos += db.varint(pos).bytes
         pos += db.varint(pos).bytes
         val recStart = pos
+        if (recStart >= data.size) return null
 
         val (hdrLen, serialTypes) = parseRecordHeader(data, recStart, minOf(2000, data.size - recStart))
-        val bodySize = serialTypes.sumOf { serialTypeSize(it).toLong() }
-        val recordSize = (hdrLen.toLong() + bodySize).toInt()
-        if (recordSize <= 0 || recordSize > minOf(data.size, MAX_PAYLOAD)) return null
+        val maxRecordSize = minOf(data.size, MAX_PAYLOAD).toLong()
+        var totalSize = hdrLen.toLong()
+        for (st in serialTypes) {
+            val fieldSize = serialTypeSize(st)
+            if (fieldSize < 0L || fieldSize > maxRecordSize - totalSize) return null
+            totalSize += fieldSize
+        }
+        if (totalSize <= 0L) return null
+        val recordSize = totalSize.toInt()
 
         val payload: ByteArray
         val payloadOffset: Int
@@ -259,8 +272,9 @@ object SqliteKggReader {
         var overflowPage = if (localEnd + 4 <= data.size) readIntBE(data, localEnd) else 0
         val seen = HashSet<Int>()
         while (overflowPage > 0 && remaining > 0 && seen.add(overflowPage)) {
-            val pageOffset = (overflowPage - 1) * pageSize
-            if (pageOffset < 0 || pageOffset + 4 > data.size) break
+            val pageOffsetLong = (overflowPage.toLong() - 1L) * pageSize.toLong()
+            if (pageOffsetLong < 0L || pageOffsetLong + 4L > data.size.toLong()) break
+            val pageOffset = pageOffsetLong.toInt()
             val nextPage = readIntBE(data, pageOffset)
             val chunkStart = pageOffset + 4
             val chunkAvail = minOf(usableSize - 4, data.size - chunkStart)
@@ -315,9 +329,9 @@ object SqliteKggReader {
             if (columns != null && column !in columns) {
                 if (st == 10L || st == 11L) break
                 val size = serialTypeSize(st)
-                if (bodyPos + size > bodyEnd) break
+                if (size < 0L || size > (bodyEnd - bodyPos).toLong()) break
                 row.add(null)
-                bodyPos += size
+                bodyPos += size.toInt()
                 continue
             }
             when {
@@ -347,8 +361,9 @@ object SqliteKggReader {
                     bodyPos += 8
                 }
                 st >= 12L -> {
-                    val len = ((st - 12) / 2).toInt()
-                    if (bodyPos + len > bodyEnd) break
+                    val lenLong = (st - 12L) / 2L
+                    if (lenLong > (bodyEnd - bodyPos).toLong()) break
+                    val len = lenLong.toInt()
                     row.add(String(data, bodyPos, len, Charsets.UTF_8))
                     bodyPos += len
                 }
@@ -358,12 +373,12 @@ object SqliteKggReader {
         return row
     }
 
-    private fun serialTypeSize(st: Long): Int = when {
-        st == 0L || st == 8L || st == 9L -> 0
-        st in 1L..6L -> INT_SIZES[st.toInt()]
-        st == 7L -> 8
-        st >= 12L -> ((st - 12) / 2).toInt()
-        else -> 0
+    private fun serialTypeSize(st: Long): Long = when {
+        st == 0L || st == 8L || st == 9L -> 0L
+        st in 1L..6L -> INT_SIZES[st.toInt()].toLong()
+        st == 7L -> 8L
+        st >= 12L -> (st - 12L) / 2L
+        else -> -1L
     }
 
     private class MatchPattern(
@@ -394,20 +409,28 @@ object SqliteKggReader {
             if (!exact) continue
 
             val hashSt = 13L + 2L * hashLen
-            var bp = bodyStart
+            var bp = bodyStart.toLong()
+            var totalSize = hdrLen.toLong()
             var foundHash = false
-            for (st in serialTypes) {
-                if (bp == hashIdx && st == hashSt) foundHash = true
-                bp += serialTypeSize(st)
-            }
-            if (!foundHash) continue
-
-            val recordSize = hdrLen + serialTypes.sumOf { serialTypeSize(it) }
-            bp = bodyStart
+            var validSizes = true
             for (st in serialTypes) {
                 val sz = serialTypeSize(st)
-                if (sz == 1024 && bp + 1024 <= data.size) {
-                    return readColumn(data, bp, 1024, hdrStart, recordSize, pageSize)
+                if (sz < 0L || sz > MAX_PAYLOAD.toLong() - totalSize) {
+                    validSizes = false
+                    break
+                }
+                if (bp == hashIdx.toLong() && st == hashSt) foundHash = true
+                bp += sz
+                totalSize += sz
+            }
+            if (!validSizes || !foundHash) continue
+
+            val recordSize = totalSize.toInt()
+            bp = bodyStart.toLong()
+            for (st in serialTypes) {
+                val sz = serialTypeSize(st)
+                if (sz == 1024L && bp + 1024L <= data.size.toLong()) {
+                    return readColumn(data, bp.toInt(), 1024, hdrStart, recordSize, pageSize)
                 }
                 bp += sz
             }

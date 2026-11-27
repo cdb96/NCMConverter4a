@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <limits>
 
 #include "SimdCompat.h"
 #include "KgmTables.h"
@@ -79,7 +80,8 @@ extern "C" JNIEXPORT jint JNICALL
 Java_com_cdb96_ncmconverter4a_jni_KGMDecrypt_decrypt(JNIEnv* env, jclass,
                                                      jbyteArray cipher_data_bytes, jint offset, jint bytes_read) {
     if (cipher_data_bytes == nullptr || offset < 0 || (offset & 15) != 0 ||
-        bytes_read < 0 || bytes_read > env->GetArrayLength(cipher_data_bytes)) {
+        bytes_read < 0 || bytes_read > env->GetArrayLength(cipher_data_bytes) ||
+        offset > std::numeric_limits<jint>::max() - bytes_read) {
         throwIllegalArg(env, "invalid KGM byte array range");
         return offset;
     }

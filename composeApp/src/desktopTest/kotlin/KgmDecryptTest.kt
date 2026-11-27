@@ -60,6 +60,20 @@ class KgmDecryptTest {
     }
 
     @Test
+    fun rejectsOffsetOverflowWithoutChangingData() {
+        val expected = payload.copyOf(32)
+        val actual = expected.copyOf()
+        KGMDecrypt.init(key)
+        val maxAlignedOffset = Int.MAX_VALUE and 15.inv()
+        for (length in listOf(16, 32)) {
+            assertFailsWith<IllegalArgumentException> {
+                KGMDecrypt.decrypt(actual, maxAlignedOffset, length)
+            }
+            assertContentEquals(expected, actual)
+        }
+    }
+
+    @Test
     fun productionChunkSizeMatchesWholeBuffer() {
         val (chunked, end) = decryptChunked(262_144)
 

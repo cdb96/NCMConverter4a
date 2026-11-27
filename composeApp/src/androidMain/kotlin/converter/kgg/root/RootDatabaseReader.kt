@@ -39,7 +39,7 @@ internal class RootDatabaseReader(
         ).distinct().joinToString(" ", transform = ::shellQuote)
         return """
             for database in $paths /data/user/[0-9]*/$DATABASE_RELATIVE_PATH; do
-                if [ -f "${'$'}database" ]; then
+                if [ -f "${'$'}database" ] && [ ! -L "${'$'}database" ]; then
                     printf '读取数据库: %s\n' "${'$'}database" >&2
                     exec cat "${'$'}database"
                 fi

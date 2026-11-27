@@ -145,6 +145,6 @@ class MainActivity : ComponentActivity() {
                 clipData.getItemAt(index).uri?.let(result::add)
             }
         }
-        return result.distinct()
+        return result.filter { it.scheme.equals("content", ignoreCase = true) }.distinct()
     }
 }

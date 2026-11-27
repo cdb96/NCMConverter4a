@@ -57,7 +57,7 @@ NCMConverter4a 采用 **Kotlin Multiplatform (KMP) + Compose Multiplatform + 共
 | `composeApp/src/commonMain/` | 跨平台共享代码：Compose UI、Controller、批量转换与目录扫描服务、NCM/KGM/KGG 解析与流式转换、音频标签生成、流式 I/O 工具及 `expect` JNI 声明。 |
 | `composeApp/src/androidMain/` | Android 平台实现：SAF/MediaStore 文件读写 (`AndroidConversionFiles`)、目录扫描 (`AndroidDirectoryScanner`)、Root 读取 KGG 密钥 (`RootDatabaseReader`) 及 JNI `actual` 绑定。 |
 | `composeApp/src/desktopMain/` | Desktop 平台实现：本地文件输出与冲突分配 (`DesktopConversionFiles` / `DesktopOutputAllocator`)、本地目录扫描 (`DesktopDirectoryScanner`)、配置持久化与系统判断 (`DesktopConfig`)、拖拽/文件选择、Skiko 渲染配置、Windows 原生标题栏、`KggDbDecryptor` 与 `NativeLibrary` 加载器。 |
-| `composeApp/src/commonTest/` & `desktopTest/` | 跨平台单元测试与桌面端回归测试（含解密向量、并发、元数据、I/O、`MainScreenScrollTest` 及 `DirectoryScanScreenTest`）。 |
+| `composeApp/src/commonTest/` & `desktopTest/` | 跨平台单元测试与桌面端回归测试（含解密向量、并发、元数据、I/O、原生库解压与 SQLite 边界校验、`MainScreenScrollTest` 及 `DirectoryScanScreenTest`）。 |
 | `native/` | 跨平台共享 C++17 解密核心 (`cpp/`)、Windows 标题栏支持 (`windows/NativeCaption.cpp`)、独立自测 (`tests/SelfTest.cpp`) 与 `third_party/NEON_2_SSE/`。 |
 | `composeApp/tools/` & `.github/native-image/` | Desktop GraalVM Native Image 打包脚本、冒烟验证入口、Skiko ICU 裁剪工具及可达性元数据。 |
 
@@ -94,7 +94,7 @@ NCMConverter4a 采用 **Kotlin Multiplatform (KMP) + Compose Multiplatform + 共
   - `AndroidConversionFiles` 在批次内按 URI authority 复用 `ContentProviderClient` 打开 SAF/MediaStore 输入并批量查询、写入 `MediaStore`（支持冲突序号规避），目录扫描由 `AndroidDirectoryScanner` 通过 `DocumentsContract` 遍历。
   - `libncmc4a.so` 由 `androidApp` 的 NDK CMake 构建打入 APK，直接通过 `System.loadLibrary("ncmc4a")` 加载。
 - **Desktop 端**：
-  - `NativeLibrary` 按 `-Dncmc4a.library` 覆盖路径 → Classpath 资源 (`ncmc4a/<os>-<arch>/ncmc4a.<ext>`) 按内容哈希解压至临时目录 → 本地 `native/build/` 目录的顺序加载原生库。
+  - `NativeLibrary` 按 `-Dncmc4a.library` 覆盖路径 → Classpath 资源 (`ncmc4a/<os>-<arch>/ncmc4a.<ext>`) 解压（POSIX 使用进程独占 `0700` 随机临时目录，Windows 按内容哈希缓存并拒绝符号链接/目录联接） → 本地 `native/build/` 目录的顺序加载原生库。
   - `DesktopRendering` 管理 GPU/软件渲染偏好，`DesktopNativeCaption` 与 `DesktopTallTitleBar` 适配 Windows 原生窗口标题栏。
 
 ## 4. 共享 C++ SIMD 原生核心 (`native/`)
